@@ -5,8 +5,8 @@ import requests
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD = 1
-DUMP_THRESHOLD = -1
+PUMP_THRESHOLD = 0.3
+DUMP_THRESHOLD = -0.3
 
 MIN_VOLUME = 5_000_000
 
