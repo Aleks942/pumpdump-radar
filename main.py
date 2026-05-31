@@ -129,11 +129,49 @@ def get_funding_rate(raw_symbol):
         return funding
 
     except Exception as e:
-
+        
         print("[FUNDING EXCEPTION]", raw_symbol, e)
 
         return None
 
+def get_open_interest(raw_symbol):
+
+    url = "https://www.okx.com/api/v5/public/open-interest"
+
+    params = {
+        "instId": raw_symbol
+    }
+
+    try:
+
+        r = requests.get(
+            url,
+            params=params,
+            timeout=15
+        )
+
+        data = r.json()
+
+        if data.get("code") != "0":
+
+            print("[OI ERROR]", raw_symbol, data)
+
+            return None
+
+        rows = data.get("data", [])
+
+        if not rows:
+            return None
+
+        oi = float(rows[0].get("oi", 0))
+
+        return oi
+
+    except Exception as e:
+
+        print("[OI EXCEPTION]", raw_symbol, e)
+
+        return None
 
 def get_window_move(symbol, bar, candles_count):
 
