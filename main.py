@@ -295,14 +295,20 @@ def analyze(ticker):
         if volume_24h < MIN_VOLUME_24H:
             return None
 
-    funding = get_funding_rate(raw_symbol)
+        try:
+            funding = get_funding_rate(raw_symbol)
+
+        except Exception as e:
+
+            print("[FUNDING ERROR]", e)
+
+            funding = None
 
     except Exception as e:
 
         print("[ANALYZE ERROR]", e)
 
         return None
-
     best_signal = None
 
     for window_name, cfg in TIME_WINDOWS.items():
