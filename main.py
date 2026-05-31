@@ -1,9 +1,19 @@
+```python
 import os
 import time
 import requests
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+PUMP_THRESHOLD = 1
+DUMP_THRESHOLD = -1
+
+MIN_VOLUME = 5_000_000
+
+ALERT_COOLDOWN = 1800
+
+last_alerts = {}
 
 
 def send_telegram(text):
@@ -16,20 +26,159 @@ def send_telegram(text):
     }
 
     try:
-        requests.post(url, json=payload, timeout=10)
-        print("[TG] message sent")
+
+        r = requests.post(url, json=payload, timeout=10)
+
+        print("[TG STATUS]", r.status_code)
 
     except Exception as e:
+
         print("[TG ERROR]", e)
+
+
+def get_bybit_tickers():
+
+    url = "https://api.bybit.com/v5/market/tickers"
+
+    params = {
+        "category": "linear"
+    }
+
+    try:
+
+        r = requests.get(url, params=params, timeout=15)
+
+        data = r.json()
+
+        if data.get("retCode") != 0:
+
+            print("[BYBIT ERROR]", data)
+
+            return []
+
+        return data["result"]["list"]
+
+    except Exception as e:
+
+        print("[BYBIT EXCEPTION]", e)
+
+        return []
+
+
+def can_alert(symbol):
+
+    now = time.time()
+
+    last = last_alerts.get(symbol, 0)
+
+    if now - last > ALERT_COOLDOWN:
+
+        last_alerts[symbol] = now
+
+        return True
+
+    return False
+
+
+def analyze(ticker):
+
+    try:
+
+        symbol = ticker["symbol"]
+
+        if not symbol.endswith("USDT"):
+            return None
+
+        change = float(ticker["price24hPcnt"]) * 100
+
+        volume = float(ticker["turnover24h"])
+
+        price = float(ticker["lastPrice"])
+
+    except:
+
+        return None
+
+    if volume < MIN_VOLUME:
+        return None
+
+    if change >= PUMP_THRESHOLD:
+
+        return {
+            "symbol": symbol,
+            "type": "PUMP",
+            "change": change,
+            "price": price,
+            "volume": volume
+        }
+
+    if change <= DUMP_THRESHOLD:
+
+        return {
+            "symbol": symbol,
+            "type": "DUMP",
+            "change": change,
+            "price": price,
+            "volume": volume
+        }
+
+    return None
+
+
+def build_message(signal):
+
+    emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
+
+    return f"""
+{emoji} PumpDump Radar
+
+Монета:
+{signal["symbol"]}
+
+Тип:
+{signal["type"]}
+
+Изменение:
+{signal["change"]:.2f}%
+
+Цена:
+{signal["price"]}
+
+Объём:
+{signal["volume"]:,.0f}
+"""
 
 
 print("🚀 PumpDump Radar started")
 
-send_telegram("🚀 PumpDump Radar успешно запущен!")
+send_telegram("🚀 PumpDump Radar ONLINE")
 
 
 while True:
 
-    print("working...")
+    print("[SCAN] scanning market...")
+
+    tickers = get_bybit_tickers()
+
+    print(f"[TICKERS] {len(tickers)}")
+
+    for ticker in tickers:
+
+        signal = analyze(ticker)
+
+        if not signal:
+            continue
+
+        symbol = signal["symbol"]
+
+        if not can_alert(symbol):
+            continue
+
+        msg = build_message(signal)
+
+        send_telegram(msg)
+
+        print("[SIGNAL]", symbol)
 
     time.sleep(60)
+```
