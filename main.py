@@ -6,23 +6,20 @@ from datetime import datetime
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD = 7
-DUMP_THRESHOLD = -7
+PUMP_THRESHOLD = 5
+DUMP_THRESHOLD = -5
 
 MIN_VOLUME_24H = 10000000
 
 ALERT_COOLDOWN = 7200
 
 TIME_WINDOWS = {
-    "20m": {
+    "5m": {
         "bar": "5m",
-        "candles": 5
-    },
-    "30m": {
-        "bar": "5m",
-        "candles": 7
+        "candles": 2
     }
 }
+   
 
 symbol_states = {}
 signal_first_seen = {}
