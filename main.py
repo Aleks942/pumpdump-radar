@@ -335,13 +335,15 @@ def analyze(ticker):
 
         try:
             funding = get_funding_rate(raw_symbol)
-
+            
+          
         except Exception as e:
 
             print("[FUNDING ERROR]", e)
 
             funding = None
 
+        oi = get_open_interest(raw_symbol)
     except Exception as e:
 
         print("[ANALYZE ERROR]", e)
@@ -395,6 +397,7 @@ def analyze(ticker):
             "price": price,
             "volume": volume_24h,
             "funding": funding,
+            "oi": oi,
             "signal_24h": signal_count
         }
 
