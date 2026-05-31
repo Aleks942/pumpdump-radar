@@ -45,7 +45,7 @@ TIME_WINDOWS = {
 symbol_states = {}
 signal_first_seen = {}
 signal_24h_count = {}
-
+oi_memory = {}
 
 def send_telegram(text):
 
