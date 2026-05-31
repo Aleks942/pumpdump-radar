@@ -1,4 +1,3 @@
-
 import os
 import time
 import requests
@@ -181,4 +180,4 @@ while True:
         print("[SIGNAL]", symbol)
 
     time.sleep(60)
-```
+
