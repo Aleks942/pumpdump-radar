@@ -37,41 +37,39 @@ def send_telegram(text):
 
 def get_bybit_tickers():
 
-    url = "https://api.bybit.com/v5/market/tickers?category=linear"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+url = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
 
-    try:
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-        r = requests.get(
-            url,
-            headers=headers,
-            timeout=20
-        )
+try:
 
-        print("[BYBIT STATUS]", r.status_code)
+    r = requests.get(
+        url,
+        headers=headers,
+        timeout=20
+    )
 
-        text = r.text[:200]
+    print("[OKX STATUS]", r.status_code)
 
-        print("[BYBIT RAW]", text)
+    data = r.json()
 
-        data = r.json()
+    if data.get("code") != "0":
 
-        if data.get("retCode") != 0:
-
-            print("[BYBIT ERROR]", data)
-
-            return []
-
-        return data["result"]["list"]
-
-    except Exception as e:
-
-        print("[BYBIT EXCEPTION]", e)
+        print("[OKX ERROR]", data)
 
         return []
+
+    return data["data"]
+
+except Exception as e:
+
+    print("[OKX EXCEPTION]", e)
+
+    return []
+
 
 
 def analyze(ticker):
