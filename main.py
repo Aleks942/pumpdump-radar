@@ -8,7 +8,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 PUMP_THRESHOLD = 0.3
 DUMP_THRESHOLD = -0.3
 
-MIN_VOLUME = 500_000
+MIN_VOLUME = 500000
 
 ALERT_COOLDOWN = 1800
 
@@ -26,7 +26,11 @@ def send_telegram(text):
 
     try:
 
-        r = requests.post(url, json=payload, timeout=10)
+        r = requests.post(
+            url,
+            json=payload,
+            timeout=10
+        )
 
         print("[TG STATUS]", r.status_code)
 
@@ -34,7 +38,8 @@ def send_telegram(text):
 
         print("[TG ERROR]", e)
 
-def get_bybit_tickers():
+
+def get_market_tickers():
 
     url = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
 
@@ -68,22 +73,40 @@ def get_bybit_tickers():
 
         return []
 
+
+def can_alert(symbol):
+
+    now = time.time()
+
+    last = last_alerts.get(symbol, 0)
+
+    if now - last > ALERT_COOLDOWN:
+
+        last_alerts[symbol] = now
+
+        return True
+
+    return False
+
+
 def analyze(ticker):
 
     try:
 
-        symbol = ticker["symbol"]
+        symbol = ticker["instId"]
 
-        if not symbol.endswith("USDT"):
+        if "USDT" not in symbol:
             return None
 
-        change = float(ticker["price24hPcnt"]) * 100
+        change = float(ticker["change24h"]) * 100
 
-        volume = float(ticker["turnover24h"])
+        volume = float(ticker["volCcy24h"])
 
-        price = float(ticker["lastPrice"])
+        price = float(ticker["last"])
 
-    except:
+    except Exception as e:
+
+        print("[ANALYZE ERROR]", e)
 
         return None
 
@@ -146,7 +169,7 @@ while True:
 
     print("[SCAN] scanning market...")
 
-    tickers = get_bybit_tickers()
+    tickers = get_market_tickers()
 
     print(f"[TICKERS] {len(tickers)}")
 
@@ -169,4 +192,3 @@ while True:
         print("[SIGNAL]", symbol)
 
     time.sleep(60)
-
