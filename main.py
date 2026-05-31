@@ -369,39 +369,41 @@ def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
 
+    side_text = (
+        "ПАМП"
+        if signal["type"] == "PUMP"
+        else "ДАМП"
+    )
+
+    funding = signal.get("funding")
+
+    if funding is None:
+
+        funding_text = "нет данных"
+
+    else:
+
+        funding_text = f"{funding:.3f}%"
+
     return f"""
-{emoji} PumpDump Radar
+{emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
-Биржа:
-OKX
+⏱ Период: {signal["window"]}
+📈 Движение: {signal["change"]:.2f}%
 
-Период:
-{signal["window"]}
-
-Монета:
-{signal["symbol"]}
-
-Тип:
-{signal["type"]}
-
-Движение:
-{signal["change"]:.2f}%
-
-Цена:
+💰 Цена:
 {signal["start_price"]} → {signal["end_price"]}
 
-Объём 24ч:
+📊 Объём 24ч:
 {signal["volume"]:,.0f}
 
+💸 Funding:
+{funding_text}
 
-Funding:
-{signal["funding"]}
-
-Signal 24h:
+🔁 Сигналов за 24ч:
 {signal["signal_24h"]}
 
-Время:
-{datetime.utcnow().strftime("%H:%M UTC")}
+🕒 {datetime.utcnow().strftime("%H:%M UTC")}
 """
 
 
