@@ -97,6 +97,43 @@ def get_market_tickers():
 
         return []
 
+def get_funding_rate(raw_symbol):
+
+    url = "https://www.okx.com/api/v5/public/funding-rate"
+
+    params = {
+        "instId": raw_symbol
+    }
+
+    try:
+
+        r = requests.get(
+            url,
+            params=params,
+            timeout=15
+        )
+
+        data = r.json()
+
+        if data.get("code") != "0":
+            print("[FUNDING ERROR]", raw_symbol, data)
+            return None
+
+        rows = data.get("data", [])
+
+        if not rows:
+            return None
+
+        funding = float(rows[0].get("fundingRate", 0)) * 100
+
+        return funding
+
+    except Exception as e:
+
+        print("[FUNDING EXCEPTION]", raw_symbol, e)
+
+        return None
+
 
 def get_window_move(symbol, bar, candles_count):
 
@@ -258,6 +295,8 @@ def analyze(ticker):
         if volume_24h < MIN_VOLUME_24H:
             return None
 
+    funding = get_funding_rate(raw_symbol)
+
     except Exception as e:
 
         print("[ANALYZE ERROR]", e)
@@ -311,6 +350,7 @@ def analyze(ticker):
             "end_price": move["end_price"],
             "price": price,
             "volume": volume_24h,
+            "funding": funding,
             "signal_24h": signal_count
         }
 
@@ -346,6 +386,10 @@ OKX
 
 Объём 24ч:
 {signal["volume"]:,.0f}
+
+
+Funding:
+{signal["funding"]}
 
 Signal 24h:
 {signal["signal_24h"]}
