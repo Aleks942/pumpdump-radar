@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+import random
 from datetime import datetime, UTC
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -70,10 +71,7 @@ def get_market_tickers():
             if "USDT-SWAP" in t.get("instId", "")
         ]
 
-        tickers.sort(
-            key=lambda x: float(x.get("volCcy24h", 0)),
-            reverse=True
-        )
+        random.shuffle(tickers)
 
         return tickers[:MAX_SYMBOLS]
 
