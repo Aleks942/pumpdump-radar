@@ -307,51 +307,18 @@ def can_send(symbol, move_type, window, change):
     return True
 
 
-def analyze(ticker):
+        oi_change = None
 
-    try:
+        old_oi = oi_memory.get(symbol)
 
-        raw_symbol = ticker["instId"]
+        if old_oi is not None and old_oi > 0:
 
-        symbol = raw_symbol.replace(
-            "-USDT-SWAP",
-            "USDT"
-        )
+            oi_change = (
+                (oi - old_oi)
+                / old_oi
+            ) * 100
 
-        if "USDT" not in symbol:
-            return None
-
-        price = float(ticker["last"])
-
-        if price < 0.01:
-            return None
-
-        volume_24h = float(
-            ticker["volCcy24h"]
-        )
-
-        if volume_24h < MIN_VOLUME_24H:
-            return None
-
-        try:
-            funding = get_funding_rate(raw_symbol)
-            
-          
-        except Exception as e:
-
-            print("[FUNDING ERROR]", e)
-
-            funding = None
-
-        oi = get_open_interest(raw_symbol)
-    except Exception as e:
-
-        print("[ANALYZE ERROR]", e)
-
-        return None
-    best_signal = None
-
-    for window_name, cfg in TIME_WINDOWS.items():
+        oi_memory[symbol] = oi
 
         move = get_window_move(
             raw_symbol,
