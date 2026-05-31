@@ -1,18 +1,32 @@
 import os
 import time
 import requests
+from datetime import datetime
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD_5M = 3
-DUMP_THRESHOLD_5M = -3
+PUMP_THRESHOLD = 7
+DUMP_THRESHOLD = -7
 
 MIN_VOLUME_24H = 10000000
+
 ALERT_COOLDOWN = 7200
+
+TIME_WINDOWS = {
+    "20m": {
+        "bar": "5m",
+        "candles": 5
+    },
+    "30m": {
+        "bar": "5m",
+        "candles": 7
+    }
+}
 
 symbol_states = {}
 signal_first_seen = {}
+signal_24h_count = {}
 
 
 def send_telegram(text):
@@ -50,13 +64,13 @@ def get_market_tickers():
         return []
 
 
-def get_5m_change(symbol):
+def get_window_move(symbol, bar, candles_count):
     url = "https://www.okx.com/api/v5/market/candles"
 
     params = {
         "instId": symbol,
-        "bar": "5m",
-        "limit": "2"
+        "bar": bar,
+        "limit": str(candles_count)
     }
 
     try:
@@ -69,44 +83,90 @@ def get_5m_change(symbol):
 
         candles = data.get("data", [])
 
-        if len(candles) < 2:
+        if len(candles) < candles_count:
             return None
 
-        last_closed = candles[1]
+        newest = candles[0]
+        oldest = candles[-1]
 
-        open_price = float(last_closed[1])
-        close_price = float(last_closed[4])
+        start_price = float(oldest[1])
+        end_price = float(newest[4])
 
-        if open_price == 0:
+        if start_price == 0:
             return None
 
-        change_5m = ((close_price - open_price) / open_price) * 100
+        change = ((end_price - start_price) / start_price) * 100
 
-        return change_5m
+        return {
+            "start_price": start_price,
+            "end_price": end_price,
+            "change": change
+        }
 
     except Exception as e:
         print("[OKX CANDLES EXCEPTION]", symbol, e)
         return None
 
 
-def can_alert(symbol):
+def clean_old_signal_counts():
     now = time.time()
-    last_time = signal_first_seen.get(symbol)
 
-    if last_time is None:
-        signal_first_seen[symbol] = now
+    for symbol in list(signal_24h_count.keys()):
+        signal_24h_count[symbol] = [
+            t for t in signal_24h_count[symbol]
+            if now - t < 86400
+        ]
 
-    state = symbol_states.get(symbol)
+        if not signal_24h_count[symbol]:
+            del signal_24h_count[symbol]
+
+
+def add_signal_count(symbol):
+    now = time.time()
+
+    if symbol not in signal_24h_count:
+        signal_24h_count[symbol] = []
+
+    signal_24h_count[symbol].append(now)
+
+    clean_old_signal_counts()
+
+    return len(signal_24h_count.get(symbol, []))
+
+
+def can_send(symbol, move_type, window, change):
+    now = time.time()
+
+    key = f"{symbol}_{move_type}_{window}"
+
+    state = symbol_states.get(key)
 
     if state is None:
+        symbol_states[key] = {
+            "last_alert": now,
+            "max_change": change
+        }
+
+        signal_first_seen[key] = now
+
         return True
 
     last_alert = state.get("last_alert", 0)
+    old_change = state.get("max_change", change)
 
-    if now - last_alert > ALERT_COOLDOWN:
-        return True
+    if now - last_alert < ALERT_COOLDOWN:
+        if move_type == "PUMP" and change < old_change + 3:
+            return False
 
-    return False
+        if move_type == "DUMP" and change > old_change - 3:
+            return False
+
+    symbol_states[key] = {
+        "last_alert": now,
+        "max_change": change
+    }
+
+    return True
 
 
 def analyze(ticker):
@@ -130,61 +190,64 @@ def analyze(ticker):
         print("[ANALYZE TICKER ERROR]", e)
         return None
 
-    change_5m = get_5m_change(symbol)
+    best_signal = None
 
-    if change_5m is None:
-        return None
+    for window_name, cfg in TIME_WINDOWS.items():
+        move = get_window_move(
+            symbol,
+            cfg["bar"],
+            cfg["candles"]
+        )
 
-    move_type = None
+        if move is None:
+            continue
 
-    if change_5m >= PUMP_THRESHOLD_5M:
-        move_type = "PUMP"
+        change = move["change"]
 
-    elif change_5m <= DUMP_THRESHOLD_5M:
-        move_type = "DUMP"
+        move_type = None
 
-    else:
-        return None
+        if change >= PUMP_THRESHOLD:
+            move_type = "PUMP"
 
-    state = symbol_states.get(symbol)
+        elif change <= DUMP_THRESHOLD:
+            move_type = "DUMP"
 
-    if state:
-        old_change = state.get("max_change", change_5m)
+        else:
+            continue
 
-        if move_type == "PUMP" and change_5m < old_change + 2:
-            return None
+        if not can_send(symbol, move_type, window_name, change):
+            continue
 
-        if move_type == "DUMP" and change_5m > old_change - 2:
-            return None
+        signal_count = add_signal_count(symbol)
 
-    now = time.time()
+        best_signal = {
+            "symbol": symbol,
+            "type": move_type,
+            "window": window_name,
+            "change": change,
+            "start_price": move["start_price"],
+            "end_price": move["end_price"],
+            "price": price,
+            "volume": volume_24h,
+            "signal_24h": signal_count
+        }
 
-    symbol_states[symbol] = {
-        "type": move_type,
-        "max_change": change_5m,
-        "last_alert": now
-    }
+        break
 
-    if symbol not in signal_first_seen:
-        signal_first_seen[symbol] = now
-
-    return {
-        "symbol": symbol,
-        "type": move_type,
-        "change_5m": change_5m,
-        "price": price,
-        "volume": volume_24h
-    }
+    return best_signal
 
 
 def build_message(signal):
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
 
-    first_seen = signal_first_seen.get(signal["symbol"], time.time())
-    active_minutes = int((time.time() - first_seen) / 60)
-
     return f"""
-{emoji} PumpDump Radar V2
+{emoji} PumpDump Radar
+
+Биржа:
+OKX
+
+Период:
+{signal["window"]}
 
 Монета:
 {signal["symbol"]}
@@ -192,26 +255,26 @@ def build_message(signal):
 Тип:
 {signal["type"]}
 
-Движение за 5 минут:
-{signal["change_5m"]:.2f}%
+Движение:
+{signal["change"]:.2f}%
 
 Цена:
-{signal["price"]}
+{signal["start_price"]} → {signal["end_price"]}
 
 Объём 24ч:
 {signal["volume"]:,.0f}
 
-⏱ Импульс активен:
-{active_minutes} мин
+Signal 24h:
+{signal["signal_24h"]}
 
-Логика:
-бот считает НЕ от утра, а по последней закрытой 5m свече
+Время:
+{datetime.utcnow().strftime("%H:%M UTC")}
 """
 
 
-print("🚀 PumpDump Radar V2 started")
+print("🚀 PumpDump Radar 20m/30m started")
 
-send_telegram("🚀 PumpDump Radar V2 ONLINE")
+send_telegram("🚀 PumpDump Radar 20m/30m ONLINE")
 
 while True:
     print("[SCAN] scanning market...")
@@ -230,6 +293,12 @@ while True:
 
         send_telegram(msg)
 
-        print("[SIGNAL]", signal["symbol"], signal["type"], signal["change_5m"])
+        print(
+            "[SIGNAL]",
+            signal["window"],
+            signal["symbol"],
+            signal["type"],
+            signal["change"]
+        )
 
     time.sleep(60)
