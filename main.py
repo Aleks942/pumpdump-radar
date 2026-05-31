@@ -37,15 +37,25 @@ def send_telegram(text):
 
 def get_bybit_tickers():
 
-    url = "https://api.bybit.com/v5/market/tickers"
+    url = "https://api.bybit.com/v5/market/tickers?category=linear"
 
-    params = {
-        "category": "linear"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
     }
 
     try:
 
-        r = requests.get(url, params=params, timeout=15)
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=20
+        )
+
+        print("[BYBIT STATUS]", r.status_code)
+
+        text = r.text[:200]
+
+        print("[BYBIT RAW]", text)
 
         data = r.json()
 
@@ -62,21 +72,6 @@ def get_bybit_tickers():
         print("[BYBIT EXCEPTION]", e)
 
         return []
-
-
-def can_alert(symbol):
-
-    now = time.time()
-
-    last = last_alerts.get(symbol, 0)
-
-    if now - last > ALERT_COOLDOWN:
-
-        last_alerts[symbol] = now
-
-        return True
-
-    return False
 
 
 def analyze(ticker):
