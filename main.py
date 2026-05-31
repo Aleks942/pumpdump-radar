@@ -98,11 +98,16 @@ def analyze(ticker):
         if "USDT" not in symbol:
             return None
 
-        change = float(ticker["change24h"]) * 100
+        price = float(ticker["last"])
+
+        open_price = float(ticker["sodUtc0"])
+
+        if open_price == 0:
+            return None
+
+        change = ((price - open_price) / open_price) * 100
 
         volume = float(ticker["volCcy24h"])
-
-        price = float(ticker["last"])
 
     except Exception as e:
 
