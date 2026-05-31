@@ -6,8 +6,8 @@ from datetime import datetime
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD_5M = 5
-DUMP_THRESHOLD_5M = -5
+PUMP_THRESHOLD_5M = 1
+DUMP_THRESHOLD_5M = -1
 
 PUMP_THRESHOLD_20M = 7
 DUMP_THRESHOLD_20M = -7
