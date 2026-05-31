@@ -14,6 +14,8 @@ ALERT_COOLDOWN = 7200
 
 last_alerts = {}
 
+signal_first_seen = {}
+
 
 def send_telegram(text):
 
@@ -77,6 +79,9 @@ def get_market_tickers():
 def can_alert(symbol):
 
     now = time.time()
+
+    if symbol not in signal_first_seen:
+        signal_first_seen[symbol] = now
 
     last = last_alerts.get(symbol, 0)
 
@@ -145,6 +150,10 @@ def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
 
+    first_seen = signal_first_seen.get(signal["symbol"], time.time())
+
+    active_minutes = int((time.time() - first_seen) / 60)
+
     return f"""
 {emoji} PumpDump Radar
 
@@ -162,6 +171,9 @@ def build_message(signal):
 
 Объём:
 {signal["volume"]:,.0f}
+
+⏱ Активен:
+{active_minutes} мин
 """
 
 
