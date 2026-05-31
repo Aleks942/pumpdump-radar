@@ -16,6 +16,8 @@ last_alerts = {}
 
 signal_first_seen = {}
 
+symbol_states = {}
+
 
 def send_telegram(text):
 
@@ -105,6 +107,9 @@ def analyze(ticker):
 
         price = float(ticker["last"])
 
+        if price < 0.01:
+            return None
+
         open_price = float(ticker["sodUtc0"])
 
         if open_price == 0:
@@ -123,27 +128,53 @@ def analyze(ticker):
     if volume < MIN_VOLUME:
         return None
 
+    move_type = None
+
     if change >= PUMP_THRESHOLD:
+        move_type = "PUMP"
 
-        return {
-            "symbol": symbol,
-            "type": "PUMP",
-            "change": change,
-            "price": price,
-            "volume": volume
-        }
+    elif change <= DUMP_THRESHOLD:
+        move_type = "DUMP"
 
-    if change <= DUMP_THRESHOLD:
+    else:
 
-        return {
-            "symbol": symbol,
-            "type": "DUMP",
-            "change": change,
-            "price": price,
-            "volume": volume
-        }
+        if symbol in symbol_states:
+            del symbol_states[symbol]
 
-    return None
+        return None
+
+    existing = symbol_states.get(symbol)
+
+    if existing:
+
+        old_change = existing["max_change"]
+
+        if move_type == "PUMP":
+
+            if change < old_change + 3:
+                return None
+
+        if move_type == "DUMP":
+
+            if change > old_change - 3:
+                return None
+
+    else:
+
+        signal_first_seen[symbol] = time.time()
+
+    symbol_states[symbol] = {
+        "type": move_type,
+        "max_change": change
+    }
+
+    return {
+        "symbol": symbol,
+        "type": move_type,
+        "change": change,
+        "price": price,
+        "volume": volume
+    }
 
 
 def build_message(signal):
