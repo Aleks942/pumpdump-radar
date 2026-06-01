@@ -4,23 +4,42 @@ import requests
 import random
 from datetime import datetime, UTC
 
+# ============================================================
+# PumpDump Radar V3 — готовая версия
+# ============================================================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD_5M = float(os.getenv("PUMP_THRESHOLD_5M", 5))
-DUMP_THRESHOLD_5M = float(os.getenv("DUMP_THRESHOLD_5M", -5))
+# =========================
+# ПОРОГИ ПАМПА / ДАМПА
+# =========================
 
-PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 7))
-DUMP_THRESHOLD_20M = float(os.getenv("DUMP_THRESHOLD_20M", -7))
+PUMP_THRESHOLD_5M = float(os.getenv("PUMP_THRESHOLD_5M", 3))
+DUMP_THRESHOLD_5M = float(os.getenv("DUMP_THRESHOLD_5M", -3))
 
-PUMP_THRESHOLD_30M = float(os.getenv("PUMP_THRESHOLD_30M", 7))
-DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -7))
+PUMP_THRESHOLD_10M = float(os.getenv("PUMP_THRESHOLD_10M", 4))
+DUMP_THRESHOLD_10M = float(os.getenv("DUMP_THRESHOLD_10M", -4))
+
+PUMP_THRESHOLD_15M = float(os.getenv("PUMP_THRESHOLD_15M", 5))
+DUMP_THRESHOLD_15M = float(os.getenv("DUMP_THRESHOLD_15M", -5))
+
+PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 6))
+DUMP_THRESHOLD_20M = float(os.getenv("DUMP_THRESHOLD_20M", -6))
+
+PUMP_THRESHOLD_30M = float(os.getenv("PUMP_THRESHOLD_30M", 8))
+DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -8))
+
+PUMP_THRESHOLD_60M = float(os.getenv("PUMP_THRESHOLD_60M", 12))
+DUMP_THRESHOLD_60M = float(os.getenv("DUMP_THRESHOLD_60M", -12))
 
 MIN_VOLUME_24H = float(os.getenv("MIN_VOLUME_24H", 10000000))
-ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 1800))
+ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 900))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 120))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
+
+REPEAT_IMPROVE_PCT = float(os.getenv("REPEAT_IMPROVE_PCT", 2.0))
 
 symbol_states = {}
 signal_24h_count = {}
@@ -29,12 +48,20 @@ rotation_index = 0
 
 TIME_WINDOWS = {
     "5m": {"bar": "5m", "candles": 2, "pump": PUMP_THRESHOLD_5M, "dump": DUMP_THRESHOLD_5M},
+    "10m": {"bar": "5m", "candles": 3, "pump": PUMP_THRESHOLD_10M, "dump": DUMP_THRESHOLD_10M},
+    "15m": {"bar": "5m", "candles": 4, "pump": PUMP_THRESHOLD_15M, "dump": DUMP_THRESHOLD_15M},
     "20m": {"bar": "5m", "candles": 5, "pump": PUMP_THRESHOLD_20M, "dump": DUMP_THRESHOLD_20M},
     "30m": {"bar": "5m", "candles": 7, "pump": PUMP_THRESHOLD_30M, "dump": DUMP_THRESHOLD_30M},
+    "60m": {"bar": "5m", "candles": 13, "pump": PUMP_THRESHOLD_60M, "dump": DUMP_THRESHOLD_60M},
 }
 
 
 def send_telegram(text):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("[TG DISABLED] BOT_TOKEN or CHAT_ID missing")
+        print(text)
+        return
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
@@ -47,6 +74,8 @@ def send_telegram(text):
     try:
         r = requests.post(url, json=payload, timeout=10)
         print("[TG STATUS]", r.status_code)
+        if r.status_code != 200:
+            print("[TG BODY]", r.text[:300])
     except Exception as e:
         print("[TG ERROR]", e)
 
@@ -112,9 +141,7 @@ def get_rotation_chunk(tickers):
 def get_funding_rate(raw_symbol):
     url = "https://www.okx.com/api/v5/public/funding-rate"
 
-    params = {
-        "instId": raw_symbol
-    }
+    params = {"instId": raw_symbol}
 
     try:
         r = requests.get(url, params=params, timeout=15)
@@ -138,9 +165,7 @@ def get_funding_rate(raw_symbol):
 def get_open_interest(raw_symbol):
     url = "https://www.okx.com/api/v5/public/open-interest"
 
-    params = {
-        "instId": raw_symbol
-    }
+    params = {"instId": raw_symbol}
 
     try:
         r = requests.get(url, params=params, timeout=15)
@@ -231,14 +256,15 @@ def add_signal_count(symbol):
 
 def can_send(symbol, move_type, window, change):
     now = time.time()
-    key = f"{symbol}_{move_type}_{window}"
+    key = f"{symbol}_{move_type}"
 
     state = symbol_states.get(key)
 
     if state is None:
         symbol_states[key] = {
             "last_alert": now,
-            "max_change": change
+            "max_change": change,
+            "window": window
         }
         return True
 
@@ -246,43 +272,192 @@ def can_send(symbol, move_type, window, change):
     old_change = state.get("max_change", change)
 
     if now - last_alert < ALERT_COOLDOWN:
-        if move_type == "PUMP" and change < old_change + 2:
+        if move_type == "PUMP" and change < old_change + REPEAT_IMPROVE_PCT:
             return False
 
-        if move_type == "DUMP" and change > old_change - 2:
+        if move_type == "DUMP" and change > old_change - REPEAT_IMPROVE_PCT:
             return False
 
     symbol_states[key] = {
         "last_alert": now,
-        "max_change": change
+        "max_change": change,
+        "window": window
     }
 
     return True
 
 
-def classify_flow(move_type, funding, oi_change):
-    if oi_change is None:
-        return "OI пока нет данных"
+def calc_smart_score(move_type, change, window_name, volume_24h, funding, oi_change):
+    score = 0
+    abs_change = abs(change)
 
-    if move_type == "PUMP":
-        if oi_change > 2:
-            return "Цена растёт + OI растёт: новые деньги заходят в рост"
-        if oi_change < -2:
-            return "Цена растёт + OI падает: возможный short squeeze"
+    if abs_change >= 15:
+        score += 35
+    elif abs_change >= 10:
+        score += 28
+    elif abs_change >= 7:
+        score += 22
+    elif abs_change >= 5:
+        score += 16
+    else:
+        score += 10
 
-    if move_type == "DUMP":
-        if oi_change > 2:
-            return "Цена падает + OI растёт: новые шорты давят цену"
-        if oi_change < -2:
-            return "Цена падает + OI падает: позиции закрываются, возможная капитуляция"
+    if window_name in ("5m", "10m"):
+        score += 15
+    elif window_name in ("15m", "20m"):
+        score += 12
+    elif window_name == "30m":
+        score += 8
+    else:
+        score += 5
+
+    if volume_24h >= 1_000_000_000:
+        score += 15
+    elif volume_24h >= 300_000_000:
+        score += 12
+    elif volume_24h >= 100_000_000:
+        score += 8
+    elif volume_24h >= 30_000_000:
+        score += 5
 
     if funding is not None:
-        if move_type == "PUMP" and funding < -0.01:
-            return "Памп против отрицательного funding: шортистов могут выносить"
-        if move_type == "DUMP" and funding > 0.01:
-            return "Дамп против положительного funding: лонгистов могут выносить"
+        if move_type == "PUMP" and funding < -0.05:
+            score += 15
+        elif move_type == "DUMP" and funding > 0.05:
+            score += 15
+        elif abs(funding) >= 0.10:
+            score += 10
+        elif abs(funding) >= 0.03:
+            score += 6
 
-    return "Движение есть, но сильного OI/funding подтверждения пока нет"
+    if oi_change is not None:
+        if abs(oi_change) >= 5:
+            score += 15
+        elif abs(oi_change) >= 2:
+            score += 10
+        elif abs(oi_change) >= 0.5:
+            score += 5
+
+    return max(0, min(100, score))
+
+
+def score_label(score):
+    if score >= 85:
+        return "🔥 Очень сильный сигнал"
+    if score >= 70:
+        return "🟠 Сильный сигнал"
+    if score >= 50:
+        return "🟡 Средний сигнал"
+    return "⚪ Слабый / шумный сигнал"
+
+
+def classify_phase(move_type, change, window_name, funding, oi_change):
+    abs_change = abs(change)
+
+    if move_type == "PUMP":
+
+        if funding is not None and funding < -0.03 and oi_change is not None and oi_change < -0.5:
+            return (
+                "🟠 Вынос шортистов",
+                "Цена резко растёт против отрицательного funding. Это значит, что многие стояли в шортах, но рынок пошёл против них. OI падает — часть позиций закрывается, рост может идти за счёт принудительного закрытия шортов.",
+                "Движение может продолжиться рывком вверх, но это уже опасная зона для позднего входа. После выноса часто бывает резкий откат.",
+                "Не догонять зелёную свечу. Ждать откат, слабый повторный тест или признаки усталости покупателей."
+            )
+
+        if funding is not None and funding < -0.03 and oi_change is not None and oi_change >= 0.5:
+            return (
+                "🟡 Импульс развивается",
+                "Цена растёт, funding отрицательный, а OI растёт. В рынок заходят новые позиции, но толпа всё ещё пытается шортить рост. Это может дать продолжение выноса шортистов.",
+                "Пока движение живое, но нужно следить за перегревом: если funding начнёт выходить к плюсу, а цена станет рваной — риск отката вырастет.",
+                "Можно наблюдать продолжение, но вход лучше искать не в свечу, а после отката."
+            )
+
+        if funding is not None and funding > 0.03 and oi_change is not None and oi_change > 0.5:
+            return (
+                "🔴 Поздний перегретый памп",
+                "Цена растёт, funding уже положительный, OI растёт. Это значит, что толпа начинает лонговать уже после сильного движения. Такая структура часто становится ловушкой для поздних покупателей.",
+                "Риск резкого отката повышен. Если цена перестанет идти выше, поздних лонгистов могут начать выбивать вниз.",
+                "Не покупать поздно. Смотреть на признаки истощения и возможный откат."
+            )
+
+        if oi_change is not None and oi_change < -0.5:
+            return (
+                "🟠 Рост на закрытии позиций",
+                "Цена растёт, но OI падает. Это больше похоже на закрытие шортов или снятие плечевых позиций, а не на полноценный новый тренд.",
+                "Если после такого пампа нет нового спроса, движение может быстро выдохнуться.",
+                "Ждать откат. Не заходить без подтверждения продолжения."
+            )
+
+        if abs_change >= 10:
+            return (
+                "🔴 Сильный памп, возможен перегрев",
+                "Монета уже прошла большое движение вверх. Даже если рост ещё продолжается, риск отката становится выше просто из-за скорости движения.",
+                "После таких пампов часто бывает откат, боковик или резкий разворот.",
+                "Искать не догоняющий вход, а откат / слабость / повторный тест."
+            )
+
+        return (
+            "🟡 Обычный памп",
+            "Цена быстро выросла, но по OI и funding нет сильной однозначной картины. Движение есть, но пока не ясно, это начало сильного импульса или просто короткий рывок.",
+            "Без подтверждения OI/funding такой сигнал может быть шумным.",
+            "Смотреть продолжение: удержит ли цену и появится ли новый объём."
+        )
+
+    if move_type == "DUMP":
+
+        if funding is not None and funding > 0.03 and oi_change is not None and oi_change < -0.5:
+            return (
+                "🔴 Вынос лонгистов",
+                "Цена резко падает против положительного funding. Это значит, что многие были в лонгах, а рынок пошёл против них. OI падает — позиции закрываются, возможна ликвидационная волна вниз.",
+                "После резкого слива возможен сильный отскок, потому что часть продавцов будет фиксировать прибыль.",
+                "Не шортить поздно в красную свечу. Ждать отскок или слабый повторный тест."
+            )
+
+        if funding is not None and funding > 0.03 and oi_change is not None and oi_change >= 0.5:
+            return (
+                "🔻 Продавцы усиливают давление",
+                "Цена падает, funding положительный, OI растёт. Поздние лонгисты под давлением, а новые позиции могут усиливать падение.",
+                "Если цена продолжит обновлять минимумы, возможна вторая волна слива.",
+                "Шорт логичнее искать после слабого отскока, а не в самом низу свечи."
+            )
+
+        if oi_change is not None and oi_change > 0.5:
+            return (
+                "🔻 Новые шорты давят цену",
+                "Цена падает, а OI растёт. Это значит, что в рынок заходят новые позиции на падение. Продавец пока активен.",
+                "Опасность в том, что если цена перестанет падать при высоком OI, шортистов могут резко выдавить вверх.",
+                "Не опаздывать с шортом. Смотреть, не появляется ли откуп и удержание цены."
+            )
+
+        if oi_change is not None and oi_change < -0.5:
+            return (
+                "🟣 Капитуляция / закрытие позиций",
+                "Цена падает, и OI тоже падает. Позиции закрываются. Это может быть ликвидация лонгов или фиксация прибыли шортистами.",
+                "После такого часто бывает отскок, особенно если funding остаётся отрицательным.",
+                "Не шортить бездумно внизу. Смотреть реакцию: появляется ли покупатель."
+            )
+
+        if abs_change >= 10:
+            return (
+                "🔴 Сильный дамп, возможен отскок",
+                "Монета уже прошла большое движение вниз. Продавец сильный, но после резких дампов часто приходит технический отскок.",
+                "Опасность — поздний шорт прямо перед откупом.",
+                "Лучше ждать слабый отскок и только потом оценивать продолжение вниз."
+            )
+
+        return (
+            "🔻 Обычный дамп",
+            "Цена быстро упала, но по OI и funding нет сильной однозначной картины. Движение есть, но пока не ясно, это начало слива или короткий прокол.",
+            "Без подтверждения OI/funding такой сигнал может быть шумным.",
+            "Смотреть продолжение: будет ли новый продавец и обновление минимумов."
+        )
+
+    return (
+        "⚪ Неясная стадия",
+        "Недостаточно данных для оценки.",
+        "Ждать больше подтверждений.",
+        "Не принимать решение только по одному сигналу."
+    )
 
 
 def analyze(ticker):
@@ -322,7 +497,7 @@ def analyze(ticker):
         else:
             continue
 
-        if not can_send(symbol, move_type, window_name, change):
+        if best_signal is not None and abs(change) <= abs(best_signal["change"]):
             continue
 
         funding = get_funding_rate(raw_symbol)
@@ -337,8 +512,22 @@ def analyze(ticker):
         if oi is not None:
             oi_memory[symbol] = oi
 
-        signal_count = add_signal_count(symbol)
-        flow_comment = classify_flow(move_type, funding, oi_change)
+        phase, explanation, risk, action = classify_phase(
+            move_type=move_type,
+            change=change,
+            window_name=window_name,
+            funding=funding,
+            oi_change=oi_change
+        )
+
+        score = calc_smart_score(
+            move_type=move_type,
+            change=change,
+            window_name=window_name,
+            volume_24h=volume_24h,
+            funding=funding,
+            oi_change=oi_change
+        )
 
         best_signal = {
             "symbol": symbol,
@@ -352,11 +541,26 @@ def analyze(ticker):
             "funding": funding,
             "oi": oi,
             "oi_change": oi_change,
-            "flow_comment": flow_comment,
-            "signal_24h": signal_count
+            "phase": phase,
+            "explanation": explanation,
+            "risk": risk,
+            "action": action,
+            "score": score,
         }
 
-        break
+    if best_signal is None:
+        return None
+
+    if not can_send(
+        best_signal["symbol"],
+        best_signal["type"],
+        best_signal["window"],
+        best_signal["change"]
+    ):
+        return None
+
+    signal_count = add_signal_count(best_signal["symbol"])
+    best_signal["signal_24h"] = signal_count
 
     return best_signal
 
@@ -367,6 +571,7 @@ def build_message(signal):
 
     funding = signal.get("funding")
     oi_change = signal.get("oi_change")
+    score = signal.get("score", 0)
 
     funding_text = "нет данных" if funding is None else f"{funding:.3f}%"
     oi_text = "нет данных" if oi_change is None else f"{oi_change:.2f}%"
@@ -389,8 +594,20 @@ def build_message(signal):
 📦 OI:
 <b>{oi_text}</b>
 
+📌 Стадия:
+<b>{signal["phase"]}</b>
+
+⭐ Оценка:
+<b>{score}/100</b> — {score_label(score)}
+
 🧠 Что происходит:
-{signal["flow_comment"]}
+{signal["explanation"]}
+
+⚠️ Риск:
+{signal["risk"]}
+
+🔎 Что делать:
+{signal["action"]}
 
 🔁 Сигналов за 24ч:
 <b>{signal["signal_24h"]}</b>
@@ -399,8 +616,8 @@ def build_message(signal):
 """
 
 
-print("🚀 PumpDump Radar V2 started")
-send_telegram("🚀 PumpDump Radar V2 ONLINE")
+print("🚀 PumpDump Radar V3 started")
+send_telegram("🚀 PumpDump Radar V3 ONLINE")
 
 while True:
     print("[SCAN] scanning market...")
@@ -424,7 +641,9 @@ while True:
             signal["window"],
             signal["symbol"],
             signal["type"],
-            round(signal["change"], 2)
+            round(signal["change"], 2),
+            "score=",
+            signal["score"]
         )
 
     time.sleep(SCAN_SLEEP)
