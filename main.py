@@ -472,53 +472,85 @@ def calc_smart_score(move_type, change, window_name, volume_24h, funding, oi_cha
     score = 0
     abs_change = abs(change)
 
+    # =========================
+    # EARLY MOVE PRIORITY
+    # =========================
+    # Нам важнее раннее движение, а не уже поздний памп
     if abs_change >= 15:
-        score += 35
+        score += 12      # было слишком много
     elif abs_change >= 10:
-        score += 28
+        score += 16
     elif abs_change >= 7:
-        score += 22
+        score += 20
     elif abs_change >= 5:
+        score += 24
+    elif abs_change >= 2:
+        score += 22
+    elif abs_change >= 1:
         score += 16
     else:
-        score += 10
-
-    if window_name in ("5m", "10m"):
-        score += 15
-    elif window_name in ("15m", "20m"):
-        score += 12
-    elif window_name == "30m":
         score += 8
-    else:
-        score += 5
 
+    # =========================
+    # FAST WINDOW BONUS
+    # =========================
+    if window_name in ("5m", "10m"):
+        score += 20
+    elif window_name in ("15m", "20m"):
+        score += 14
+    elif window_name == "30m":
+        score += 7
+    else:
+        score += 3
+
+    # =========================
+    # VOLUME FILTER
+    # =========================
     if volume_24h >= 1_000_000_000:
-        score += 15
+        score += 10
     elif volume_24h >= 300_000_000:
-        score += 12
+        score += 10
     elif volume_24h >= 100_000_000:
         score += 8
     elif volume_24h >= 30_000_000:
         score += 5
 
+    # =========================
+    # FUNDING TRAP
+    # =========================
     if funding is not None:
-        if move_type == "PUMP" and funding < -0.05:
-            score += 15
-        elif move_type == "DUMP" and funding > 0.05:
-            score += 15
+        if move_type == "PUMP" and funding < -0.03:
+            score += 18   # шорты могут быть топливом для пампа
+        elif move_type == "DUMP" and funding > 0.03:
+            score += 18   # лонги могут быть топливом для дампа
         elif abs(funding) >= 0.10:
-            score += 10
+            score += 8
         elif abs(funding) >= 0.03:
-            score += 6
-
-    if oi_change is not None:
-        if abs(oi_change) >= 5:
-            score += 15
-        elif abs(oi_change) >= 2:
-            score += 10
-        elif abs(oi_change) >= 0.5:
             score += 5
 
+    # =========================
+    # OI LOGIC
+    # =========================
+    if oi_change is not None:
+        if oi_change >= 2:
+            score += 18   # новые позиции заходят
+        elif oi_change >= 0.5:
+            score += 10
+        elif oi_change < -2:
+            score -= 8    # движение может быть уже squeeze/exhaustion
+
+    # =========================
+    # LATE MOVE PENALTY
+    # =========================
+    if abs_change >= 10 and oi_change is not None and oi_change < 0:
+        score -= 20
+
+    if abs_change >= 15:
+        score -= 15
+
+    # =========================
+    # CMC QUALITY
+    # =========================
     if cmc_data:
         rank = cmc_data.get("rank")
         market_cap = cmc_data.get("market_cap")
@@ -527,9 +559,9 @@ def calc_smart_score(move_type, change, window_name, volume_24h, funding, oi_cha
             try:
                 rank = int(rank)
                 if rank <= 100:
-                    score += 8
-                elif rank <= 300:
                     score += 5
+                elif rank <= 300:
+                    score += 4
             except Exception:
                 pass
 
@@ -537,10 +569,9 @@ def calc_smart_score(move_type, change, window_name, volume_24h, funding, oi_cha
             if market_cap < 50_000_000:
                 score -= 8
             elif market_cap > 300_000_000:
-                score += 5
+                score += 4
 
     return max(0, min(100, score))
-
 
 def score_label(score):
     if score >= 85:
