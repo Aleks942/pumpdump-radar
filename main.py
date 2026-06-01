@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+import random
 from datetime import datetime, UTC
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
