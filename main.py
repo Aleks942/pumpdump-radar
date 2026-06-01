@@ -6,43 +6,31 @@ from datetime import datetime, UTC
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD_5M = 5
-DUMP_THRESHOLD_5M = -5
+PUMP_THRESHOLD_5M = float(os.getenv("PUMP_THRESHOLD_5M", 5))
+DUMP_THRESHOLD_5M = float(os.getenv("DUMP_THRESHOLD_5M", -5))
 
-PUMP_THRESHOLD_20M = 7
-DUMP_THRESHOLD_20M = -7
+PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 7))
+DUMP_THRESHOLD_20M = float(os.getenv("DUMP_THRESHOLD_20M", -7))
 
-PUMP_THRESHOLD_30M = 7
-DUMP_THRESHOLD_30M = -7
+PUMP_THRESHOLD_30M = float(os.getenv("PUMP_THRESHOLD_30M", 7))
+DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -7))
 
-MIN_VOLUME_24H = 10000000
-ALERT_COOLDOWN = 7200
-
-TIME_WINDOWS = {
-    "5m": {
-        "bar": "5m",
-        "candles": 2,
-        "pump": PUMP_THRESHOLD_5M,
-        "dump": DUMP_THRESHOLD_5M
-    },
-    "20m": {
-        "bar": "5m",
-        "candles": 5,
-        "pump": PUMP_THRESHOLD_20M,
-        "dump": DUMP_THRESHOLD_20M
-    },
-    "30m": {
-        "bar": "5m",
-        "candles": 7,
-        "pump": PUMP_THRESHOLD_30M,
-        "dump": DUMP_THRESHOLD_30M
-    }
-}
+MIN_VOLUME_24H = float(os.getenv("MIN_VOLUME_24H", 10000000))
+ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 1800))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 120))
+SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
+MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 
 symbol_states = {}
-signal_first_seen = {}
 signal_24h_count = {}
 oi_memory = {}
+rotation_index = 0
+
+TIME_WINDOWS = {
+    "5m": {"bar": "5m", "candles": 2, "pump": PUMP_THRESHOLD_5M, "dump": DUMP_THRESHOLD_5M},
+    "20m": {"bar": "5m", "candles": 5, "pump": PUMP_THRESHOLD_20M, "dump": DUMP_THRESHOLD_20M},
+    "30m": {"bar": "5m", "candles": 7, "pump": PUMP_THRESHOLD_30M, "dump": DUMP_THRESHOLD_30M},
+}
 
 
 def send_telegram(text):
@@ -75,11 +63,52 @@ def get_market_tickers():
             print("[OKX ERROR]", data)
             return []
 
-        return data["data"]
+        tickers = data.get("data", [])
+
+        tickers = [
+            t for t in tickers
+            if "USDT-SWAP" in t.get("instId", "")
+        ]
+
+        tickers.sort(
+            key=lambda x: float(x.get("volCcy24h", 0)),
+            reverse=True
+        )
+
+        return tickers[:MAX_SYMBOLS]
 
     except Exception as e:
         print("[OKX EXCEPTION]", e)
         return []
+
+
+def get_rotation_chunk(tickers):
+    global rotation_index
+
+    total = len(tickers)
+
+    if total == 0:
+        return []
+
+    start = rotation_index * CHUNK_SIZE
+    end = start + CHUNK_SIZE
+
+    current_chunk = tickers[start:end]
+
+    if not current_chunk:
+        rotation_index = 0
+        start = 0
+        end = CHUNK_SIZE
+        current_chunk = tickers[start:end]
+
+    if end >= total:
+        rotation_index = 0
+    else:
+        rotation_index += 1
+
+    print("[ROTATION]", start, "-", min(end, total), "of", total)
+
+    return current_chunk
 
 
 def get_funding_rate(raw_symbol):
@@ -94,7 +123,6 @@ def get_funding_rate(raw_symbol):
         data = r.json()
 
         if data.get("code") != "0":
-            print("[FUNDING ERROR]", raw_symbol, data)
             return None
 
         rows = data.get("data", [])
@@ -121,7 +149,6 @@ def get_open_interest(raw_symbol):
         data = r.json()
 
         if data.get("code") != "0":
-            print("[OI ERROR]", raw_symbol, data)
             return None
 
         rows = data.get("data", [])
@@ -150,7 +177,6 @@ def get_window_move(raw_symbol, bar, candles_count):
         data = r.json()
 
         if data.get("code") != "0":
-            print("[CANDLES ERROR]", raw_symbol, data)
             return None
 
         candles = data.get("data", [])
@@ -216,18 +242,16 @@ def can_send(symbol, move_type, window, change):
             "last_alert": now,
             "max_change": change
         }
-
-        signal_first_seen[key] = now
         return True
 
     last_alert = state.get("last_alert", 0)
     old_change = state.get("max_change", change)
 
     if now - last_alert < ALERT_COOLDOWN:
-        if move_type == "PUMP" and change < old_change + 3:
+        if move_type == "PUMP" and change < old_change + 2:
             return False
 
-        if move_type == "DUMP" and change > old_change - 3:
+        if move_type == "DUMP" and change > old_change - 2:
             return False
 
     symbol_states[key] = {
@@ -244,26 +268,29 @@ def classify_flow(move_type, funding, oi_change):
 
     if move_type == "PUMP":
         if oi_change > 2:
-            return "Новые деньги заходят в рост"
+            return "Цена растёт + OI растёт: новые деньги заходят в рост"
         if oi_change < -2:
-            return "Возможный short squeeze"
+            return "Цена растёт + OI падает: возможный short squeeze"
 
     if move_type == "DUMP":
         if oi_change > 2:
-            return "Новые шорты давят цену"
+            return "Цена падает + OI растёт: новые шорты давят цену"
         if oi_change < -2:
-            return "Позиции закрываются / возможная капитуляция"
+            return "Цена падает + OI падает: позиции закрываются, возможная капитуляция"
 
-    return "Движение без сильного OI-сигнала"
+    if funding is not None:
+        if move_type == "PUMP" and funding < -0.01:
+            return "Памп против отрицательного funding: шортистов могут выносить"
+        if move_type == "DUMP" and funding > 0.01:
+            return "Дамп против положительного funding: лонгистов могут выносить"
+
+    return "Движение есть, но сильного OI/funding подтверждения пока нет"
 
 
 def analyze(ticker):
     try:
         raw_symbol = ticker["instId"]
         symbol = raw_symbol.replace("-USDT-SWAP", "USDT")
-
-        if "USDT" not in symbol:
-            return None
 
         price = float(ticker["last"])
 
@@ -274,6 +301,31 @@ def analyze(ticker):
 
         if volume_24h < MIN_VOLUME_24H:
             return None
+
+    except Exception as e:
+        print("[ANALYZE TICKER ERROR]", e)
+        return None
+
+    best_signal = None
+
+    for window_name, cfg in TIME_WINDOWS.items():
+        move = get_window_move(raw_symbol, cfg["bar"], cfg["candles"])
+
+        if move is None:
+            continue
+
+        change = move["change"]
+        move_type = None
+
+        if change >= cfg["pump"]:
+            move_type = "PUMP"
+        elif change <= cfg["dump"]:
+            move_type = "DUMP"
+        else:
+            continue
+
+        if not can_send(symbol, move_type, window_name, change):
+            continue
 
         funding = get_funding_rate(raw_symbol)
         oi = get_open_interest(raw_symbol)
@@ -286,37 +338,6 @@ def analyze(ticker):
 
         if oi is not None:
             oi_memory[symbol] = oi
-
-    except Exception as e:
-        print("[ANALYZE ERROR]", e)
-        return None
-
-    best_signal = None
-
-    for window_name, cfg in TIME_WINDOWS.items():
-        move = get_window_move(
-            raw_symbol,
-            cfg["bar"],
-            cfg["candles"]
-        )
-
-        if move is None:
-            continue
-
-        change = move["change"]
-        move_type = None
-
-        if change >= cfg["pump"]:
-            move_type = "PUMP"
-
-        elif change <= cfg["dump"]:
-            move_type = "DUMP"
-
-        else:
-            continue
-
-        if not can_send(symbol, move_type, window_name, change):
-            continue
 
         signal_count = add_signal_count(symbol)
         flow_comment = classify_flow(move_type, funding, oi_change)
@@ -344,7 +365,6 @@ def analyze(ticker):
 
 def build_message(signal):
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
-
     side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
 
     funding = signal.get("funding")
@@ -381,33 +401,32 @@ def build_message(signal):
 """
 
 
-print("🚀 PumpDump Radar started")
-
-send_telegram("🚀 PumpDump Radar ONLINE")
+print("🚀 PumpDump Radar V2 started")
+send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
 while True:
     print("[SCAN] scanning market...")
 
     tickers = get_market_tickers()
-
     print(f"[TICKERS] {len(tickers)}")
 
-    for ticker in tickers:
+    current_chunk = get_rotation_chunk(tickers)
+    print(f"[CHUNK] {len(current_chunk)}")
+
+    for ticker in current_chunk:
         signal = analyze(ticker)
 
         if not signal:
             continue
 
-        msg = build_message(signal)
-
-        send_telegram(msg)
+        send_telegram(build_message(signal))
 
         print(
             "[SIGNAL]",
             signal["window"],
             signal["symbol"],
             signal["type"],
-            signal["change"]
+            round(signal["change"], 2)
         )
 
-    time.sleep(60)
+    time.sleep(SCAN_SLEEP)
