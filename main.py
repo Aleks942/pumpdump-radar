@@ -171,7 +171,9 @@ def can_send(symbol, move_type, window, change):
 
 def analyze(ticker):
     try:
-        symbol = ticker["instId"]
+        raw_symbol = ticker["instId"]
+
+        symbol = raw_symbol.replace("-USDT-SWAP", "USDT")
 
         if "USDT" not in symbol:
             return None
