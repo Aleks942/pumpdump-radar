@@ -246,10 +246,10 @@ def can_send(symbol, move_type, window, change):
     old_change = state.get("max_change", change)
 
     if now - last_alert < ALERT_COOLDOWN:
-        if move_type == "PUMP" and change < old_change + 2:
+        if move_type == "PUMP" and change < old_change + 0.5:
             return False
 
-        if move_type == "DUMP" and change > old_change - 2:
+        if move_type == "DUMP" and change > old_change - 0.5:
             return False
 
     symbol_states[key] = {
