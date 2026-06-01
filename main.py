@@ -619,6 +619,30 @@ def build_message(signal):
 print("🚀 PumpDump Radar V3 started")
 send_telegram("🚀 PumpDump Radar V3 ONLINE")
 
+def test_cmc():
+
+    url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/map"
+
+    headers = {
+        "X-CMC_PRO_API_KEY": os.getenv("CMC_API_KEY")
+    }
+
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+
+        print("[CMC STATUS]", r.status_code)
+
+        if r.status_code == 200:
+            print("[CMC] API WORKING")
+        else:
+            print("[CMC ERROR]", r.text[:300])
+
+    except Exception as e:
+        print("[CMC EXCEPTION]", e)
+
+
+test_cmc()
+
 while True:
     print("[SCAN] scanning market...")
 
