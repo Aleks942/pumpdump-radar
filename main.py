@@ -1,7 +1,7 @@
 import os
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, UTC
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -16,7 +16,6 @@ PUMP_THRESHOLD_30M = 7
 DUMP_THRESHOLD_30M = -7
 
 MIN_VOLUME_24H = 10000000
-
 ALERT_COOLDOWN = 7200
 
 TIME_WINDOWS = {
@@ -26,14 +25,12 @@ TIME_WINDOWS = {
         "pump": PUMP_THRESHOLD_5M,
         "dump": DUMP_THRESHOLD_5M
     },
-
     "20m": {
         "bar": "5m",
         "candles": 5,
         "pump": PUMP_THRESHOLD_20M,
         "dump": DUMP_THRESHOLD_20M
     },
-
     "30m": {
         "bar": "5m",
         "candles": 7,
@@ -45,83 +42,115 @@ TIME_WINDOWS = {
 symbol_states = {}
 signal_first_seen = {}
 signal_24h_count = {}
+oi_memory = {}
 
 
 def send_telegram(text):
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
         "chat_id": CHAT_ID,
-        "text": text
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     }
 
     try:
-
-        r = requests.post(
-            url,
-            json=payload,
-            timeout=10
-        )
-
+        r = requests.post(url, json=payload, timeout=10)
         print("[TG STATUS]", r.status_code)
-
     except Exception as e:
-
         print("[TG ERROR]", e)
 
 
 def get_market_tickers():
-
     url = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
 
     try:
-
         r = requests.get(url, timeout=20)
-
         print("[OKX STATUS]", r.status_code)
 
         data = r.json()
 
         if data.get("code") != "0":
-
             print("[OKX ERROR]", data)
-
             return []
 
         return data["data"]
 
     except Exception as e:
-
         print("[OKX EXCEPTION]", e)
-
         return []
 
 
-def get_window_move(symbol, bar, candles_count):
+def get_funding_rate(raw_symbol):
+    url = "https://www.okx.com/api/v5/public/funding-rate"
 
+    params = {
+        "instId": raw_symbol
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        data = r.json()
+
+        if data.get("code") != "0":
+            print("[FUNDING ERROR]", raw_symbol, data)
+            return None
+
+        rows = data.get("data", [])
+
+        if not rows:
+            return None
+
+        return float(rows[0].get("fundingRate", 0)) * 100
+
+    except Exception as e:
+        print("[FUNDING EXCEPTION]", raw_symbol, e)
+        return None
+
+
+def get_open_interest(raw_symbol):
+    url = "https://www.okx.com/api/v5/public/open-interest"
+
+    params = {
+        "instId": raw_symbol
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        data = r.json()
+
+        if data.get("code") != "0":
+            print("[OI ERROR]", raw_symbol, data)
+            return None
+
+        rows = data.get("data", [])
+
+        if not rows:
+            return None
+
+        return float(rows[0].get("oi", 0))
+
+    except Exception as e:
+        print("[OI EXCEPTION]", raw_symbol, e)
+        return None
+
+
+def get_window_move(raw_symbol, bar, candles_count):
     url = "https://www.okx.com/api/v5/market/candles"
 
     params = {
-        "instId": symbol,
+        "instId": raw_symbol,
         "bar": bar,
         "limit": str(candles_count)
     }
 
     try:
-
-        r = requests.get(
-            url,
-            params=params,
-            timeout=20
-        )
-
+        r = requests.get(url, params=params, timeout=20)
         data = r.json()
 
         if data.get("code") != "0":
-
-            print("[CANDLES ERROR]", symbol)
-
+            print("[CANDLES ERROR]", raw_symbol, data)
             return None
 
         candles = data.get("data", [])
@@ -130,20 +159,15 @@ def get_window_move(symbol, bar, candles_count):
             return None
 
         newest = candles[0]
-
         oldest = candles[-1]
 
         start_price = float(oldest[1])
-
         end_price = float(newest[4])
 
         if start_price == 0:
             return None
 
-        change = (
-            (end_price - start_price)
-            / start_price
-        ) * 100
+        change = ((end_price - start_price) / start_price) * 100
 
         return {
             "start_price": start_price,
@@ -152,77 +176,59 @@ def get_window_move(symbol, bar, candles_count):
         }
 
     except Exception as e:
-
-        print("[CANDLES EXCEPTION]", symbol, e)
-
+        print("[CANDLES EXCEPTION]", raw_symbol, e)
         return None
 
 
 def clean_old_signal_counts():
-
     now = time.time()
 
     for symbol in list(signal_24h_count.keys()):
-
         signal_24h_count[symbol] = [
             t for t in signal_24h_count[symbol]
             if now - t < 86400
         ]
 
         if not signal_24h_count[symbol]:
-
             del signal_24h_count[symbol]
 
 
 def add_signal_count(symbol):
-
     now = time.time()
 
     if symbol not in signal_24h_count:
-
         signal_24h_count[symbol] = []
 
     signal_24h_count[symbol].append(now)
-
     clean_old_signal_counts()
 
-    return len(signal_24h_count[symbol])
+    return len(signal_24h_count.get(symbol, []))
 
 
 def can_send(symbol, move_type, window, change):
-
     now = time.time()
-
     key = f"{symbol}_{move_type}_{window}"
 
     state = symbol_states.get(key)
 
     if state is None:
-
         symbol_states[key] = {
             "last_alert": now,
             "max_change": change
         }
 
         signal_first_seen[key] = now
-
         return True
 
     last_alert = state.get("last_alert", 0)
-
     old_change = state.get("max_change", change)
 
     if now - last_alert < ALERT_COOLDOWN:
+        if move_type == "PUMP" and change < old_change + 3:
+            return False
 
-        if move_type == "PUMP":
-
-            if change < old_change + 3:
-                return False
-
-        if move_type == "DUMP":
-
-            if change > old_change - 3:
-                return False
+        if move_type == "DUMP" and change > old_change - 3:
+            return False
 
     symbol_states[key] = {
         "last_alert": now,
@@ -232,16 +238,29 @@ def can_send(symbol, move_type, window, change):
     return True
 
 
+def classify_flow(move_type, funding, oi_change):
+    if oi_change is None:
+        return "OI пока нет данных"
+
+    if move_type == "PUMP":
+        if oi_change > 2:
+            return "Новые деньги заходят в рост"
+        if oi_change < -2:
+            return "Возможный short squeeze"
+
+    if move_type == "DUMP":
+        if oi_change > 2:
+            return "Новые шорты давят цену"
+        if oi_change < -2:
+            return "Позиции закрываются / возможная капитуляция"
+
+    return "Движение без сильного OI-сигнала"
+
+
 def analyze(ticker):
-
     try:
-
         raw_symbol = ticker["instId"]
-
-        symbol = raw_symbol.replace(
-            "-USDT-SWAP",
-            "USDT"
-        )
+        symbol = raw_symbol.replace("-USDT-SWAP", "USDT")
 
         if "USDT" not in symbol:
             return None
@@ -251,23 +270,30 @@ def analyze(ticker):
         if price < 0.01:
             return None
 
-        volume_24h = float(
-            ticker["volCcy24h"]
-        )
+        volume_24h = float(ticker["volCcy24h"])
 
         if volume_24h < MIN_VOLUME_24H:
             return None
 
+        funding = get_funding_rate(raw_symbol)
+        oi = get_open_interest(raw_symbol)
+
+        oi_change = None
+        old_oi = oi_memory.get(symbol)
+
+        if oi is not None and old_oi is not None and old_oi > 0:
+            oi_change = ((oi - old_oi) / old_oi) * 100
+
+        if oi is not None:
+            oi_memory[symbol] = oi
+
     except Exception as e:
-
         print("[ANALYZE ERROR]", e)
-
         return None
 
     best_signal = None
 
     for window_name, cfg in TIME_WINDOWS.items():
-
         move = get_window_move(
             raw_symbol,
             cfg["bar"],
@@ -278,29 +304,22 @@ def analyze(ticker):
             continue
 
         change = move["change"]
-
         move_type = None
 
         if change >= cfg["pump"]:
-
             move_type = "PUMP"
 
         elif change <= cfg["dump"]:
-
             move_type = "DUMP"
 
         else:
             continue
 
-        if not can_send(
-            symbol,
-            move_type,
-            window_name,
-            change
-        ):
+        if not can_send(symbol, move_type, window_name, change):
             continue
 
         signal_count = add_signal_count(symbol)
+        flow_comment = classify_flow(move_type, funding, oi_change)
 
         best_signal = {
             "symbol": symbol,
@@ -311,6 +330,10 @@ def analyze(ticker):
             "end_price": move["end_price"],
             "price": price,
             "volume": volume_24h,
+            "funding": funding,
+            "oi": oi,
+            "oi_change": oi_change,
+            "flow_comment": flow_comment,
             "signal_24h": signal_count
         }
 
@@ -320,49 +343,49 @@ def analyze(ticker):
 
 
 def build_message(signal):
-
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
 
+    side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
+
+    funding = signal.get("funding")
+    oi_change = signal.get("oi_change")
+
+    funding_text = "нет данных" if funding is None else f"{funding:.3f}%"
+    oi_text = "нет данных" if oi_change is None else f"{oi_change:.2f}%"
+
     return f"""
-{emoji} PumpDump Radar
+{emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
-Биржа:
-OKX
+⏱ Период: <b>{signal["window"]}</b>
+📈 Движение: <b>{signal["change"]:.2f}%</b>
 
-Период:
-{signal["window"]}
+💰 Цена:
+<code>{signal["start_price"]} → {signal["end_price"]}</code>
 
-Монета:
-{signal["symbol"]}
+📊 Объём 24ч:
+<b>{signal["volume"]:,.0f}</b>
 
-Тип:
-{signal["type"]}
+💸 Funding:
+<b>{funding_text}</b>
 
-Движение:
-{signal["change"]:.2f}%
+📦 OI:
+<b>{oi_text}</b>
 
-Цена:
-{signal["start_price"]} → {signal["end_price"]}
+🧠 Что происходит:
+{signal["flow_comment"]}
 
-Объём 24ч:
-{signal["volume"]:,.0f}
+🔁 Сигналов за 24ч:
+<b>{signal["signal_24h"]}</b>
 
-Signal 24h:
-{signal["signal_24h"]}
-
-Время:
-{datetime.utcnow().strftime("%H:%M UTC")}
+🕒 {datetime.now(UTC).strftime("%H:%M UTC")}
 """
 
 
 print("🚀 PumpDump Radar started")
 
-send_telegram(
-    "🚀 PumpDump Radar ONLINE"
-)
+send_telegram("🚀 PumpDump Radar ONLINE")
 
 while True:
-
     print("[SCAN] scanning market...")
 
     tickers = get_market_tickers()
@@ -370,7 +393,6 @@ while True:
     print(f"[TICKERS] {len(tickers)}")
 
     for ticker in tickers:
-
         signal = analyze(ticker)
 
         if not signal:
