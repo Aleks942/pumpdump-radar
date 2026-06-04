@@ -495,6 +495,7 @@ def build_message(signal):
 {pressure_state}
 
 💥 Ликвидации:
+{liq_strength}
 L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
