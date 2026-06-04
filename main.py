@@ -334,25 +334,6 @@ def analyze(ticker):
         funding = get_funding_rate(raw_symbol)
         oi = get_open_interest(raw_symbol)
 
-        if symbol == "OPNUSDT":
-            print("[OPN_OI]", oi)
-        
-            if symbol not in OI_HISTORY:
-                print("[OPN_HISTORY] EMPTY")
-            else:
-                print(
-                    "[OPN_HISTORY]",
-                    len(OI_HISTORY[symbol])
-                )
-        
-        print("[OI]", symbol, oi)
-
-        if symbol == "OPNUSDT":
-            print(
-                "[OI_HISTORY]",
-                symbol,
-                len(OI_HISTORY.get(symbol, []))
-            )
         oi_change = None
 
         if oi is not None:
