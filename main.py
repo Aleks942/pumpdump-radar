@@ -363,7 +363,22 @@ def analyze(ticker):
 
         break
 
-    return best_signal
+        return best_signal
+
+STATE_MAP = {
+    "STRONG_NEW_MONEY": "Заходят крупные деньги",
+    "BUILDING_MONEY": "Деньги постепенно заходят",
+    "WEAK_FLOW": "Слабый приток денег",
+    "NO_CLEAR_MONEY": "Притока денег не видно"
+}
+
+PRESSURE_MAP = {
+    "STRONG_BUY_PRESSURE": "Покупатели очень активны",
+    "BUY_PRESSURE": "Покупатели сильнее",
+    "BALANCED": "Покупатели и продавцы равны",
+    "SELL_PRESSURE": "Продавцы сильнее",
+    "STRONG_SELL_PRESSURE": "Продавцы очень активны"
+}
 
 
 def build_message(signal):
