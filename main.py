@@ -388,123 +388,68 @@ PRESSURE_MAP = {
     "STRONG_SELL_PRESSURE": "Продавцы очень активны"
 }
 
-
 def build_message(signal):
+
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
-    side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
-
-    funding = signal.get("funding")
-    oi_change = signal.get("oi_change")
-
-    funding_text = "нет данных" if funding is None else f"{funding:.3f}%"
-    oi_text = "нет данных" if oi_change is None else f"{oi_change:.2f}%"
-
-    # НОВЫЙ БЛОК
-    money_text = ""
 
     money = signal.get("money")
+    liquidations = signal.get("liquidations")
+
+    money_state = "нет данных"
+    pressure_state = "нет данных"
+    verdict = "➖"
 
     if money:
-    
+
         money_state = STATE_MAP.get(
             money.get("money_state"),
             money.get("money_state")
         )
-    
-        pressure = PRESSURE_MAP.get(
+
+        pressure_state = PRESSURE_MAP.get(
             money.get("pressure"),
             money.get("pressure")
         )
-    
-        volume_ratio = money.get("volume_ratio", 1)
-    
+
         if (
             "BUY" in money.get("pressure", "")
             and signal["type"] == "DUMP"
         ):
-            verdict = "🔥 Возможен сильный отскок вверх"
-    
+            verdict = "📈 Отскок вверх ⭐⭐⭐⭐"
+
         elif (
             "SELL" in money.get("pressure", "")
             and signal["type"] == "PUMP"
         ):
-            verdict = "🔥 Возможен сильный откат вниз"
-    
+            verdict = "📉 Откат вниз ⭐⭐⭐⭐"
+
         elif money.get("money_score", 0) >= 4:
-            verdict = "⚠️ За движением стоят реальные деньги"
-    
+            verdict = "⚠️ Реальные деньги в движении"
+
         else:
-            verdict = "➖ Сигнал пока слабый"
-    
-        money_text = f"""
-    
-    💰 Деньги:
-    {money_state}
-    
-    ⚖️ Давление:
-    {pressure}
-    
-    📊 Объём:
-    в {volume_ratio:.1f} раз выше нормы
-    
-    🎯 Вывод:
-    {verdict}
-    """
-    
-        liquidations = signal.get("liquidations")
-    
-        liquidation_text = ""
-    
-        if liquidations:
-            liquidation_text = f"""
-    
-    💥 Ликвидации:
-    
-    📉 Лонги:
-    ${liquidations['long_liq']:,.0f}
-    
-    📈 Шорты:
-    ${liquidations['short_liq']:,.0f}
-    
-    🔥 Сила:
-    {liquidations['power']}
-    
-    🏦 Биржи:
-    {liquidations['exchanges']}
-    """
-        # RETURN НИЖЕ
-        return f"""
-    
-{emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
+            verdict = "➖ Сигнал слабый"
 
-⏱ Период: <b>{signal["window"]}</b>
-📈 Движение: <b>{signal["change"]:.2f}%</b>
+    long_liq = 0
+    short_liq = 0
 
-💰 Цена:
-<code>{signal["start_price"]} → {signal["end_price"]}</code>
+    if liquidations:
+        long_liq = liquidations.get("long_liq", 0)
+        short_liq = liquidations.get("short_liq", 0)
 
-📊 Объём 24ч:
-<b>{signal["volume"]:,.0f}</b>
+    return f"""
+{emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}%
 
-💸 Funding:
-<b>{funding_text}</b>
+💰 {money_state}
 
-📦 OI:
-<b>{oi_text}</b>
+⚖️ {pressure_state}
 
-🧠 Что происходит:
-{signal["flow_comment"]}
+💥 Ликвидации:
+L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
 
-🔁 Сигналов за 24ч:
-<b>{signal["signal_24h"]}</b>
+🎯 {verdict}
 
-{money_text}
-
-{liquidation_text}
-
-🕒 {datetime.now(UTC).strftime("%H:%M UTC")}
+🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
-
 
 print("🚀 PumpDump Radar V2 started")
 send_telegram("🚀 PumpDump Radar V2 ONLINE")
