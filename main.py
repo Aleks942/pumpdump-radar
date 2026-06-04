@@ -31,6 +31,7 @@ MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 symbol_states = {}
 signal_24h_count = {}
 OI_HISTORY = {}
+print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
 TIME_WINDOWS = {
