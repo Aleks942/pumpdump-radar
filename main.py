@@ -340,8 +340,10 @@ def analyze(ticker):
 
         signal_count = add_signal_count(symbol)
         flow_comment = classify_flow(move_type, funding, oi_change)
-
-        best_signal = {
+        
+        money = analyze_new_money(raw_symbol)
+        
+        best_signal = { 
             "symbol": symbol,
             "type": move_type,
             "window": window_name,
@@ -355,6 +357,8 @@ def analyze(ticker):
             "oi_change": oi_change,
             "flow_comment": flow_comment,
             "signal_24h": signal_count
+
+            "money": money,
         }
 
         break
