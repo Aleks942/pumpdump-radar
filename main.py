@@ -390,59 +390,54 @@ PRESSURE_MAP = {
 
 def build_message(signal):
 
-```
-emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
-side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
+    emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
+    side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
 
-money = signal.get("money")
-liquidations = signal.get("liquidations")
+    money = signal.get("money")
+    liquidations = signal.get("liquidations")
 
-money_state = "Нет данных"
-pressure_state = "Нет данных"
+    money_state = "Нет данных"
+    pressure_state = "Нет данных"
 
-setup = "НЕТ"
+    setup = "НЕТ"
 
-if money:
+    if money:
 
-    money_state = STATE_MAP.get(
-        money.get("money_state"),
-        money.get("money_state")
-    )
+        money_state = STATE_MAP.get(
+            money.get("money_state"),
+            money.get("money_state")
+        )
 
-    pressure_state = PRESSURE_MAP.get(
-        money.get("pressure"),
-        money.get("pressure")
-    )
+        pressure_state = PRESSURE_MAP.get(
+            money.get("pressure"),
+            money.get("pressure")
+        )
 
-    pressure = money.get("pressure", "")
-    score = money.get("money_score", 0)
+        pressure = money.get("pressure", "")
+        score = money.get("money_score", 0)
 
-    # ДАМП -> ищем отскок вверх
-    if (
-        signal["type"] == "DUMP"
-        and "BUY" in pressure
-        and score >= 3
-    ):
-        setup = "ЛОНГ ⭐⭐⭐⭐"
+        if (
+            signal["type"] == "DUMP"
+            and "BUY" in pressure
+            and score >= 3
+        ):
+            setup = "ЛОНГ ⭐⭐⭐⭐"
 
-    # ПАМП -> ищем откат вниз
-    elif (
-        signal["type"] == "PUMP"
-        and "SELL" in pressure
-        and score >= 2
-    ):
-        setup = "ШОРТ ⭐⭐⭐⭐"
+        elif (
+            signal["type"] == "PUMP"
+            and "SELL" in pressure
+            and score >= 2
+        ):
+            setup = "ШОРТ ⭐⭐⭐⭐"
 
-long_liq = 0
-short_liq = 0
+    long_liq = 0
+    short_liq = 0
 
-if liquidations:
-    long_liq = liquidations.get("long_liq", 0)
-    short_liq = liquidations.get("short_liq", 0)
+    if liquidations:
+        long_liq = liquidations.get("long_liq", 0)
+        short_liq = liquidations.get("short_liq", 0)
 
-return f"""
-```
-
+    return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
 📈 Движение: {signal["change"]:.2f}%
@@ -460,7 +455,6 @@ L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
-
 
 print("🚀 PumpDump Radar V2 started")
 send_telegram("🚀 PumpDump Radar V2 ONLINE")
