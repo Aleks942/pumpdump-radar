@@ -340,20 +340,7 @@ def analyze(ticker):
         if symbol not in OI_HISTORY:
             OI_HISTORY[symbol] = []
 
-        if symbol == "LABUSDT":
-            print("[LAB_LEN]", len(OI_HISTORY[symbol]))
-
-        if symbol == "LABUSDT":
-            print("[LAB_KEYS]", len(OI_HISTORY))
-    
         OI_HISTORY[symbol].append(oi)
-
-        if symbol == "LABUSDT":
-            print(
-                "[LAB_HISTORY]",
-                len(OI_HISTORY[symbol]),
-                oi
-            )
     
         if len(OI_HISTORY[symbol]) > 20:
             OI_HISTORY[symbol].pop(0)
