@@ -437,7 +437,7 @@ def build_message(signal):
         long_liq = liquidations.get("long_liq", 0)
         short_liq = liquidations.get("short_liq", 0)
 
-return f"""
+    return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
 ⏱ Период: {signal["window"]}
