@@ -433,6 +433,27 @@ def build_message(signal):
     money = signal.get("money")
     liquidations = signal.get("liquidations")
 
+    oi_change = signal.get("oi_change")
+
+    oi_text = "нет данных"
+    
+    if oi_change is not None:
+    
+        if oi_change >= 5:
+            oi_text = f"🟢 +{oi_change:.2f}% (заходят деньги)"
+    
+        elif oi_change >= 2:
+            oi_text = f"🟡 +{oi_change:.2f}%"
+    
+        elif oi_change <= -5:
+            oi_text = f"🔴 {oi_change:.2f}% (деньги выходят)"
+    
+        elif oi_change <= -2:
+            oi_text = f"🟠 {oi_change:.2f}%"
+    
+        else:
+            oi_text = f"{oi_change:.2f}%"
+
     money_state = "Нет данных"
     pressure_state = "Нет данных"
 
