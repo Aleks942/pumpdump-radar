@@ -581,8 +581,22 @@ def build_message(signal):
         ):
             setup = "ШОРТ ⭐⭐⭐⭐"
 
-    long_liq = 0
-    short_liq = 0
+        if (
+            signal["type"] == "PUMP"
+            and oi_change is not None
+            and oi_change <= -5
+        ):
+            setup = "ШОРТ ⭐⭐⭐⭐⭐"
+        
+        if (
+            signal["type"] == "DUMP"
+            and oi_change is not None
+            and oi_change <= -5
+        ):
+            setup = "ЛОНГ ⭐⭐⭐⭐⭐"
+        
+            long_liq = 0
+            short_liq = 0
 
     if liquidations:
         long_liq = liquidations.get("long_liq", 0)
