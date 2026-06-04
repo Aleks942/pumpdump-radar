@@ -341,6 +341,13 @@ def analyze(ticker):
             OI_HISTORY[symbol] = []
 
         OI_HISTORY[symbol].append(oi)
+
+        print(
+            "[OI_LEN]",
+            symbol,
+            len(OI_HISTORY[symbol])
+        )
+        
     
         if len(OI_HISTORY[symbol]) > 20:
             OI_HISTORY[symbol].pop(0)
