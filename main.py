@@ -585,13 +585,16 @@ def build_message(signal):
             signal["type"] == "PUMP"
             and oi_change is not None
             and oi_change <= -7
+            and abs(signal["change"]) >= 7
         ):
-            setup = "ШОРТ ⭐⭐⭐⭐⭐"
+            setup = "ШОРТ ⭐⭐⭐⭐⭐"        
+        
         
         if (
             signal["type"] == "DUMP"
             and oi_change is not None
             and oi_change <= -7
+            and abs(signal["change"]) >= 7
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐⭐"
         
