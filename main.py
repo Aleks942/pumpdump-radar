@@ -308,6 +308,29 @@ def classify_flow(move_type, funding, oi_change):
 
     return "Движение есть, но сильного OI/funding подтверждения пока нет"
 
+def classify_oi_flow(move_type, oi_change):
+
+    if oi_change is None:
+        return "Нет данных"
+
+    if move_type == "PUMP":
+
+        if oi_change >= 3:
+            return "🟢 Новые деньги заходят в рост"
+
+        if oi_change <= -3:
+            return "🚨 SHORT SQUEEZE"
+
+    if move_type == "DUMP":
+
+        if oi_change >= 3:
+            return "🔴 Новые шорты давят цену"
+
+        if oi_change <= -3:
+            return "🟠 Капитуляция"
+
+    return "⚪ Существенных изменений нет"
+
 
 def analyze(ticker):
     try:
