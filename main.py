@@ -470,7 +470,7 @@ def build_message(signal):
     long_liq = 0
     short_liq = 0
 
-     if liquidations:
+    if liquidations:
         long_liq = liquidations.get("long_liq", 0)
         short_liq = liquidations.get("short_liq", 0)
 
