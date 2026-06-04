@@ -486,6 +486,8 @@ def build_message(signal):
 
 🎯 СЕТАП: {setup}
 
+⭐ Качество: {quality}/10
+
 💰 Деньги:
 {money_state}
 
