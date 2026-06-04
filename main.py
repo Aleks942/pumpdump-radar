@@ -436,20 +436,24 @@ def build_message(signal):
         long_liq = liquidations.get("long_liq", 0)
         short_liq = liquidations.get("short_liq", 0)
 
+    side_text = "ПАМП" if signal["type"] == "PUMP" else "ДАМП"
+
     return f"""
-{emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}%
-
-💰 {money_state}
-
-⚖️ {pressure_state}
-
-💥 Ликвидации:
-L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
-
-🎯 {verdict}
-
-🕒 {datetime.now(UTC).strftime("%H:%M")}
-"""
+    {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
+    
+    📈 Движение: {signal["change"]:.2f}%
+    
+    💰 {money_state}
+    
+    ⚖️ {pressure_state}
+    
+    💥 Ликвидации:
+    L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
+    
+    🎯 {verdict}
+    
+    🕒 {datetime.now(UTC).strftime("%H:%M")}
+    """
 
 print("🚀 PumpDump Radar V2 started")
 send_telegram("🚀 PumpDump Radar V2 ONLINE")
