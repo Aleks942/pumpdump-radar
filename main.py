@@ -404,23 +404,51 @@ def build_message(signal):
 
     money = signal.get("money")
 
-    if money:
-        money_text = f"""
+if money:
 
-💰 Новые деньги:
-<b>{money['money_state']}</b>
+    money_state = STATE_MAP.get(
+        money.get("money_state"),
+        money.get("money_state")
+    )
 
-📊 Money Score:
-<b>{money['money_score']}</b>
+    pressure = PRESSURE_MAP.get(
+        money.get("pressure"),
+        money.get("pressure")
+    )
 
-📦 OI Flow:
-<b>{money['oi_change_pct']}%</b>
+    volume_ratio = money.get("volume_ratio", 1)
 
-⚖️ Pressure:
-<b>{money['pressure']}</b>
+    if (
+        "BUY" in money.get("pressure", "")
+        and signal["type"] == "DUMP"
+    ):
+        verdict = "🔥 Возможен сильный отскок вверх"
 
-📈 Volume Ratio:
-<b>x{money['volume_ratio']}</b>
+    elif (
+        "SELL" in money.get("pressure", "")
+        and signal["type"] == "PUMP"
+    ):
+        verdict = "🔥 Возможен сильный откат вниз"
+
+    elif money.get("money_score", 0) >= 4:
+        verdict = "⚠️ За движением стоят реальные деньги"
+
+    else:
+        verdict = "➖ Сигнал пока слабый"
+
+    money_text = f"""
+
+💰 Деньги:
+{money_state}
+
+⚖️ Давление:
+{pressure}
+
+📊 Объём:
+в {volume_ratio:.1f} раз выше нормы
+
+🎯 Вывод:
+{verdict}
 """
 
     liquidations = signal.get("liquidations")
