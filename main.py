@@ -338,6 +338,9 @@ def analyze(ticker):
     
         if symbol not in OI_HISTORY:
             OI_HISTORY[symbol] = []
+
+        if symbol == "LABUSDT":
+            print("[LAB_KEYS]", len(OI_HISTORY))
     
         OI_HISTORY[symbol].append(oi)
 
