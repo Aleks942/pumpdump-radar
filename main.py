@@ -312,6 +312,28 @@ def analyze(ticker):
 
     best_signal = None
 
+    funding = get_funding_rate(raw_symbol)
+    oi = get_open_interest(raw_symbol)
+    
+    oi_change = None
+    
+    if oi is not None:
+    
+        if symbol not in OI_HISTORY:
+            OI_HISTORY[symbol] = []
+    
+        OI_HISTORY[symbol].append(oi)
+    
+        if len(OI_HISTORY[symbol]) > 20:
+            OI_HISTORY[symbol].pop(0)
+    
+        if len(OI_HISTORY[symbol]) >= 15:
+    
+            old_oi = OI_HISTORY[symbol][0]
+    
+            if old_oi > 0:
+                oi_change = ((oi - old_oi) / old_oi) * 100
+
     for window_name, cfg in TIME_WINDOWS.items():
         move = get_window_move(raw_symbol, cfg["bar"], cfg["candles"])
 
@@ -330,30 +352,6 @@ def analyze(ticker):
 
         if not can_send(symbol, move_type, window_name, change):
             continue
-
-        funding = get_funding_rate(raw_symbol)
-        oi = get_open_interest(raw_symbol)
-
-        oi_change = None
-
-        if oi is not None:
-        
-            if symbol not in OI_HISTORY:
-                OI_HISTORY[symbol] = []
-        
-            OI_HISTORY[symbol].append(oi)
-        
-            if len(OI_HISTORY[symbol]) > 20:
-                OI_HISTORY[symbol].pop(0)
-        
-            if len(OI_HISTORY[symbol]) >= 15:
-        
-                old_oi = OI_HISTORY[symbol][0]
-        
-                if old_oi > 0:
-                    oi_change = (
-                        (oi - old_oi) / old_oi
-                    ) * 100
 
         signal_count = add_signal_count(symbol)
         flow_comment = classify_flow(move_type, funding, oi_change)
