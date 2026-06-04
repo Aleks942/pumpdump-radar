@@ -521,7 +521,10 @@ def build_message(signal):
     liquidations = signal.get("liquidations")
 
     oi_change = signal.get("oi_change")
-    oi_flow = classify_oi_flow(oi_change)
+    oi_flow = classify_oi_flow(
+        signal["type"],
+        oi_change
+    )
 
     oi_text = "нет данных"
     
