@@ -356,7 +356,7 @@ def analyze(ticker):
             "oi": oi,
             "oi_change": oi_change,
             "flow_comment": flow_comment,
-            "signal_24h": signal_count
+            "signal_24h": signal_count,
 
             "money": money,
         }
