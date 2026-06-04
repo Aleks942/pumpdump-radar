@@ -376,6 +376,31 @@ def build_message(signal):
     funding_text = "нет данных" if funding is None else f"{funding:.3f}%"
     oi_text = "нет данных" if oi_change is None else f"{oi_change:.2f}%"
 
+    # НОВЫЙ БЛОК
+    money_text = ""
+
+    money = signal.get("money")
+
+    if money:
+        money_text = f"""
+
+💰 Новые деньги:
+<b>{money['money_state']}</b>
+
+📊 Money Score:
+<b>{money['money_score']}</b>
+
+📦 OI Flow:
+<b>{money['oi_change_pct']}%</b>
+
+⚖️ Pressure:
+<b>{money['pressure']}</b>
+
+📈 Volume Ratio:
+<b>x{money['volume_ratio']}</b>
+"""
+
+    # RETURN НИЖЕ
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
@@ -399,6 +424,8 @@ def build_message(signal):
 
 🔁 Сигналов за 24ч:
 <b>{signal["signal_24h"]}</b>
+
+{money_text}
 
 🕒 {datetime.now(UTC).strftime("%H:%M UTC")}
 """
