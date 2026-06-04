@@ -352,7 +352,7 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) > 20:
             OI_HISTORY[symbol].pop(0)
     
-        if len(OI_HISTORY[symbol]) >= 5:
+        if len(OI_HISTORY[symbol]) >= 3:
     
             old_oi = OI_HISTORY[symbol][0]
     
