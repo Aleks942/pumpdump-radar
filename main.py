@@ -350,7 +350,7 @@ def analyze(ticker):
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
         
-        best_signal = { 
+        best_signal = {
             "symbol": symbol,
             "type": move_type,
             "window": window_name,
@@ -364,14 +364,14 @@ def analyze(ticker):
             "oi_change": oi_change,
             "flow_comment": flow_comment,
             "signal_24h": signal_count,
-            "liquidations": liquidations,
 
             "money": money,
+            "liquidations": liquidations,
         }
 
         break
 
-        return best_signal
+    return best_signal
 
 STATE_MAP = {
     "STRONG_NEW_MONEY": "Заходят крупные деньги",
@@ -470,6 +470,8 @@ ${liquidations['short_liq']:,.0f}
 <b>{signal["signal_24h"]}</b>
 
 {money_text}
+
+{liquidation_text}
 
 🕒 {datetime.now(UTC).strftime("%H:%M UTC")}
 """
