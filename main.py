@@ -355,6 +355,8 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) >= 3:
     
             old_oi = OI_HISTORY[symbol][0]
+            
+            print("[OLD_OI]", symbol, old_oi, oi)
     
             if old_oi > 0:
                 oi_change = ((oi - old_oi) / old_oi) * 100
