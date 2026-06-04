@@ -34,9 +34,26 @@ OI_HISTORY = {}
 rotation_index = 0
 
 TIME_WINDOWS = {
-    "5m": {"bar": "5m", "candles": 2, "pump": PUMP_THRESHOLD_5M, "dump": DUMP_THRESHOLD_5M},
-    "20m": {"bar": "5m", "candles": 5, "pump": PUMP_THRESHOLD_20M, "dump": DUMP_THRESHOLD_20M},
-    "30m": {"bar": "5m", "candles": 7, "pump": PUMP_THRESHOLD_30M, "dump": DUMP_THRESHOLD_30M},
+    "5m": {
+        "bar": "1m",
+        "candles": 5,
+        "pump": 4.0,
+        "dump": -4.0,
+    },
+
+    "20m": {
+        "bar": "1m",
+        "candles": 20,
+        "pump": 7.0,
+        "dump": -7.0,
+    },
+
+    "30m": {
+        "bar": "1m",
+        "candles": 30,
+        "pump": 8.0,
+        "dump": -8.0,
+    }
 }
 
 
@@ -490,6 +507,8 @@ def build_message(signal):
     pressure_state = "Нет данных"
 
     setup = "НЕТ"
+    if abs(signal["change"]) < 5:
+        setup = "НЕТ"
 
     if money:
 
