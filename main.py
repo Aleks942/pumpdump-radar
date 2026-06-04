@@ -404,76 +404,77 @@ def build_message(signal):
 
     money = signal.get("money")
 
-if money:
-
-    money_state = STATE_MAP.get(
-        money.get("money_state"),
-        money.get("money_state")
-    )
-
-    pressure = PRESSURE_MAP.get(
-        money.get("pressure"),
-        money.get("pressure")
-    )
-
-    volume_ratio = money.get("volume_ratio", 1)
-
-    if (
-        "BUY" in money.get("pressure", "")
-        and signal["type"] == "DUMP"
-    ):
-        verdict = "🔥 Возможен сильный отскок вверх"
-
-    elif (
-        "SELL" in money.get("pressure", "")
-        and signal["type"] == "PUMP"
-    ):
-        verdict = "🔥 Возможен сильный откат вниз"
-
-    elif money.get("money_score", 0) >= 4:
-        verdict = "⚠️ За движением стоят реальные деньги"
-
-    else:
-        verdict = "➖ Сигнал пока слабый"
-
-    money_text = f"""
-
-💰 Деньги:
-{money_state}
-
-⚖️ Давление:
-{pressure}
-
-📊 Объём:
-в {volume_ratio:.1f} раз выше нормы
-
-🎯 Вывод:
-{verdict}
-"""
-
-    liquidations = signal.get("liquidations")
-
-    liquidation_text = ""
-
-    if liquidations:
-        liquidation_text = f"""
-
-💥 Ликвидации:
-
-📉 Лонги:
-${liquidations['long_liq']:,.0f}
-
-📈 Шорты:
-${liquidations['short_liq']:,.0f}
-
-🔥 Сила:
-{liquidations['power']}
-
-🏦 Биржи:
-{liquidations['exchanges']}
-"""
-    # RETURN НИЖЕ
-    return f"""
+    if money:
+    
+        money_state = STATE_MAP.get(
+            money.get("money_state"),
+            money.get("money_state")
+        )
+    
+        pressure = PRESSURE_MAP.get(
+            money.get("pressure"),
+            money.get("pressure")
+        )
+    
+        volume_ratio = money.get("volume_ratio", 1)
+    
+        if (
+            "BUY" in money.get("pressure", "")
+            and signal["type"] == "DUMP"
+        ):
+            verdict = "🔥 Возможен сильный отскок вверх"
+    
+        elif (
+            "SELL" in money.get("pressure", "")
+            and signal["type"] == "PUMP"
+        ):
+            verdict = "🔥 Возможен сильный откат вниз"
+    
+        elif money.get("money_score", 0) >= 4:
+            verdict = "⚠️ За движением стоят реальные деньги"
+    
+        else:
+            verdict = "➖ Сигнал пока слабый"
+    
+        money_text = f"""
+    
+    💰 Деньги:
+    {money_state}
+    
+    ⚖️ Давление:
+    {pressure}
+    
+    📊 Объём:
+    в {volume_ratio:.1f} раз выше нормы
+    
+    🎯 Вывод:
+    {verdict}
+    """
+    
+        liquidations = signal.get("liquidations")
+    
+        liquidation_text = ""
+    
+        if liquidations:
+            liquidation_text = f"""
+    
+    💥 Ликвидации:
+    
+    📉 Лонги:
+    ${liquidations['long_liq']:,.0f}
+    
+    📈 Шорты:
+    ${liquidations['short_liq']:,.0f}
+    
+    🔥 Сила:
+    {liquidations['power']}
+    
+    🏦 Биржи:
+    {liquidations['exchanges']}
+    """
+        # RETURN НИЖЕ
+        return f"""
+    
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
 ⏱ Период: <b>{signal["window"]}</b>
