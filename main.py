@@ -3,6 +3,7 @@ import time
 import requests
 import random
 from datetime import datetime, UTC
+from money_flow_engine import analyze_new_money
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
