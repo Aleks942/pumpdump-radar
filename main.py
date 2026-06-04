@@ -30,7 +30,7 @@ MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 
 symbol_states = {}
 signal_24h_count = {}
-oi_memory = {}
+OI_HISTORY = {}
 rotation_index = 0
 
 TIME_WINDOWS = {
@@ -335,13 +335,25 @@ def analyze(ticker):
         oi = get_open_interest(raw_symbol)
 
         oi_change = None
-        old_oi = oi_memory.get(symbol)
-
-        if oi is not None and old_oi is not None and old_oi > 0:
-            oi_change = ((oi - old_oi) / old_oi) * 100
 
         if oi is not None:
-            oi_memory[symbol] = oi
+        
+            if symbol not in OI_HISTORY:
+                OI_HISTORY[symbol] = []
+        
+            OI_HISTORY[symbol].append(oi)
+        
+            if len(OI_HISTORY[symbol]) > 20:
+                OI_HISTORY[symbol].pop(0)
+        
+            if len(OI_HISTORY[symbol]) >= 15:
+        
+                old_oi = OI_HISTORY[symbol][0]
+        
+                if old_oi > 0:
+                    oi_change = (
+                        (oi - old_oi) / old_oi
+                    ) * 100
 
         signal_count = add_signal_count(symbol)
         flow_comment = classify_flow(move_type, funding, oi_change)
