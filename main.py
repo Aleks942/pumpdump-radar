@@ -454,6 +454,8 @@ def build_message(signal):
 print("🚀 PumpDump Radar V2 started")
 send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
+start_liquidation_streams()
+
 while True:
     print("[SCAN] scanning market...")
 
