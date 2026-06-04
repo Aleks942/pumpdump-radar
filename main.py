@@ -352,6 +352,12 @@ def analyze(ticker):
             if old_oi > 0:
                 oi_change = ((oi - old_oi) / old_oi) * 100
 
+            print(
+                "[OI_CHANGE]",
+                symbol,
+                round(oi_change, 4)
+            )
+
     for window_name, cfg in TIME_WINDOWS.items():
         move = get_window_move(raw_symbol, cfg["bar"], cfg["candles"])
 
