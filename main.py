@@ -512,6 +512,9 @@ def build_message(signal):
 💰 Деньги:
 {money_state}
 
+📦 OI:
+{oi_text}
+
 ⚖️ Давление:
 {pressure_state}
 
