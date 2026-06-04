@@ -388,6 +388,43 @@ PRESSURE_MAP = {
     "STRONG_SELL_PRESSURE": "Продавцы очень активны"
 }
 
+def liquidation_strength(long_liq, short_liq):
+    total = long_liq + short_liq
+
+    if total >= 1000000:
+        return "🔴 Очень сильные"
+
+    elif total >= 250000:
+        return "🟠 Сильные"
+
+    elif total >= 50000:
+        return "🟡 Средние"
+
+    else:
+        return "⚪ Слабые"
+
+
+def signal_quality(money, long_liq, short_liq):
+    score = 0
+
+    total = long_liq + short_liq
+
+    if total >= 50000:
+        score += 3
+
+    if total >= 250000:
+        score += 2
+
+    if money:
+        money_score = money.get("money_score", 0)
+
+        if money_score >= 4:
+            score += 3
+
+        elif money_score >= 2:
+            score += 1
+
+    return min(score, 10)
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
@@ -433,9 +470,12 @@ def build_message(signal):
     long_liq = 0
     short_liq = 0
 
-    if liquidations:
+     if liquidations:
         long_liq = liquidations.get("long_liq", 0)
         short_liq = liquidations.get("short_liq", 0)
+
+    liq_strength = liquidation_strength(long_liq, short_liq)
+    quality = signal_quality(money, long_liq, short_liq)
 
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
