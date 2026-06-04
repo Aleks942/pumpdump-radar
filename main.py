@@ -437,6 +437,27 @@ def signal_quality(money, long_liq, short_liq):
             score += 1
 
     return min(score, 10)
+
+def classify_oi_flow(change):
+
+    if change is None:
+        return "Нет данных"
+
+    if change >= 5:
+        return "🟢 Заходят новые деньги"
+
+    elif change >= 2:
+        return "🟡 Деньги постепенно заходят"
+
+    elif change <= -5:
+        return "🔴 Деньги активно выходят"
+
+    elif change <= -2:
+        return "🟠 Деньги выходят"
+
+    else:
+        return "⚪ Существенных изменений нет"
+
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
@@ -446,6 +467,7 @@ def build_message(signal):
     liquidations = signal.get("liquidations")
 
     oi_change = signal.get("oi_change")
+    oi_flow = classify_oi_flow(oi_change)
 
     oi_text = "нет данных"
     
@@ -526,6 +548,9 @@ def build_message(signal):
 
 📦 OI:
 {oi_text}
+
+💵 Поток денег:
+{oi_flow}
 
 ⚖️ Давление:
 {pressure_state}
