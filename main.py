@@ -347,6 +347,8 @@ def analyze(ticker):
         flow_comment = classify_flow(move_type, funding, oi_change)
         
         money = analyze_new_money(raw_symbol)
+        fetch_okx_liquidations(raw_symbol)
+        liquidations = get_liquidation_summary(raw_symbol)
         
         best_signal = { 
             "symbol": symbol,
@@ -362,6 +364,7 @@ def analyze(ticker):
             "oi_change": oi_change,
             "flow_comment": flow_comment,
             "signal_24h": signal_count,
+            "liquidations": liquidations,
 
             "money": money,
         }
@@ -420,6 +423,27 @@ def build_message(signal):
 <b>x{money['volume_ratio']}</b>
 """
 
+    liquidations = signal.get("liquidations")
+
+    liquidation_text = ""
+
+    if liquidations:
+        liquidation_text = f"""
+
+💥 Ликвидации:
+
+📉 Лонги:
+${liquidations['long_liq']:,.0f}
+
+📈 Шорты:
+${liquidations['short_liq']:,.0f}
+
+🔥 Сила:
+{liquidations['power']}
+
+🏦 Биржи:
+{liquidations['exchanges']}
+"""
     # RETURN НИЖЕ
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
