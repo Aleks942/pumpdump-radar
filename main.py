@@ -608,29 +608,30 @@ def build_message(signal):
         ):
             setup = "ШОРТ ⭐⭐⭐⭐"
     
+        # Сильный LONG после выноса лонгов
+
         if (
             signal["type"] == "DUMP"
+            and abs(signal["change"]) >= 5
             and long_liq >= 200000
-            and "BUY" in pressure
+            and oi_change is not None
+            and oi_change <= -3
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐⭐"
-    
+        
+        
+        # Сильный SHORT после выноса шортов
+        
         if (
             signal["type"] == "PUMP"
+            and abs(signal["change"]) >= 5
+            and short_liq >= 200000
             and oi_change is not None
-            and oi_change <= -7
-            and abs(signal["change"]) >= 7
+            and oi_change <= -3
         ):
             setup = "ШОРТ ⭐⭐⭐⭐⭐"
     
-        if (
-            signal["type"] == "DUMP"
-            and oi_change is not None
-            and oi_change <= -7
-            and abs(signal["change"]) >= 7
-        ):
-            setup = "ЛОНГ ⭐⭐⭐⭐⭐"
-    
+  
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
 
