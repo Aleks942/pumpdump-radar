@@ -642,6 +642,8 @@ while True:
             continue
 
         send_telegram(build_message(signal))
+        
+        register_signal(signal)
 
         print(
             "[SIGNAL]",
