@@ -31,7 +31,7 @@ DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -7))
 
 MIN_VOLUME_24H = float(os.getenv("MIN_VOLUME_24H", 10000000))
 ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 1800))
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 120))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 
@@ -87,7 +87,8 @@ def test_binance():
             "https://fapi.binance.com/fapi/v1/ticker/24hr",
             timeout=20
         )
-
+        print("[BINANCE TEST START]")
+        
         print("[BINANCE STATUS]", r.status_code)
 
     except Exception as e:
