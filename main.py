@@ -563,6 +563,13 @@ def build_message(signal):
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐"
 
+        if (
+            signal["type"] == "DUMP"
+            and long_liq >= 200000
+            and "BUY" in pressure
+        ):
+            setup = "ЛОНГ ⭐⭐⭐⭐⭐"
+
         elif (
             signal["type"] == "PUMP"
             and "SELL" in pressure
