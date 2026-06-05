@@ -661,6 +661,16 @@ L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
 
 print("🚀 PumpDump Radar V2 started")
 
+print("AAAAAAAAAAAA")
+
+test_binance()
+
+print("BBBBBBBBBBBB")
+
+test_bybit()
+
+print("CCCCCCCCCCCC")
+
 test_binance()
 test_bybit()
 
