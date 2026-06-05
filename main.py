@@ -45,22 +45,22 @@ TIME_WINDOWS = {
     "5m": {
         "bar": "1m",
         "candles": 5,
-        "pump": 4.0,
-        "dump": -4.0,
+        "pump": PUMP_THRESHOLD_5M,
+        "dump": DUMP_THRESHOLD_5M,
     },
 
     "20m": {
         "bar": "1m",
         "candles": 20,
-        "pump": 7.0,
-        "dump": -7.0,
+        "pump": PUMP_THRESHOLD_20M,
+        "dump": DUMP_THRESHOLD_20M,
     },
 
     "30m": {
         "bar": "1m",
         "candles": 30,
-        "pump": 8.0,
-        "dump": -8.0,
+        "pump": PUMP_THRESHOLD_30M,
+        "dump": DUMP_THRESHOLD_30M,
     }
 }
 
