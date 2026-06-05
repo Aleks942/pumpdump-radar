@@ -509,6 +509,13 @@ def build_message(signal):
     money = signal.get("money")
     liquidations = signal.get("liquidations")
 
+    long_liq = 0
+    short_liq = 0
+    
+    if liquidations:
+        long_liq = liquidations.get("long_liq", 0)
+        short_liq = liquidations.get("short_liq", 0)
+
     oi_change = signal.get("oi_change")
     oi_flow = classify_oi_flow(
         signal["type"],
@@ -541,12 +548,7 @@ def build_message(signal):
     
     setup = "НЕТ"
     
-    long_liq = 0
-    short_liq = 0
     
-    if liquidations:
-        long_liq = liquidations.get("long_liq", 0)
-        short_liq = liquidations.get("short_liq", 0)
     
     if money:
     
