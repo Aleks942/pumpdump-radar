@@ -614,6 +614,7 @@ def build_message(signal):
             signal["type"] == "DUMP"
             and abs(signal["change"]) >= 5
             and long_liq >= 200000
+            and long_liq > short_liq * 2
             and oi_change is not None
             and oi_change <= -3
         ):
@@ -626,6 +627,7 @@ def build_message(signal):
             signal["type"] == "PUMP"
             and abs(signal["change"]) >= 5
             and short_liq >= 200000
+            and short_liq > long_liq * 2
             and oi_change is not None
             and oi_change <= -3
         ):
