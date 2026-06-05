@@ -9,6 +9,7 @@ from liquidation_engine import (
     fetch_okx_liquidations,
     get_liquidation_summary
 )
+from stats_engine import register_signal
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
