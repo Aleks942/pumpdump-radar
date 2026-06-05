@@ -80,7 +80,31 @@ def send_telegram(text):
         print("[TG STATUS]", r.status_code)
     except Exception as e:
         print("[TG ERROR]", e)
+        
+def test_binance():
+    try:
+        r = requests.get(
+            "https://fapi.binance.com/fapi/v1/ticker/24hr",
+            timeout=20
+        )
 
+        print("[BINANCE STATUS]", r.status_code)
+
+    except Exception as e:
+        print("[BINANCE ERROR]", e)
+
+
+def test_bybit():
+    try:
+        r = requests.get(
+            "https://api.bybit.com/v5/market/tickers?category=linear",
+            timeout=20
+        )
+
+        print("[BYBIT STATUS]", r.status_code)
+
+    except Exception as e:
+        print("[BYBIT ERROR]", e)
 
 def get_market_tickers():
     url = "https://www.okx.com/api/v5/market/tickers?instType=SWAP"
