@@ -492,25 +492,7 @@ def signal_quality(money, long_liq, short_liq):
 
     return min(score, 10)
 
-def classify_oi_flow(change):
 
-    if change is None:
-        return "Нет данных"
-
-    if change >= 5:
-        return "🟢 Заходят новые деньги"
-
-    elif change >= 2:
-        return "🟡 Деньги постепенно заходят"
-
-    elif change <= -5:
-        return "🔴 Деньги активно выходят"
-
-    elif change <= -2:
-        return "🟠 Деньги выходят"
-
-    else:
-        return "⚪ Существенных изменений нет"
 
 def build_message(signal):
 
