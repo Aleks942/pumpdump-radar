@@ -534,58 +534,64 @@ def build_message(signal):
         else:
             oi_text = f"{oi_change:.2f}%"
 
+  
+
     money_state = "Нет данных"
     pressure_state = "Нет данных"
-
+    
     setup = "НЕТ"
-    if abs(signal["change"]) < 5:
-        setup = "НЕТ"
-
+    
+    long_liq = 0
+    short_liq = 0
+    
+    if liquidations:
+        long_liq = liquidations.get("long_liq", 0)
+        short_liq = liquidations.get("short_liq", 0)
+    
     if money:
-
+    
         money_state = STATE_MAP.get(
             money.get("money_state"),
             money.get("money_state")
         )
-
+    
         pressure_state = PRESSURE_MAP.get(
             money.get("pressure"),
             money.get("pressure")
         )
-
+    
         pressure = money.get("pressure", "")
         score = money.get("money_score", 0)
-
+    
         if (
             signal["type"] == "DUMP"
             and "BUY" in pressure
             and score >= 3
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐"
-
-        if (
-            signal["type"] == "DUMP"
-            and long_liq >= 200000
-            and "BUY" in pressure
-        ):
-            setup = "ЛОНГ ⭐⭐⭐⭐⭐"
-
+    
         elif (
             signal["type"] == "PUMP"
             and "SELL" in pressure
             and score >= 2
         ):
             setup = "ШОРТ ⭐⭐⭐⭐"
-
+    
+        if (
+            signal["type"] == "DUMP"
+            and long_liq >= 200000
+            and "BUY" in pressure
+        ):
+            setup = "ЛОНГ ⭐⭐⭐⭐⭐"
+    
         if (
             signal["type"] == "PUMP"
             and oi_change is not None
             and oi_change <= -7
             and abs(signal["change"]) >= 7
         ):
-            setup = "ШОРТ ⭐⭐⭐⭐⭐"        
-        
-        
+            setup = "ШОРТ ⭐⭐⭐⭐⭐"
+    
         if (
             signal["type"] == "DUMP"
             and oi_change is not None
@@ -593,14 +599,7 @@ def build_message(signal):
             and abs(signal["change"]) >= 7
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐⭐"
-        
-        long_liq = 0
-        short_liq = 0
-
-    if liquidations:
-        long_liq = liquidations.get("long_liq", 0)
-        short_liq = liquidations.get("short_liq", 0)
-
+    
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
 
