@@ -44,3 +44,42 @@ def register_signal(signal):
     data = data[-300:]
 
     save_stats(data)
+
+def update_signal_result(symbol, signal_time, current_price):
+    data = load_stats()
+
+    changed = False
+
+    for item in data:
+
+        if item["symbol"] != symbol:
+            continue
+
+        if item["result_15m"] is not None:
+            continue
+
+        age = time.time() - item["ts"]
+
+        if age < 900:
+            continue
+
+        entry_price = item["price"]
+
+        if item["type"] == "PUMP":
+            result = (
+                (current_price - entry_price)
+                / entry_price
+            ) * 100
+
+        else:
+            result = (
+                (entry_price - current_price)
+                / entry_price
+            ) * 100
+
+        item["result_15m"] = round(result, 2)
+
+        changed = True
+
+    if changed:
+        save_stats(data)
