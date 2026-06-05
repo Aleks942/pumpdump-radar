@@ -102,7 +102,7 @@ def get_market_tickers():
             if "USDT-SWAP" in t.get("instId", "")
         ]
 
-        random.shuffle(tickers)
+        # random.shuffle(tickers)
 
         return tickers[:MAX_SYMBOLS]
 
