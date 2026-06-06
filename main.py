@@ -395,18 +395,17 @@ def analyze(ticker):
     oi_change = None
     
     if oi is not None:
-    
+
         if symbol not in OI_HISTORY:
             OI_HISTORY[symbol] = []
-
+    
         OI_HISTORY[symbol].append(oi)
-
+    
         print(
             "[OI_LEN]",
             symbol,
             len(OI_HISTORY[symbol])
         )
-        
     
         if len(OI_HISTORY[symbol]) > 20:
             OI_HISTORY[symbol].pop(0)
@@ -414,44 +413,74 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) >= 3:
     
             old_oi = OI_HISTORY[symbol][0]
-            
-            print("[OLD_OI]", symbol, old_oi, oi)
+    
+            print(
+                "[OLD_OI]",
+                symbol,
+                old_oi,
+                oi
+            )
     
             if old_oi > 0:
-                oi_change = ((oi - old_oi) / old_oi) * 100
-
+    
+                oi_change = (
+                    (oi - old_oi) / old_oi
+                ) * 100
+    
                 print(
                     "[OI_CHANGE]",
                     symbol,
                     round(oi_change, 4)
                 )
+    
+                if oi_change >= 5:
+                    print(
+                        "[SMART_OI] NEW MONEY",
+                        symbol,
+                        round(oi_change, 2)
+                    )
+    
+                if oi_change <= -5:
+                    print(
+                        "[SMART_OI] EXIT MONEY",
+                        symbol,
+                        round(oi_change, 2)
+                    )
 
-    for window_name, cfg in TIME_WINDOWS.items():
-        move = get_window_move(raw_symbol, cfg["bar"], cfg["candles"])
-
+        for window_name, cfg in TIME_WINDOWS.items():
+    
+        move = get_window_move(
+            raw_symbol,
+            cfg["bar"],
+            cfg["candles"]
+        )
+    
         if move is None:
             continue
-
+    
         change = move["change"]
+    
         move_type = None
-
+    
         if change >= cfg["pump"]:
             move_type = "PUMP"
+    
         elif change <= cfg["dump"]:
             move_type = "DUMP"
+    
         else:
             continue
-
+    
         if not can_send(symbol, move_type, window_name, change):
             continue
-
+    
         signal_count = add_signal_count(symbol)
         flow_comment = classify_flow(move_type, funding, oi_change)
-        
+    
         money = analyze_new_money(raw_symbol)
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
-        
+    
         best_signal = {
             "symbol": symbol,
             "type": move_type,
