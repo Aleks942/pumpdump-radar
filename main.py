@@ -291,7 +291,7 @@ def add_signal_count(symbol):
 
 def can_send(symbol, move_type, window, change):
     now = time.time()
-    key = f"{symbol}_{move_type}_{window}"
+    key = f"{symbol}_{move_type}"
 
     state = symbol_states.get(key)
 
