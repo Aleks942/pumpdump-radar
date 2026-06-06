@@ -447,7 +447,7 @@ def analyze(ticker):
                         round(oi_change, 2)
                     )
 
-        for window_name, cfg in TIME_WINDOWS.items():
+    for window_name, cfg in TIME_WINDOWS.items():
     
         move = get_window_move(
             raw_symbol,
