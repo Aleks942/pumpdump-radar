@@ -467,6 +467,12 @@ def analyze(ticker):
     
         change = move["change"]
 
+        print(
+            "[RAW_CHANGE]",
+            symbol,
+            change
+        )
+
         move_type = None
 
         if change >= cfg["pump"]:
