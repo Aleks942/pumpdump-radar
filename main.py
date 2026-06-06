@@ -523,10 +523,7 @@ def analyze(ticker):
                 round(oi_change, 2)
             )
             continue
-    
-        move_type = None
-    
-        
+     
     
         if not can_send(symbol, move_type, window_name, change):
             continue
