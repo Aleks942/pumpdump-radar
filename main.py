@@ -676,11 +676,28 @@ def build_message(signal):
     
         if (
             signal["type"] == "DUMP"
+            and oi_change is not None
+            and oi_change <= -2
+        ):
+            setup = "ЛОНГ ⭐⭐⭐"
+        
+        
+        elif (
+            signal["type"] == "PUMP"
+            and oi_change is not None
+            and oi_change <= -2
+        ):
+            setup = "ШОРТ ⭐⭐⭐"
+        
+        
+        if (
+            signal["type"] == "DUMP"
             and "BUY" in pressure
-            and score >= 3
+            and score >= 2
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐"
-    
+        
+        
         elif (
             signal["type"] == "PUMP"
             and "SELL" in pressure
