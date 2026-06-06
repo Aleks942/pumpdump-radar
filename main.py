@@ -477,7 +477,17 @@ def analyze(ticker):
         
         else:
             continue
+
         
+        print(
+            "[MOVE]",
+            symbol,
+            move_type,
+            "CHANGE=",
+            round(change, 2),
+            "OI=",
+            round(oi_change, 2) if oi_change is not None else None
+        )
         
         # ===================================
         # ФИЛЬТР НОВЫХ ДЕНЕГ
