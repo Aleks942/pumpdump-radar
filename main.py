@@ -426,6 +426,13 @@ def analyze(ticker):
                 oi_change = (
                     (oi - old_oi) / old_oi
                 ) * 100
+
+                print(
+                    "[OI_DEBUG]",
+                    symbol,
+                    len(OI_HISTORY[symbol]),
+                    round(oi_change, 2)
+                )
     
                 print(
                     "[OI_CHANGE]",
