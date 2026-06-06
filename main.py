@@ -466,21 +466,23 @@ def analyze(ticker):
             continue
     
         change = move["change"]
-    
+
         move_type = None
-    
+
         if change >= cfg["pump"]:
             move_type = "PUMP"
-
-        if (
-            move_type == "PUMP"
-            and oi_change is not None
-            and oi_change > 3
-        ):
+        
+        elif change <= cfg["dump"]:
+            move_type = "DUMP"
+        
+        else:
             continue
-
-        # Фильтр ложных пампов
-
+        
+        
+        # ===================================
+        # ФИЛЬТР НОВЫХ ДЕНЕГ
+        # ===================================
+        
         if (
             move_type == "PUMP"
             and oi_change is not None
@@ -494,8 +496,6 @@ def analyze(ticker):
             continue
         
         
-        # Фильтр ложных дампов
-        
         if (
             move_type == "DUMP"
             and oi_change is not None
@@ -507,11 +507,10 @@ def analyze(ticker):
                 round(oi_change, 2)
             )
             continue
-        elif change <= cfg["dump"]:
-            move_type = "DUMP"
     
-        else:
-            continue
+        move_type = None
+    
+        
     
         if not can_send(symbol, move_type, window_name, change):
             continue
@@ -684,7 +683,7 @@ def build_message(signal):
         if (
             signal["type"] == "DUMP"
             and abs(signal["change"]) >= 5
-            and long_liq >= 100000
+            and long_liq >= 200000
             and long_liq > short_liq * 2
             and oi_change is not None
             and oi_change <= -3
@@ -697,7 +696,7 @@ def build_message(signal):
         if (
             signal["type"] == "PUMP"
             and abs(signal["change"]) >= 5
-            and short_liq >= 100000
+            and short_liq >= 200000
             and short_liq > long_liq * 2
             and oi_change is not None
             and oi_change <= -3
