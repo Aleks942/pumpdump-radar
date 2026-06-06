@@ -716,6 +716,26 @@ def build_message(signal):
             and score >= 2
         ):
             setup = "ШОРТ ⭐⭐⭐⭐"
+
+        # ===================================
+        # LIQUIDATION EXHAUSTION
+        # ===================================
+        
+        if (
+            signal["type"] == "DUMP"
+            and abs(signal["change"]) >= 4
+            and long_liq >= 100000
+            and long_liq > short_liq * 3
+        ):
+            setup = "ЛОНГ ⭐⭐⭐⭐"
+        
+        if (
+            signal["type"] == "PUMP"
+            and abs(signal["change"]) >= 4
+            and short_liq >= 100000
+            and short_liq > long_liq * 3
+        ):
+            setup = "ШОРТ ⭐⭐⭐⭐"
     
         # Сильный LONG после выноса лонгов
 
