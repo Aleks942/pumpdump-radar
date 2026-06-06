@@ -464,6 +464,13 @@ def analyze(ticker):
     
         if change >= cfg["pump"]:
             move_type = "PUMP"
+
+        if (
+            move_type == "PUMP"
+            and oi_change is not None
+            and oi_change > 3
+        ):
+            continue
     
         elif change <= cfg["dump"]:
             move_type = "DUMP"
