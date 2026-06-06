@@ -295,6 +295,12 @@ def can_send(symbol, move_type, window, change):
 
     state = symbol_states.get(key)
 
+    print(
+        "[COOLDOWN]",
+        key,
+        state
+    )
+
     if state is None:
         symbol_states[key] = {
             "last_alert": now,
