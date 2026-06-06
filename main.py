@@ -699,7 +699,12 @@ def build_message(signal):
             )
         ):
             setup = "ШОРТ ⭐⭐⭐"
-       
+        print(
+            "[SETUP_4_CHECK]",
+            symbol,
+            pressure,
+            score
+        )
         
         if (
             signal["type"] == "DUMP"
