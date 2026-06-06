@@ -680,21 +680,29 @@ def build_message(signal):
         pressure = money.get("pressure", "")
         score = money.get("money_score", 0)
     
+
+        # Ранний сигнал на выдох
+
         if (
             signal["type"] == "DUMP"
-            and oi_change is not None
-            and oi_change <= -2
+            and abs(signal["change"]) >= 5
+            and (
+                oi_change is None
+                or oi_change < 3
+            )
         ):
             setup = "ЛОНГ ⭐⭐⭐"
         
-        
         elif (
             signal["type"] == "PUMP"
-            and oi_change is not None
-            and oi_change <= -2
+            and abs(signal["change"]) >= 5
+            and (
+                oi_change is None
+                or oi_change < 3
+            )
         ):
             setup = "ШОРТ ⭐⭐⭐"
-        
+       
         
         if (
             signal["type"] == "DUMP"
