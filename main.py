@@ -30,7 +30,7 @@ PUMP_THRESHOLD_30M = float(os.getenv("PUMP_THRESHOLD_30M", 7))
 DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -7))
 
 MIN_VOLUME_24H = float(os.getenv("MIN_VOLUME_24H", 10000000))
-ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 1800))
+ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
