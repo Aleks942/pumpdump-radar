@@ -529,6 +529,7 @@ def analyze(ticker):
             continue
     
         signal_count = add_signal_count(symbol)
+        
         flow_comment = classify_flow(move_type, funding, oi_change)
     
         money = analyze_new_money(raw_symbol)
