@@ -471,7 +471,35 @@ def analyze(ticker):
             and oi_change > 3
         ):
             continue
-    
+
+        # Фильтр ложных пампов
+
+        if (
+            move_type == "PUMP"
+            and oi_change is not None
+            and oi_change > 3
+        ):
+            print(
+                "[FILTER] PUMP WITH NEW MONEY",
+                symbol,
+                round(oi_change, 2)
+            )
+            continue
+        
+        
+        # Фильтр ложных дампов
+        
+        if (
+            move_type == "DUMP"
+            and oi_change is not None
+            and oi_change > 3
+        ):
+            print(
+                "[FILTER] DUMP WITH NEW SHORTS",
+                symbol,
+                round(oi_change, 2)
+            )
+            continue
         elif change <= cfg["dump"]:
             move_type = "DUMP"
     
