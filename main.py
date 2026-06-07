@@ -466,6 +466,14 @@ def analyze(ticker):
     
         change = move["change"]
 
+        if abs(change) >= 3:
+            print(
+                "[TRIGGER_CANDIDATE]",
+                symbol,
+                window_name,
+                round(change, 2)
+            )
+
         print(
             "[RAW_CHANGE]",
             symbol,
