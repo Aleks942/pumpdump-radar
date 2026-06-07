@@ -20,14 +20,14 @@ from stats_engine import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-PUMP_THRESHOLD_5M = float(os.getenv("PUMP_THRESHOLD_5M", 5))
-DUMP_THRESHOLD_5M = float(os.getenv("DUMP_THRESHOLD_5M", -5))
 
-PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 7))
-DUMP_THRESHOLD_20M = float(os.getenv("DUMP_THRESHOLD_20M", -7))
+PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 6))
+DUMP_THRESHOLD_20M = float(os.getenv("DUMP_THRESHOLD_20M", -6))
 
-PUMP_THRESHOLD_30M = float(os.getenv("PUMP_THRESHOLD_30M", 7))
-DUMP_THRESHOLD_30M = float(os.getenv("DUMP_THRESHOLD_30M", -7))
+PUMP_THRESHOLD_40M = float(os.getenv("PUMP_THRESHOLD_40M", 8))
+DUMP_THRESHOLD_40M = float(os.getenv("DUMP_THRESHOLD_40M", -8))
+
+
 
 MIN_VOLUME_24H = float(os.getenv("MIN_VOLUME_24H", 10000000))
 ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
@@ -42,28 +42,21 @@ print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
 TIME_WINDOWS = {
-    "5m": {
-        "bar": "1m",
-        "candles": 5,
-        "pump": PUMP_THRESHOLD_5M,
-        "dump": DUMP_THRESHOLD_5M,
-    },
 
     "20m": {
         "bar": "1m",
         "candles": 20,
-        "pump": PUMP_THRESHOLD_20M,
-        "dump": DUMP_THRESHOLD_20M,
+        "pump": 6,
+        "dump": -6,
     },
 
-    "30m": {
+    "40m": {
         "bar": "1m",
-        "candles": 30,
-        "pump": PUMP_THRESHOLD_30M,
-        "dump": DUMP_THRESHOLD_30M,
+        "candles": 40,
+        "pump": 8,
+        "dump": -8,
     }
 }
-
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
