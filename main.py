@@ -831,14 +831,22 @@ while True:
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
 
+    checked = 0
+    signals = 0
+    no_signal = 0
+
     for ticker in current_chunk:
+        checked += 1
+
         signal = analyze(ticker)
 
         if not signal:
+            no_signal += 1
             continue
 
+        signals += 1
+
         send_telegram(build_message(signal))
-        
         register_signal(signal)
 
         print(
@@ -848,5 +856,12 @@ while True:
             signal["type"],
             round(signal["change"], 2)
         )
+
+    print(
+        "[SCAN_STATS]",
+        "checked=", checked,
+        "signals=", signals,
+        "no_signal=", no_signal
+    )
 
     time.sleep(SCAN_SLEEP)
