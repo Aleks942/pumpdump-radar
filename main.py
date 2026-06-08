@@ -540,8 +540,8 @@ def analyze(ticker):
             )
              
             
-                if not can_send(symbol, move_type, window_name, change):
-                    continue
+        if not can_send(symbol, move_type, window_name, change):
+            continue
     
         signal_count = add_signal_count(symbol)
         
