@@ -563,6 +563,7 @@ def analyze(ticker):
             "funding": funding,
             "oi": oi,
             "oi_change": oi_change,
+            "oi_warning": oi_warning,
             "flow_comment": flow_comment,
             "signal_24h": signal_count,
 
