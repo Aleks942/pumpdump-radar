@@ -510,37 +510,38 @@ def analyze(ticker):
         )
         
         # ===================================
-        # ФИЛЬТР НОВЫХ ДЕНЕГ
+        # OI WARNING — не режем сигнал, а помечаем
         # ===================================
+        
+        oi_warning = None
         
         if (
             move_type == "PUMP"
             and oi_change is not None
             and oi_change > 3
         ):
+            oi_warning = "⚠️ PUMP + OI ↑: новые деньги заходят, шорт опаснее"
             print(
-                "[FILTER] PUMP WITH NEW MONEY",
+                "[OI_WARNING] PUMP WITH NEW MONEY",
                 symbol,
                 round(oi_change, 2)
             )
-            continue
-        
         
         if (
             move_type == "DUMP"
             and oi_change is not None
             and oi_change > 3
         ):
+            oi_warning = "⚠️ DUMP + OI ↑: новые шорты набиваются, лонг опаснее"
             print(
-                "[FILTER] DUMP WITH NEW SHORTS",
+                "[OI_WARNING] DUMP WITH NEW SHORTS",
                 symbol,
                 round(oi_change, 2)
             )
-            continue
-     
-    
-        if not can_send(symbol, move_type, window_name, change):
-            continue
+             
+            
+                if not can_send(symbol, move_type, window_name, change):
+                    continue
     
         signal_count = add_signal_count(symbol)
         
