@@ -544,9 +544,19 @@ def analyze(ticker):
             continue
     
         signal_count = add_signal_count(symbol)
+
+        flow_comment = classify_flow(
+            move_type,
+            funding,
+            oi_change
+        )
         
-        flow_comment = classify_flow(move_type, funding, oi_change)
-    
+        print(
+            "[FLOW]",
+            symbol,
+            flow_comment
+        )
+        
         money = analyze_new_money(raw_symbol)
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
