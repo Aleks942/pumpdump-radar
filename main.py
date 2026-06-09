@@ -561,13 +561,25 @@ def analyze(ticker):
             oi_change
         )
         
+        oi_flow = classify_oi_flow(
+            move_type,
+            oi_change
+        )
+        
         print(
             "[FLOW]",
             symbol,
             flow_comment
         )
         
+        print(
+            "[OI_FLOW]",
+            symbol,
+            oi_flow
+        )
+        
         money = analyze_new_money(raw_symbol)
+        
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
     
