@@ -357,21 +357,31 @@ def classify_oi_flow(move_type, oi_change):
 
     if move_type == "PUMP":
 
-        if oi_change >= 3:
-            return "🟢 Новые деньги заходят в рост"
-
-        if oi_change <= -3:
-            return "🚨 SHORT SQUEEZE"
+        if oi_change >= 5:
+            return "🔥 НОВЫЕ ЛОНГИ: в рынок заходят реальные деньги"
+    
+        if oi_change >= 2:
+            return "🟡 Умеренный приток новых денег"
+    
+        if oi_change <= -5:
+            return "🔥 SHORT SQUEEZE: шортистов массово выносит"
+    
+        if oi_change <= -2:
+            return "🟡 Возможный short squeeze"
 
     if move_type == "DUMP":
 
-        if oi_change >= 3:
-            return "🔴 Новые шорты давят цену"
-
-        if oi_change <= -3:
-            return "🟠 Капитуляция"
-
-    return "⚪ Существенных изменений нет"
+        if oi_change >= 5:
+            return "🔥 НОВЫЕ ШОРТЫ: продавцы активно давят цену"
+    
+        if oi_change >= 2:
+            return "🟡 Умеренный набор шортов"
+    
+        if oi_change <= -5:
+            return "🔥 КАПИТУЛЯЦИЯ ЛОНГОВ"
+    
+        if oi_change <= -2:
+            return "🟡 Возможная капитуляция"
 
 
 def analyze(ticker):
