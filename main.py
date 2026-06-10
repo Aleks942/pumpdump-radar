@@ -718,7 +718,23 @@ def build_message(signal):
             money.get("money_state"),
             money.get("money_state")
         )
-    
+
+        # ===================================
+        # OI HAS PRIORITY
+        # ===================================
+        
+        if (
+            oi_change is not None
+            and oi_change <= -5
+        ):
+            money_state = "Деньги активно выходят"
+        
+        elif (
+            oi_change is not None
+            and oi_change >= 5
+        ):
+            money_state = "Заходят реальные деньги"
+            
         pressure_state = PRESSURE_MAP.get(
             money.get("pressure"),
             money.get("pressure")
