@@ -923,6 +923,9 @@ def build_message(signal):
 
 🎯 СЕТАП: {setup}
 
+📝 Причина:
+{setup_reason}
+
 ⭐ Качество: {quality}/10
 
 💰 Деньги:
