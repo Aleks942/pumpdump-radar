@@ -792,7 +792,19 @@ def build_message(signal):
     
         pressure = money.get("pressure", "")
         score = money.get("money_score", 0)
-    
+
+        new_longs = (
+            signal["type"] == "PUMP"
+            and oi_change is not None
+            and oi_change >= 3
+        )
+        
+        new_shorts = (
+            signal["type"] == "DUMP"
+            and oi_change is not None
+            and oi_change >= 3
+        )
+            
 
         # Ранний сигнал на выдох
 
@@ -823,14 +835,17 @@ def build_message(signal):
             and score >= 2
         ):
             setup = "ЛОНГ ⭐⭐⭐⭐"
+
+       
         
-        
-        elif (
+         elif (
             signal["type"] == "PUMP"
             and "SELL" in pressure
             and score >= 2
         ):
             setup = "ШОРТ ⭐⭐⭐⭐"
+
+        
 
         # ===================================
         # LIQUIDATION EXHAUSTION
@@ -876,7 +891,17 @@ def build_message(signal):
             and oi_change <= -3
         ):
             setup = "ШОРТ ⭐⭐⭐⭐⭐"
-    
+
+        # =========================
+        # FINAL SAFETY OVERRIDE
+        # =========================
+        
+        if new_longs:
+            setup = "ШОРТ ⭐⭐"
+        
+        if new_shorts:
+            setup = "ЛОНГ ⭐⭐"
+        
   
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
