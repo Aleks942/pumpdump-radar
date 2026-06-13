@@ -899,9 +899,19 @@ def build_message(signal):
         if new_longs:
             setup = "ШОРТ ⭐⭐"
         
+            setup_reason = (
+                "Новые лонги продолжают заходить. "
+                "Памп ещё не выдохся."
+            )
+        
         if new_shorts:
             setup = "ЛОНГ ⭐⭐"
         
+            setup_reason = (
+                "Новые шорты продолжают заходить. "
+                "Дамп ещё не выдохся."
+            )
+                
   
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
