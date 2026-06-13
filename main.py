@@ -759,7 +759,7 @@ def build_message(signal):
     pressure_state = "Нет данных"
     
     setup = "НЕТ"
-    
+    setup_reason = ""
     
     
     if money:
