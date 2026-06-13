@@ -663,6 +663,60 @@ def signal_quality(money, long_liq, short_liq):
 
 
 
+def classify_market_state(
+    move_type,
+    oi_change,
+    long_liq,
+    short_liq,
+    pressure
+):
+
+    if oi_change is None:
+        return "НЕ ХВАТАЕТ ДАННЫХ"
+
+    # =====================
+    # ПРОДОЛЖЕНИЕ РОСТА
+    # =====================
+
+    if (
+        move_type == "PUMP"
+        and oi_change >= 3
+    ):
+        return "🚀 НОВЫЕ ЛОНГИ — ПАМП ПРОДОЛЖАЕТСЯ"
+
+    # =====================
+    # ПРОДОЛЖЕНИЕ ПАДЕНИЯ
+    # =====================
+
+    if (
+        move_type == "DUMP"
+        and oi_change >= 3
+    ):
+        return "🔻 НОВЫЕ ШОРТЫ — ДАМП ПРОДОЛЖАЕТСЯ"
+
+    # =====================
+    # КАПИТУЛЯЦИЯ ШОРТОВ
+    # =====================
+
+    if (
+        move_type == "PUMP"
+        and oi_change <= -5
+        and short_liq > long_liq
+    ):
+        return "🔥 КАПИТУЛЯЦИЯ ШОРТОВ — ВЫДОХ ПАМПА"
+
+    # =====================
+    # КАПИТУЛЯЦИЯ ЛОНГОВ
+    # =====================
+
+    if (
+        move_type == "DUMP"
+        and oi_change <= -5
+        and long_liq > short_liq
+    ):
+        return "🔥 КАПИТУЛЯЦИЯ ЛОНГОВ — ВЫДОХ ДАМПА"
+
+    return "⚪ СИТУАЦИЯ НЕОДНОЗНАЧНА"
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
