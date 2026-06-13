@@ -838,7 +838,7 @@ def build_message(signal):
 
        
         
-         elif (
+        elif (
             signal["type"] == "PUMP"
             and "SELL" in pressure
             and score >= 2
