@@ -674,29 +674,25 @@ def classify_market_state(
     if oi_change is None:
         return "НЕ ХВАТАЕТ ДАННЫХ"
 
-    # =====================
-    # ПРОДОЛЖЕНИЕ РОСТА
-    # =====================
+    # НОВЫЕ ЛОНГИ
 
     if (
         move_type == "PUMP"
         and oi_change >= 3
+        and short_liq < long_liq * 2
     ):
         return "🚀 НОВЫЕ ЛОНГИ — ПАМП ПРОДОЛЖАЕТСЯ"
 
-    # =====================
-    # ПРОДОЛЖЕНИЕ ПАДЕНИЯ
-    # =====================
+    # НОВЫЕ ШОРТЫ
 
     if (
         move_type == "DUMP"
         and oi_change >= 3
+        and long_liq < short_liq * 2
     ):
         return "🔻 НОВЫЕ ШОРТЫ — ДАМП ПРОДОЛЖАЕТСЯ"
 
-    # =====================
     # КАПИТУЛЯЦИЯ ШОРТОВ
-    # =====================
 
     if (
         move_type == "PUMP"
@@ -705,9 +701,7 @@ def classify_market_state(
     ):
         return "🔥 КАПИТУЛЯЦИЯ ШОРТОВ — ВЫДОХ ПАМПА"
 
-    # =====================
     # КАПИТУЛЯЦИЯ ЛОНГОВ
-    # =====================
 
     if (
         move_type == "DUMP"
@@ -715,6 +709,8 @@ def classify_market_state(
         and long_liq > short_liq
     ):
         return "🔥 КАПИТУЛЯЦИЯ ЛОНГОВ — ВЫДОХ ДАМПА"
+
+    return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
 
     return "⚪ СИТУАЦИЯ НЕОДНОЗНАЧНА"
 def build_message(signal):
@@ -885,6 +881,14 @@ def build_message(signal):
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
 
+    market_state = classify_market_state(
+        signal["type"],
+        oi_change,
+        long_liq,
+        short_liq,
+        pressure_state
+    )
+
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
@@ -904,6 +908,9 @@ def build_message(signal):
 
 💵 Поток денег:
 {oi_flow}
+
+🧠 Состояние рынка:
+{market_state}
 
 ⚖️ Давление:
 {pressure_state}
