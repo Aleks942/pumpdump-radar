@@ -712,7 +712,7 @@ def classify_market_state(
 
     return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
 
-    return "⚪ СИТУАЦИЯ НЕОДНОЗНАЧНА"
+    
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
