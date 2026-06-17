@@ -760,6 +760,7 @@ def build_message(signal):
     
     setup = "НЕТ"
     setup_reason = ""
+    risk_note = ""
     
     
     if money:
@@ -917,6 +918,25 @@ def build_message(signal):
     quality = signal_quality(money, long_liq, short_liq)
     new_listing_warning = ""
 
+    # =========================
+    # NO OI = LOW CONFIDENCE
+    # =========================
+    
+    if oi_change is None:
+    
+        quality = min(quality, 2)
+    
+        if "ШОРТ" in setup:
+            setup = "ШОРТ ⭐⭐"
+    
+        elif "ЛОНГ" in setup:
+            setup = "ЛОНГ ⭐⭐"
+    
+        risk_note = (
+            "Нет данных OI. "
+            "Уверенность снижена."
+        )
+
     if (
         oi_change is not None
         and abs(oi_change) >= 80
@@ -963,6 +983,8 @@ def build_message(signal):
 {market_state}
 
 ⚠️ Риск:
+{risk_note}
+
 {new_listing_warning}
 
 ⚖️ Давление:
