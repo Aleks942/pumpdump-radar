@@ -962,6 +962,9 @@ def build_message(signal):
 🧠 Состояние рынка:
 {market_state}
 
+⚠️ Риск:
+{new_listing_warning}
+
 ⚖️ Давление:
 {pressure_state}
 
