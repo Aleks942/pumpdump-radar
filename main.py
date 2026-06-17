@@ -915,6 +915,18 @@ def build_message(signal):
   
     liq_strength = liquidation_strength(long_liq, short_liq)
     quality = signal_quality(money, long_liq, short_liq)
+    new_listing_warning = ""
+
+    if (
+        oi_change is not None
+        and abs(oi_change) >= 80
+    ):
+        quality = max(0, quality - 3)
+    
+        new_listing_warning = (
+            "⚠️ Возможна новая или низколиквидная монета. "
+            "Движение может быть манипулятивным."
+        )
 
     market_state = classify_market_state(
         signal["type"],
