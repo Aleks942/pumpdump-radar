@@ -38,6 +38,7 @@ MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 symbol_states = {}
 signal_24h_count = {}
 OI_HISTORY = {}
+OI_CHANGE_HISTORY = {}
 print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
@@ -384,6 +385,20 @@ def classify_oi_flow(move_type, oi_change):
             return "🟡 Возможная капитуляция"
 
 
+ def update_oi_change_history(symbol, oi_change):
+    if oi_change is None:
+        return []
+
+    if symbol not in OI_CHANGE_HISTORY:
+        OI_CHANGE_HISTORY[symbol] = []
+
+    OI_CHANGE_HISTORY[symbol].append(oi_change)
+
+    if len(OI_CHANGE_HISTORY[symbol]) > 5:
+        OI_CHANGE_HISTORY[symbol].pop(0)
+
+    return OI_CHANGE_HISTORY[symbol]      
+
 def analyze(ticker):
     try:
         raw_symbol = ticker["instId"]
@@ -407,38 +422,38 @@ def analyze(ticker):
 
     funding = get_funding_rate(raw_symbol)
     oi = get_open_interest(raw_symbol)
-    
+
     oi_change = None
-    
+
     if oi is not None:
 
         if symbol not in OI_HISTORY:
             OI_HISTORY[symbol] = []
-    
+
         OI_HISTORY[symbol].append(oi)
-    
+
         print(
             "[OI_LEN]",
             symbol,
             len(OI_HISTORY[symbol])
         )
-    
+
         if len(OI_HISTORY[symbol]) > 20:
             OI_HISTORY[symbol].pop(0)
-    
+
         if len(OI_HISTORY[symbol]) >= 2:
-    
+
             old_oi = OI_HISTORY[symbol][0]
-    
+
             print(
                 "[OLD_OI]",
                 symbol,
                 old_oi,
                 oi
             )
-    
+
             if old_oi > 0:
-    
+
                 oi_change = (
                     (oi - old_oi) / old_oi
                 ) * 100
@@ -449,20 +464,20 @@ def analyze(ticker):
                     len(OI_HISTORY[symbol]),
                     round(oi_change, 2)
                 )
-    
+
                 print(
                     "[OI_CHANGE]",
                     symbol,
                     round(oi_change, 4)
                 )
-    
+
                 if oi_change >= 5:
                     print(
                         "[SMART_OI] NEW MONEY",
                         symbol,
                         round(oi_change, 2)
                     )
-    
+
                 if oi_change <= -5:
                     print(
                         "[SMART_OI] EXIT MONEY",
@@ -470,17 +485,28 @@ def analyze(ticker):
                         round(oi_change, 2)
                     )
 
+    oi_change_history = update_oi_change_history(
+        symbol,
+        oi_change
+    )
+
+    print(
+        "[OI_CHANGE_HISTORY]",
+        symbol,
+        [round(x, 2) for x in oi_change_history]
+    )
+
     for window_name, cfg in TIME_WINDOWS.items():
-    
+
         move = get_window_move(
             raw_symbol,
             cfg["bar"],
             cfg["candles"]
         )
-    
+
         if move is None:
             continue
-    
+
         change = move["change"]
 
         if abs(change) >= 3:
@@ -501,14 +527,13 @@ def analyze(ticker):
 
         if change >= cfg["pump"]:
             move_type = "PUMP"
-        
+
         elif change <= cfg["dump"]:
             move_type = "DUMP"
-        
+
         else:
             continue
 
-        
         print(
             "[MOVE]",
             symbol,
@@ -518,41 +543,42 @@ def analyze(ticker):
             "OI=",
             round(oi_change, 2) if oi_change is not None else None
         )
-        
+
         # ===================================
         # OI WARNING — не режем сигнал, а помечаем
         # ===================================
-        
+
         oi_warning = None
-        
+
         if (
             move_type == "PUMP"
             and oi_change is not None
             and oi_change > 3
         ):
             oi_warning = "⚠️ PUMP + OI ↑: новые деньги заходят, шорт опаснее"
+
             print(
                 "[OI_WARNING] PUMP WITH NEW MONEY",
                 symbol,
                 round(oi_change, 2)
             )
-        
+
         if (
             move_type == "DUMP"
             and oi_change is not None
             and oi_change > 3
         ):
             oi_warning = "⚠️ DUMP + OI ↑: новые шорты набиваются, лонг опаснее"
+
             print(
                 "[OI_WARNING] DUMP WITH NEW SHORTS",
                 symbol,
                 round(oi_change, 2)
             )
-             
-            
+
         if not can_send(symbol, move_type, window_name, change):
             continue
-    
+
         signal_count = add_signal_count(symbol)
 
         flow_comment = classify_flow(
@@ -560,29 +586,29 @@ def analyze(ticker):
             funding,
             oi_change
         )
-        
+
         oi_flow = classify_oi_flow(
             move_type,
             oi_change
         )
-        
+
         print(
             "[FLOW]",
             symbol,
             flow_comment
         )
-        
+
         print(
             "[OI_FLOW]",
             symbol,
             oi_flow
         )
-        
+
         money = analyze_new_money(raw_symbol)
-        
+
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
-    
+
         best_signal = {
             "symbol": symbol,
             "type": move_type,
@@ -599,6 +625,7 @@ def analyze(ticker):
             "flow_comment": flow_comment,
             "oi_flow": oi_flow,
             "signal_24h": signal_count,
+            "oi_change_history": oi_change_history,
 
             "money": money,
             "liquidations": liquidations,
