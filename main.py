@@ -397,7 +397,42 @@ def update_oi_change_history(symbol, oi_change):
     if len(OI_CHANGE_HISTORY[symbol]) > 5:
         OI_CHANGE_HISTORY[symbol].pop(0)
     
-    return OI_CHANGE_HISTORY[symbol]      
+    return OI_CHANGE_HISTORY[symbol]  
+
+def detect_exhaustion(move_type, change, oi_change_history):
+    if not oi_change_history:
+        return None
+
+    if len(oi_change_history) < 4:
+        return None
+
+    try:
+        h = [float(x) for x in oi_change_history[-4:]]
+    except Exception:
+        return None
+
+    oi_slowing_down = h[0] > h[1] > h[2] > h[3]
+
+    if not oi_slowing_down:
+        return None
+
+    if move_type == "PUMP" and change > 0:
+        return {
+            "type": "LONGS_EXHAUSTING",
+            "side_hint": "SHORT",
+            "text": "🔥 LONGS EXHAUSTING\n⚠️ Высокая вероятность коррекции.",
+            "history": h
+        }
+
+    if move_type == "DUMP" and change < 0:
+        return {
+            "type": "SHORTS_EXHAUSTING",
+            "side_hint": "LONG",
+            "text": "🔥 SHORTS EXHAUSTING\n⚠️ Высокая вероятность отскока.",
+            "history": h
+        }
+
+    return None
 
 def analyze(ticker):
     try:
@@ -495,7 +530,7 @@ def analyze(ticker):
         symbol,
         [round(x, 2) for x in oi_change_history]
     )
-
+    exhaustion = None
     for window_name, cfg in TIME_WINDOWS.items():
 
         move = get_window_move(
@@ -544,6 +579,20 @@ def analyze(ticker):
             round(oi_change, 2) if oi_change is not None else None
         )
 
+        exhaustion = detect_exhaustion(
+            move_type,
+            change,
+            oi_change_history
+        )
+        
+        if exhaustion:
+            print(
+                "[EXHAUSTION]",
+                symbol,
+                exhaustion["type"],
+                exhaustion["history"]
+            )
+        
         # ===================================
         # OI WARNING — не режем сигнал, а помечаем
         # ===================================
