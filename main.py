@@ -385,18 +385,18 @@ def classify_oi_flow(move_type, oi_change):
             return "🟡 Возможная капитуляция"
 
 
- def update_oi_change_history(symbol, oi_change):
+def update_oi_change_history(symbol, oi_change):
     if oi_change is None:
         return []
-
+    
     if symbol not in OI_CHANGE_HISTORY:
         OI_CHANGE_HISTORY[symbol] = []
-
+    
     OI_CHANGE_HISTORY[symbol].append(oi_change)
-
+    
     if len(OI_CHANGE_HISTORY[symbol]) > 5:
         OI_CHANGE_HISTORY[symbol].pop(0)
-
+    
     return OI_CHANGE_HISTORY[symbol]      
 
 def analyze(ticker):
