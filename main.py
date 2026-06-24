@@ -44,6 +44,13 @@ rotation_index = 0
 
 TIME_WINDOWS = {
 
+    "5m": {
+        "bar": "1m",
+        "candles": 5,
+        "pump": 3.5,
+        "dump": -3.5,
+    },
+
     "10m": {
         "bar": "1m",
         "candles": 10,
