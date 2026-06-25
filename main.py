@@ -700,6 +700,23 @@ def analyze(ticker):
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
 
+        # ==========================
+        # MOVE STATUS ENGINE
+        # ==========================
+        
+        temp_signal = {
+            "symbol": symbol,
+            "type": move_type,
+            "change": change,
+            "oi_change": oi_change,
+            "money": money,
+            "liquidations": liquidations,
+        }
+        
+        temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
+        
+        move_status = classify_move_status(temp_signal)
+
         best_signal = {
             "symbol": symbol,
             "type": move_type,
@@ -719,13 +736,9 @@ def analyze(ticker):
             "oi_change_history": oi_change_history,
             "money": money,
             "liquidations": liquidations,
+            "trend_strength": temp_signal["trend_strength"],
+            "move_status": move_status,
         }
-
-        trend = analyze_trend_strength(best_signal)
-
-        print("[TREND_ENGINE_CALLED]", symbol, flush=True)
-
-        best_signal["trend_strength"] = trend
 
         break
 
