@@ -1773,7 +1773,7 @@ def build_message(signal):
         "IGNORE_REVERSAL": "🚫 НЕ ЛЕЗТЬ",
         "WAIT": "🟡 ЖДАТЬ",
         "WATCH": "👀 НАБЛЮДАТЬ",
-        "LOOK_REVERSAL": "🎯 ИСКАТЬ КОРРЕКЦИЮ",
+        "LOOK_REVERSAL": "ИСКАТЬ КОРРЕКЦИЮ",
     }
 
     decision_text = action_map.get(
