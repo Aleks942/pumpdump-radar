@@ -1325,14 +1325,23 @@ def chief_trader(signal):
 
     for v in votes:
 
-        reasons.append(v["reason"])
-
+        reasons.append({
+    
+            "reason": v["reason"],
+    
+            "text": v.get("text", ""),
+    
+            "weight": v["weight"]
+    
+        })
+    
         if v["vote"] == "CONTINUE":
+    
             continue_score += v["weight"]
-
+    
         elif v["vote"] == "EXHAUSTION":
+    
             exhaustion_score += v["weight"]
-
     # =====================================
     # CHIEF TRADER PRIORITY RULES
     # =====================================
