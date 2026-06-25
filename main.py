@@ -1228,34 +1228,51 @@ def chief_trader(signal):
             exhaustion_score += v["weight"]
 
     # ===========================
-    # DECISION
+    # STAGE CLASSIFIER
     # ===========================
-
-    if exhaustion_score >= continue_score + 3:
-
-        return {
-            "status": "EXHAUSTION",
-            "action": "LOOK_REVERSE",
-            "confidence": min(100, 50 + exhaustion_score * 5),
-            "reasons": reasons
-        }
-
-    if continue_score >= exhaustion_score + 3:
-
-        return {
-            "status": "CONTINUE",
-            "action": "DO_NOT_TOUCH",
-            "confidence": min(100, 50 + continue_score * 5),
-            "reasons": reasons
-        }
-
+    
+    score = continue_score - exhaustion_score
+    
+    if score >= 6:
+    
+        stage = "EARLY"
+        action = "IGNORE_REVERSAL"
+    
+    elif score >= 3:
+    
+        stage = "BUILDING"
+        action = "WAIT"
+    
+    elif score > -3:
+    
+        stage = "LATE"
+        action = "WATCH"
+    
+    else:
+    
+        stage = "EXHAUSTION"
+        action = "LOOK_REVERSAL"
+    
+    confidence = min(
+        100,
+        55 + abs(score) * 7
+    )
+    
     return {
-        "status": "UNCLEAR",
-        "action": "WAIT",
-        "confidence": 50,
+    
+        "stage": stage,
+    
+        "action": action,
+    
+        "confidence": confidence,
+    
+        "continue_score": continue_score,
+    
+        "exhaustion_score": exhaustion_score,
+    
         "reasons": reasons
+    
     }
-
 def decision_engine(signal):
 
     continuation = 0
