@@ -1141,6 +1141,67 @@ def pressure_vote(signal):
         "weight": 1,
         "reason": "BALANCED"
     }
+
+def liquidation_vote(signal):
+
+    liq = signal.get("liquidations")
+
+    if not liq:
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "NO_LIQUIDATIONS"
+        }
+
+    long_liq = liq.get("long_liq", 0)
+    short_liq = liq.get("short_liq", 0)
+
+    move = signal.get("type")
+
+    # =====================================
+    # PUMP
+    # =====================================
+
+    if move == "PUMP":
+
+        if short_liq >= 100000 and short_liq > long_liq * 2:
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 4,
+                "reason": "SHORT_SQUEEZE"
+            }
+
+        return {
+            "vote": "NEUTRAL",
+            "weight": 1,
+            "reason": "NO_SQUEEZE"
+        }
+
+    # =====================================
+    # DUMP
+    # =====================================
+
+    if move == "DUMP":
+
+        if long_liq >= 100000 and long_liq > short_liq * 2:
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 4,
+                "reason": "LONG_CAPITULATION"
+            }
+
+        return {
+            "vote": "NEUTRAL",
+            "weight": 1,
+            "reason": "NO_CAPITULATION"
+        }
+
+    return {
+        "vote": "UNKNOWN",
+        "weight": 0,
+        "reason": "UNKNOWN"
+    }
+
 def decision_engine(signal):
 
     continuation = 0
