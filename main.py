@@ -688,6 +688,8 @@ def analyze(ticker):
 
         trend = analyze_trend_strength(best_signal)
 
+        print("[TREND_ENGINE_CALLED]", symbol, flush=True)
+
         best_signal["trend_strength"] = trend
 
         break
