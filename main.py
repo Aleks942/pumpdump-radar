@@ -1373,6 +1373,12 @@ def build_message(signal):
 
     trend = signal.get("trend_strength", {})
     trend_score = trend.get("score", 0)
+    move = signal.get("move_status", {})
+
+    move_status = move.get(
+        "status",
+        "🟡 НЕЯСНО"
+    )
 
     if trend_score >= 9:
         trend_text = "🟢 ОЧЕНЬ СИЛЬНЫЙ ТРЕНД — против движения опасно"
@@ -1455,7 +1461,11 @@ def build_message(signal):
                 "Высока вероятность коррекции вниз."
             )
     return f"""
-{emoji} <b>{signal["symbol"]}</b> | {signal["change"]:.2f}%
+{emoji} <b>{signal["symbol"]}</b>
+
+📈 {signal["change"]:.2f}% за {signal["window"]}
+
+📊 <b>{move_status}</b>
 
 🎯 <b>{setup}</b>
 
