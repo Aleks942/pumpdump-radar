@@ -1156,6 +1156,17 @@ def build_message(signal):
         pressure_state
     )
 
+    trend = signal.get("trend_strength", {})
+    trend_score = trend.get("score", 0)
+
+    if trend_score >= 8:
+        trend_text = "🟢 ОЧЕНЬ СИЛЬНЫЙ ТРЕНД — против движения опасно"
+    elif trend_score >= 6:
+        trend_text = "🟡 СИЛЬНЫЙ ТРЕНД — лучше ждать подтверждения отката"
+    elif trend_score >= 4:
+        trend_text = "🟠 СРЕДНИЙ ТРЕНД — возможен откат"
+    else:
+        trend_text = "🔴 СЛАБЫЙ ТРЕНД — движение может выдыхаться"
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
