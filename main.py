@@ -1079,13 +1079,13 @@ def trend_vote(signal):
         "reason": "TREND_MIDDLE"
     }
 
+
 def money_vote(signal):
 
     money = signal.get("money")
 
-    oi = signal.get("oi_change")
-
     if not money:
+
         return {
             "vote": "UNKNOWN",
             "weight": 0,
@@ -1096,47 +1096,33 @@ def money_vote(signal):
 
     state = money.get("money_state", "")
 
-    # =========================
-    # OI OVERRIDE
-    # =========================
+    # ==========================
+    # VERY STRONG MONEY
+    # ==========================
 
-    if oi is not None:
-
-        if oi <= -5:
-
-            return {
-                "vote": "EXHAUSTION",
-                "weight": 5,
-                "reason": "OI_DOWN_EXIT"
-            }
-
-        if oi >= 5:
-
-            return {
-                "vote": "CONTINUE",
-                "weight": 5,
-                "reason": "OI_UP_NEW_MONEY"
-            }
-
-    # =========================
-    # MONEY FLOW
-    # =========================
-
-    if score >= 4:
+    if score >= 5:
 
         return {
             "vote": "CONTINUE",
-            "weight": 3,
+            "weight": 4,
             "reason": "STRONG_NEW_MONEY"
         }
 
-    if score >= 2:
+    # ==========================
+    # BUILDING MONEY
+    # ==========================
+
+    if score >= 3:
 
         return {
             "vote": "CONTINUE",
             "weight": 2,
             "reason": "BUILDING_MONEY"
         }
+
+    # ==========================
+    # WEAK FLOW
+    # ==========================
 
     if (
         "WEAK" in state
