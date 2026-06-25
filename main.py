@@ -1145,6 +1145,7 @@ def money_vote(signal):
         "reason": "MONEY_NEUTRAL"
     }
 
+
 def pressure_vote(signal):
 
     money = signal.get("money")
@@ -1153,43 +1154,84 @@ def pressure_vote(signal):
         return {
             "vote": "UNKNOWN",
             "weight": 0,
-            "reason": "NO_PRESSURE"
+            "reason": "PRESSURE_NO_DATA"
         }
 
+    move = signal.get("type")
     pressure = money.get("pressure", "")
 
-    if pressure == "STRONG_BUY_PRESSURE":
-        return {
-            "vote": "CONTINUE",
-            "weight": 3,
-            "reason": "STRONG_BUY"
-        }
+    # =========================
+    # PUMP
+    # =========================
 
-    if pressure == "BUY_PRESSURE":
-        return {
-            "vote": "CONTINUE",
-            "weight": 2,
-            "reason": "BUY"
-        }
+    if move == "PUMP":
 
-    if pressure == "STRONG_SELL_PRESSURE":
-        return {
-            "vote": "CONTINUE",
-            "weight": 3,
-            "reason": "STRONG_SELL"
-        }
+        if pressure == "STRONG_BUY_PRESSURE":
+            return {
+                "vote": "CONTINUE",
+                "weight": 3,
+                "reason": "PRESSURE_CONTINUE"
+            }
 
-    if pressure == "SELL_PRESSURE":
-        return {
-            "vote": "CONTINUE",
-            "weight": 2,
-            "reason": "SELL"
-        }
+        if pressure == "BUY_PRESSURE":
+            return {
+                "vote": "CONTINUE",
+                "weight": 2,
+                "reason": "PRESSURE_CONTINUE"
+            }
+
+        if pressure == "STRONG_SELL_PRESSURE":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "PRESSURE_EXHAUSTION"
+            }
+
+        if pressure == "SELL_PRESSURE":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 2,
+                "reason": "PRESSURE_EXHAUSTION"
+            }
+
+    # =========================
+    # DUMP
+    # =========================
+
+    if move == "DUMP":
+
+        if pressure == "STRONG_SELL_PRESSURE":
+            return {
+                "vote": "CONTINUE",
+                "weight": 3,
+                "reason": "PRESSURE_CONTINUE"
+            }
+
+        if pressure == "SELL_PRESSURE":
+            return {
+                "vote": "CONTINUE",
+                "weight": 2,
+                "reason": "PRESSURE_CONTINUE"
+            }
+
+        if pressure == "STRONG_BUY_PRESSURE":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "PRESSURE_EXHAUSTION"
+            }
+
+        if pressure == "BUY_PRESSURE":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 2,
+                "reason": "PRESSURE_EXHAUSTION"
+            }
 
     return {
         "vote": "NEUTRAL",
         "weight": 1,
-        "reason": "BALANCED"
+        "reason": "PRESSURE_NEUTRAL"
     }
 
 def liquidation_vote(signal):
