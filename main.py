@@ -1047,39 +1047,42 @@ def oi_vote(signal):
         "weight": 1,
         "reason": "OI_NEUTRAL"
     }
+
+
 def trend_vote(signal):
 
     trend = signal.get("trend_strength", {})
     score = trend.get("score", 0)
 
     if score >= 8:
+
         return {
             "vote": "CONTINUE",
             "weight": 4,
-            "reason": "TREND_VERY_STRONG"
+            "reason": "TREND_CONTINUE"
         }
 
     if score >= 6:
+
         return {
             "vote": "CONTINUE",
             "weight": 3,
-            "reason": "TREND_STRONG"
+            "reason": "TREND_CONTINUE"
         }
 
     if score <= 2:
+
         return {
             "vote": "EXHAUSTION",
             "weight": 3,
-            "reason": "TREND_WEAK"
+            "reason": "TREND_EXHAUSTION"
         }
 
     return {
         "vote": "NEUTRAL",
         "weight": 1,
-        "reason": "TREND_MIDDLE"
+        "reason": "TREND_NEUTRAL"
     }
-
-
 def money_vote(signal):
 
     money = signal.get("money")
