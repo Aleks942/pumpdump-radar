@@ -1078,6 +1078,8 @@ def trend_vote(signal):
         "weight": 1,
         "reason": "TREND_NEUTRAL"
     }
+
+
 def money_vote(signal):
 
     money = signal.get("money")
@@ -1087,7 +1089,8 @@ def money_vote(signal):
         return {
             "vote": "UNKNOWN",
             "weight": 0,
-            "reason": "NO_MONEY_DATA"
+            "reason": "NO_MONEY_DATA",
+            "text": "Нет данных по деньгам"
         }
 
     score = money.get("money_score", 0)
@@ -1103,7 +1106,8 @@ def money_vote(signal):
         return {
             "vote": "CONTINUE",
             "weight": 4,
-            "reason": "STRONG_NEW_MONEY"
+            "reason": "STRONG_NEW_MONEY",
+            "text": "Заходят новые деньги"
         }
 
     # ==========================
@@ -1115,7 +1119,8 @@ def money_vote(signal):
         return {
             "vote": "CONTINUE",
             "weight": 2,
-            "reason": "BUILDING_MONEY"
+            "reason": "BUILDING_MONEY",
+            "text": "Деньги постепенно заходят"
         }
 
     # ==========================
@@ -1131,16 +1136,21 @@ def money_vote(signal):
         return {
             "vote": "EXHAUSTION",
             "weight": 2,
-            "reason": "WEAK_MONEY_FLOW"
+            "reason": "WEAK_MONEY_FLOW",
+            "text": "Деньги выходят из рынка"
         }
 
     return {
+
         "vote": "NEUTRAL",
+
         "weight": 1,
-        "reason": "MONEY_NEUTRAL"
+
+        "reason": "MONEY_NEUTRAL",
+
+        "text": "Поток денег нейтральный"
+
     }
-
-
 def pressure_vote(signal):
 
     money = signal.get("money")
