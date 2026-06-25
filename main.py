@@ -1407,11 +1407,11 @@ def chief_trader(signal):
 
     # =====================================
     # RULE 2
-    # TREND + NEW MONEY
+    # STRONG TREND + NEW MONEY
     # =====================================
 
     if (
-        votes_map.get("TREND", {}).get("vote") == "CONTINUE"
+        votes_map.get("TREND_CONTINUE", {}).get("vote") == "CONTINUE"
         and
         votes_map.get("OI_UP_NEW_MONEY", {}).get("vote") == "CONTINUE"
     ):
@@ -1428,10 +1428,11 @@ def chief_trader(signal):
 
             "exhaustion_score": exhaustion_score,
 
-            "reasons": reasons
+            "reasons": reasons,
+
+            "explanation": explanation
 
         }
-
     # =====================================
     # RULE 3
     # Everything is getting weaker
