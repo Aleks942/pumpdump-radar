@@ -990,35 +990,63 @@ def classify_move_status(signal):
         }
 
 def oi_vote(signal):
+
     oi = signal.get("oi_change")
 
     if oi is None:
+
         return {
             "vote": "UNKNOWN",
             "weight": 0,
             "reason": "OI_NO_DATA"
         }
 
+    abs_oi = abs(oi)
+
+    # =========================
+    # Dynamic Weight
+    # =========================
+
+    if abs_oi >= 10:
+        weight = 6
+
+    elif abs_oi >= 7:
+        weight = 5
+
+    elif abs_oi >= 5:
+        weight = 4
+
+    elif abs_oi >= 3:
+        weight = 3
+
+    else:
+        weight = 1
+
+    # =========================
+    # Vote
+    # =========================
+
     if oi >= 3:
+
         return {
             "vote": "CONTINUE",
-            "weight": 3,
+            "weight": weight,
             "reason": "OI_UP_NEW_MONEY"
         }
 
     if oi <= -3:
+
         return {
             "vote": "EXHAUSTION",
-            "weight": 3,
+            "weight": weight,
             "reason": "OI_DOWN_EXIT"
         }
 
     return {
         "vote": "NEUTRAL",
-        "weight": 0,
+        "weight": 1,
         "reason": "OI_NEUTRAL"
     }
-
 def trend_vote(signal):
 
     trend = signal.get("trend_strength", {})
