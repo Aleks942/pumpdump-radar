@@ -1160,6 +1160,8 @@ def money_vote(signal):
         "text": "Поток денег нейтральный"
 
     }
+
+
 def pressure_vote(signal):
 
     money = signal.get("money")
@@ -1168,7 +1170,8 @@ def pressure_vote(signal):
         return {
             "vote": "UNKNOWN",
             "weight": 0,
-            "reason": "PRESSURE_NO_DATA"
+            "reason": "PRESSURE_NO_DATA",
+            "text": "Нет данных о давлении"
         }
 
     move = signal.get("type")
@@ -1184,28 +1187,32 @@ def pressure_vote(signal):
             return {
                 "vote": "CONTINUE",
                 "weight": 3,
-                "reason": "PRESSURE_CONTINUE"
+                "reason": "PRESSURE_CONTINUE",
+                "text": "Покупатели полностью контролируют движение"
             }
 
         if pressure == "BUY_PRESSURE":
             return {
                 "vote": "CONTINUE",
                 "weight": 2,
-                "reason": "PRESSURE_CONTINUE"
+                "reason": "PRESSURE_CONTINUE",
+                "text": "Покупатели сильнее продавцов"
             }
 
         if pressure == "STRONG_SELL_PRESSURE":
             return {
                 "vote": "EXHAUSTION",
                 "weight": 3,
-                "reason": "PRESSURE_EXHAUSTION"
+                "reason": "PRESSURE_EXHAUSTION",
+                "text": "Продавцы начинают перехватывать инициативу"
             }
 
         if pressure == "SELL_PRESSURE":
             return {
                 "vote": "EXHAUSTION",
                 "weight": 2,
-                "reason": "PRESSURE_EXHAUSTION"
+                "reason": "PRESSURE_EXHAUSTION",
+                "text": "Продавцы усиливаются"
             }
 
     # =========================
@@ -1218,34 +1225,39 @@ def pressure_vote(signal):
             return {
                 "vote": "CONTINUE",
                 "weight": 3,
-                "reason": "PRESSURE_CONTINUE"
+                "reason": "PRESSURE_CONTINUE",
+                "text": "Продавцы полностью контролируют движение"
             }
 
         if pressure == "SELL_PRESSURE":
             return {
                 "vote": "CONTINUE",
                 "weight": 2,
-                "reason": "PRESSURE_CONTINUE"
+                "reason": "PRESSURE_CONTINUE",
+                "text": "Продавцы сильнее покупателей"
             }
 
         if pressure == "STRONG_BUY_PRESSURE":
             return {
                 "vote": "EXHAUSTION",
                 "weight": 3,
-                "reason": "PRESSURE_EXHAUSTION"
+                "reason": "PRESSURE_EXHAUSTION",
+                "text": "Покупатели начинают перехватывать инициативу"
             }
 
         if pressure == "BUY_PRESSURE":
             return {
                 "vote": "EXHAUSTION",
                 "weight": 2,
-                "reason": "PRESSURE_EXHAUSTION"
+                "reason": "PRESSURE_EXHAUSTION",
+                "text": "Покупатели усиливаются"
             }
 
     return {
         "vote": "NEUTRAL",
         "weight": 1,
-        "reason": "PRESSURE_NEUTRAL"
+        "reason": "PRESSURE_NEUTRAL",
+        "text": "Давление покупателей и продавцов почти одинаковое"
     }
 
 def liquidation_vote(signal):
