@@ -1877,6 +1877,40 @@ def build_message(signal):
                 "Шорты капитулировали.\n"
                 "Высока вероятность коррекции вниз."
             )
+    # =========================
+    # CHIEF TRADER RESULT
+    # =========================
+
+    decision = signal.get("decision", {})
+
+    stage = decision.get("stage", "UNKNOWN")
+
+    stage_map = {
+        "EARLY": "🟢 РАННИЙ ИМПУЛЬС",
+        "BUILDING": "🟡 ИМПУЛЬС РАЗВИВАЕТСЯ",
+        "LATE": "🟠 ПОЗДНЯЯ СТАДИЯ",
+        "EXHAUSTION": "🔴 ИМПУЛЬС ВЫДЫХАЕТСЯ",
+    }
+
+    move_status = stage_map.get(
+        stage,
+        "⚪ НЕТ ДАННЫХ"
+    )
+
+    action = decision.get("action", "WAIT")
+
+    action_map = {
+        "IGNORE_REVERSAL": "🚫 НЕ ЛЕЗТЬ",
+        "WAIT": "🟡 ЖДАТЬ",
+        "WATCH": "👀 НАБЛЮДАТЬ",
+        "LOOK_REVERSAL": "🎯 ИСКАТЬ КОРРЕКЦИЮ",
+    }
+
+    decision_text = action_map.get(
+        action,
+        "🟡 ЖДАТЬ"
+    )
+
     return f"""
 {emoji} <b>{signal["symbol"]}</b>
 
@@ -1904,7 +1938,7 @@ L ${long_liq:,.0f} | S ${short_liq:,.0f}
 
 🧠 <b>Почему</b>
 
-{setup_reason if setup_reason else "✔ Импульс обнаружен"}
+{setup_reason if setup_reason else "✔ Аналитики подтверждают текущее решение"}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
