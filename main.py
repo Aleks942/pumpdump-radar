@@ -795,63 +795,56 @@ def classify_market_state(
 
     return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
 
-def analyze_trend_strength(
-    signal,
-    money,
-    oi_change,
-    funding,
-    long_liq,
-    short_liq,
-    market_state,
-    pressure_state
-):
+def analyze_trend_strength(signal):
     try:
         score = 0
         reasons = []
 
         move_type = signal.get("type")
         change = signal.get("change", 0)
+        oi_change = signal.get("oi_change")
+        funding = signal.get("funding")
+        money = signal.get("money")
+        liquidations = signal.get("liquidations")
 
         money_score = 0
-        pressure_raw = ""
+        pressure = ""
 
         if money:
             money_score = money.get("money_score", 0)
-            pressure_raw = money.get("pressure", "")
+            pressure = money.get("pressure", "")
 
-        # =========================
-        # 1. PRICE POWER
-        # =========================
+        long_liq = 0
+        short_liq = 0
 
+        if liquidations:
+            long_liq = liquidations.get("long_liq", 0)
+            short_liq = liquidations.get("short_liq", 0)
+
+        # PRICE
         if move_type == "PUMP" and change > 0:
             score += 2
-            reasons.append("PRICE_UP_CONFIRMED")
+            reasons.append("PRICE_UP")
 
         if move_type == "DUMP" and change < 0:
             score += 2
-            reasons.append("PRICE_DOWN_CONFIRMED")
+            reasons.append("PRICE_DOWN")
 
-        # =========================
-        # 2. OI CONFIRMATION
-        # =========================
-
+        # OI
         if oi_change is not None:
             if move_type == "PUMP" and oi_change >= 3:
                 score += 2
-                reasons.append("OI_NEW_LONGS")
+                reasons.append("OI_SUPPORTS_PUMP")
 
             elif move_type == "DUMP" and oi_change >= 3:
                 score += 2
-                reasons.append("OI_NEW_SHORTS")
+                reasons.append("OI_SUPPORTS_DUMP")
 
             elif oi_change <= -3:
                 score -= 1
                 reasons.append("OI_EXITING")
 
-        # =========================
-        # 3. MONEY FLOW
-        # =========================
-
+        # MONEY FLOW
         if money_score >= 4:
             score += 2
             reasons.append("STRONG_MONEY_FLOW")
@@ -860,54 +853,33 @@ def analyze_trend_strength(
             score += 1
             reasons.append("MODERATE_MONEY_FLOW")
 
-        # =========================
-        # 4. PRESSURE
-        # =========================
-
-        if move_type == "PUMP" and "BUY" in pressure_raw:
+        # PRESSURE
+        if move_type == "PUMP" and "BUY" in pressure:
             score += 1
             reasons.append("BUY_PRESSURE")
 
-        if move_type == "DUMP" and "SELL" in pressure_raw:
+        if move_type == "DUMP" and "SELL" in pressure:
             score += 1
             reasons.append("SELL_PRESSURE")
 
-        # =========================
-        # 5. FUNDING CONTEXT
-        # =========================
-
+        # FUNDING
         if funding is not None:
             if move_type == "PUMP" and funding < 0:
                 score += 1
                 reasons.append("NEGATIVE_FUNDING_SUPPORTS_PUMP")
 
-            elif move_type == "DUMP" and funding > 0:
+            if move_type == "DUMP" and funding > 0:
                 score += 1
                 reasons.append("POSITIVE_FUNDING_SUPPORTS_DUMP")
 
-        # =========================
-        # 6. LIQUIDATIONS
-        # =========================
-
-        if move_type == "PUMP" and short_liq > long_liq and short_liq >= 50000:
+        # LIQUIDATIONS
+        if move_type == "PUMP" and short_liq >= 50000 and short_liq > long_liq:
             score += 1
             reasons.append("SHORTS_LIQUIDATED")
 
-        if move_type == "DUMP" and long_liq > short_liq and long_liq >= 50000:
+        if move_type == "DUMP" and long_liq >= 50000 and long_liq > short_liq:
             score += 1
             reasons.append("LONGS_LIQUIDATED")
-
-        # =========================
-        # 7. MARKET STATE
-        # =========================
-
-        if move_type == "PUMP" and "ПАМП ПРОДОЛЖАЕТСЯ" in market_state:
-            score += 1
-            reasons.append("MARKET_STATE_CONTINUATION")
-
-        if move_type == "DUMP" and "ДАМП ПРОДОЛЖАЕТСЯ" in market_state:
-            score += 1
-            reasons.append("MARKET_STATE_CONTINUATION")
 
         score = max(0, min(score, 10))
 
@@ -935,7 +907,6 @@ def analyze_trend_strength(
 
     except Exception as e:
         print("[SMART_TREND_ERROR]", e, flush=True)
-
         return {
             "score": 0,
             "reasons": []
