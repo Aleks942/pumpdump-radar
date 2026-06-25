@@ -515,7 +515,7 @@ def analyze(ticker):
             len(OI_HISTORY[symbol])
         )
 
-        if len(OI_HISTORY[symbol]) > 20:
+        if len(OI_HISTORY[symbol]) > 60:
             OI_HISTORY[symbol].pop(0)
 
         if len(OI_HISTORY[symbol]) >= 2:
