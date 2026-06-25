@@ -839,12 +839,13 @@ def analyze_trend_strength(signal):
             short_liq = liquidations.get("short_liq", 0)
 
         # PRICE
+        
         if move_type == "PUMP" and change > 0:
-            score += 2
+            score += 1
             reasons.append("PRICE_UP")
-
+        
         if move_type == "DUMP" and change < 0:
-            score += 2
+            score += 1
             reasons.append("PRICE_DOWN")
 
         # OI
