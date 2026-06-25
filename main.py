@@ -1223,6 +1223,42 @@ def build_message(signal):
                 "Есть признаки силы. "
                 "Нужен выдох дампа."
             )
+
+    # =========================
+    # EXHAUSTION DECISION ENGINE
+    # =========================
+    
+    if (
+        trend_score <= 2
+        and oi_change is not None
+        and oi_change <= -5
+    ):
+    
+        if (
+            signal["type"] == "DUMP"
+            and "КАПИТУЛЯЦИЯ" in oi_flow
+        ):
+    
+            setup = "🟢 ЛОНГ ⭐⭐⭐⭐"
+    
+            setup_reason = (
+                "Импульс выдыхается.\n"
+                "Лонги капитулировали.\n"
+                "Высока вероятность коррекции вверх."
+            )
+    
+        elif (
+            signal["type"] == "PUMP"
+            and "КАПИТУЛЯЦИЯ" in oi_flow
+        ):
+    
+            setup = "🔴 ШОРТ ⭐⭐⭐⭐"
+    
+            setup_reason = (
+                "Импульс выдыхается.\n"
+                "Шорты капитулировали.\n"
+                "Высока вероятность коррекции вниз."
+            )
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
