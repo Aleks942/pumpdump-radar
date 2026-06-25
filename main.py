@@ -1989,7 +1989,7 @@ L ${long_liq:,.0f} | S ${short_liq:,.0f}
 
 🧠 <b>Почему</b>
 
-{setup_reason if setup_reason else "✔ Аналитики подтверждают текущее решение"}
+{reasons_text}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
