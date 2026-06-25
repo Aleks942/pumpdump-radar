@@ -1302,47 +1302,30 @@ def build_message(signal):
                 "Шорты капитулировали.\n"
                 "Высока вероятность коррекции вниз."
             )
-    return f"""
-{emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
+   return f"""
+{emoji} <b>{signal["symbol"]}</b> | {signal["change"]:.2f}%
 
-⏱ Период: {signal["window"]}
+🎯 <b>{setup}</b>
 
-📈 Движение: {signal["change"]:.2f}%
+──────────────
 
-🎯 СЕТАП: {setup}
-
-📝 Причина:
-{setup_reason}
-
-⭐ Качество: {quality}/10
-
-💰 Деньги:
-{money_state}
-
-📦 OI:
+📦 <b>OI</b>
 {oi_text}
 
-💵 Поток денег:
-{oi_flow}
+💰 <b>Деньги</b>
+{money_state}
 
-🧠 Состояние рынка:
-{market_state}
-
-🧭 Сила тренда:
-{trend_score}/10
-{trend_text}
-
-⚠️ Риск:
-{risk_note}
-
-{new_listing_warning}
-
-⚖️ Давление:
+⚖️ <b>Давление</b>
 {pressure_state}
 
-💥 Ликвидации:
-{liq_strength}
-L: ${long_liq:,.0f} | S: ${short_liq:,.0f}
+💥 <b>Ликвидации</b>
+L ${long_liq:,.0f} | S ${short_liq:,.0f}
+
+──────────────
+
+🧠 <b>Почему</b>
+
+{setup_reason if setup_reason else "✔ Импульс обнаружен"}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
