@@ -1193,6 +1193,10 @@ def build_message(signal):
 🧠 Состояние рынка:
 {market_state}
 
+🧭 Сила тренда:
+{trend_score}/10
+{trend_text}
+
 ⚠️ Риск:
 {risk_note}
 
