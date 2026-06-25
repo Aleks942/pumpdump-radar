@@ -1083,6 +1083,8 @@ def money_vote(signal):
 
     money = signal.get("money")
 
+    oi = signal.get("oi_change")
+
     if not money:
         return {
             "vote": "UNKNOWN",
@@ -1091,9 +1093,37 @@ def money_vote(signal):
         }
 
     score = money.get("money_score", 0)
+
     state = money.get("money_state", "")
 
+    # =========================
+    # OI OVERRIDE
+    # =========================
+
+    if oi is not None:
+
+        if oi <= -5:
+
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 5,
+                "reason": "OI_DOWN_EXIT"
+            }
+
+        if oi >= 5:
+
+            return {
+                "vote": "CONTINUE",
+                "weight": 5,
+                "reason": "OI_UP_NEW_MONEY"
+            }
+
+    # =========================
+    # MONEY FLOW
+    # =========================
+
     if score >= 4:
+
         return {
             "vote": "CONTINUE",
             "weight": 3,
@@ -1101,6 +1131,7 @@ def money_vote(signal):
         }
 
     if score >= 2:
+
         return {
             "vote": "CONTINUE",
             "weight": 2,
@@ -1109,8 +1140,10 @@ def money_vote(signal):
 
     if (
         "WEAK" in state
-        or "NO_CLEAR" in state
+        or
+        "NO_CLEAR" in state
     ):
+
         return {
             "vote": "EXHAUSTION",
             "weight": 2,
