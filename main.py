@@ -1268,7 +1268,8 @@ def liquidation_vote(signal):
         return {
             "vote": "UNKNOWN",
             "weight": 0,
-            "reason": "NO_LIQUIDATIONS"
+            "reason": "NO_LIQUIDATIONS",
+            "text": "Нет данных по ликвидациям"
         }
 
     long_liq = liq.get("long_liq", 0)
@@ -1276,49 +1277,57 @@ def liquidation_vote(signal):
 
     move = signal.get("type")
 
-    # =====================================
+    # =========================
     # PUMP
-    # =====================================
+    # =========================
 
     if move == "PUMP":
 
         if short_liq >= 100000 and short_liq > long_liq * 2:
+
             return {
                 "vote": "EXHAUSTION",
                 "weight": 4,
-                "reason": "SHORT_SQUEEZE"
+                "reason": "SHORT_SQUEEZE",
+                "text": "Шортистов массово выносит"
             }
 
         return {
             "vote": "NEUTRAL",
             "weight": 1,
-            "reason": "NO_SQUEEZE"
+            "reason": "NO_SQUEEZE",
+            "text": "Массового шорт-сквиза нет"
         }
 
-    # =====================================
+    # =========================
     # DUMP
-    # =====================================
+    # =========================
 
     if move == "DUMP":
 
         if long_liq >= 100000 and long_liq > short_liq * 2:
+
             return {
                 "vote": "EXHAUSTION",
                 "weight": 4,
-                "reason": "LONG_CAPITULATION"
+                "reason": "LONG_CAPITULATION",
+                "text": "Лонги массово капитулируют"
             }
 
         return {
             "vote": "NEUTRAL",
             "weight": 1,
-            "reason": "NO_CAPITULATION"
+            "reason": "NO_CAPITULATION",
+            "text": "Массовой капитуляции нет"
         }
 
     return {
         "vote": "UNKNOWN",
         "weight": 0,
-        "reason": "UNKNOWN"
+        "reason": "UNKNOWN",
+        "text": ""
     }
+
 
 def chief_trader(signal):
 
