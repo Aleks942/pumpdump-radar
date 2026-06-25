@@ -795,6 +795,152 @@ def classify_market_state(
 
     return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
 
+def analyze_trend_strength(
+    signal,
+    money,
+    oi_change,
+    funding,
+    long_liq,
+    short_liq,
+    market_state,
+    pressure_state
+):
+    try:
+        score = 0
+        reasons = []
+
+        move_type = signal.get("type")
+        change = signal.get("change", 0)
+
+        money_score = 0
+        pressure_raw = ""
+
+        if money:
+            money_score = money.get("money_score", 0)
+            pressure_raw = money.get("pressure", "")
+
+        # =========================
+        # 1. PRICE POWER
+        # =========================
+
+        if move_type == "PUMP" and change > 0:
+            score += 2
+            reasons.append("PRICE_UP_CONFIRMED")
+
+        if move_type == "DUMP" and change < 0:
+            score += 2
+            reasons.append("PRICE_DOWN_CONFIRMED")
+
+        # =========================
+        # 2. OI CONFIRMATION
+        # =========================
+
+        if oi_change is not None:
+            if move_type == "PUMP" and oi_change >= 3:
+                score += 2
+                reasons.append("OI_NEW_LONGS")
+
+            elif move_type == "DUMP" and oi_change >= 3:
+                score += 2
+                reasons.append("OI_NEW_SHORTS")
+
+            elif oi_change <= -3:
+                score -= 1
+                reasons.append("OI_EXITING")
+
+        # =========================
+        # 3. MONEY FLOW
+        # =========================
+
+        if money_score >= 4:
+            score += 2
+            reasons.append("STRONG_MONEY_FLOW")
+
+        elif money_score >= 2:
+            score += 1
+            reasons.append("MODERATE_MONEY_FLOW")
+
+        # =========================
+        # 4. PRESSURE
+        # =========================
+
+        if move_type == "PUMP" and "BUY" in pressure_raw:
+            score += 1
+            reasons.append("BUY_PRESSURE")
+
+        if move_type == "DUMP" and "SELL" in pressure_raw:
+            score += 1
+            reasons.append("SELL_PRESSURE")
+
+        # =========================
+        # 5. FUNDING CONTEXT
+        # =========================
+
+        if funding is not None:
+            if move_type == "PUMP" and funding < 0:
+                score += 1
+                reasons.append("NEGATIVE_FUNDING_SUPPORTS_PUMP")
+
+            elif move_type == "DUMP" and funding > 0:
+                score += 1
+                reasons.append("POSITIVE_FUNDING_SUPPORTS_DUMP")
+
+        # =========================
+        # 6. LIQUIDATIONS
+        # =========================
+
+        if move_type == "PUMP" and short_liq > long_liq and short_liq >= 50000:
+            score += 1
+            reasons.append("SHORTS_LIQUIDATED")
+
+        if move_type == "DUMP" and long_liq > short_liq and long_liq >= 50000:
+            score += 1
+            reasons.append("LONGS_LIQUIDATED")
+
+        # =========================
+        # 7. MARKET STATE
+        # =========================
+
+        if move_type == "PUMP" and "ПАМП ПРОДОЛЖАЕТСЯ" in market_state:
+            score += 1
+            reasons.append("MARKET_STATE_CONTINUATION")
+
+        if move_type == "DUMP" and "ДАМП ПРОДОЛЖАЕТСЯ" in market_state:
+            score += 1
+            reasons.append("MARKET_STATE_CONTINUATION")
+
+        score = max(0, min(score, 10))
+
+        print(
+            "[SMART_TREND]",
+            signal.get("symbol"),
+            move_type,
+            "score=",
+            score,
+            "change=",
+            round(change, 2),
+            "oi=",
+            round(oi_change, 2) if oi_change is not None else None,
+            "funding=",
+            round(funding, 4) if funding is not None else None,
+            "reasons=",
+            reasons,
+            flush=True
+        )
+
+        return {
+            "score": score,
+            "reasons": reasons
+        }
+
+    except Exception as e:
+        print("[SMART_TREND_ERROR]", e, flush=True)
+
+        return {
+            "score": 0,
+            "reasons": []
+        }
+
     
 def build_message(signal):
 
