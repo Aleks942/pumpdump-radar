@@ -1054,7 +1054,8 @@ def trend_vote(signal):
         return {
             "vote": "CONTINUE",
             "weight": 4,
-            "reason": "TREND_CONTINUE"
+            "reason": "TREND_CONTINUE",
+            "text": "Импульс очень сильный"
         }
 
     if score >= 6:
@@ -1062,7 +1063,8 @@ def trend_vote(signal):
         return {
             "vote": "CONTINUE",
             "weight": 3,
-            "reason": "TREND_CONTINUE"
+            "reason": "TREND_CONTINUE",
+            "text": "Импульс сохраняет силу"
         }
 
     if score <= 2:
@@ -1070,13 +1072,20 @@ def trend_vote(signal):
         return {
             "vote": "EXHAUSTION",
             "weight": 3,
-            "reason": "TREND_EXHAUSTION"
+            "reason": "TREND_EXHAUSTION",
+            "text": "Импульс выдыхается"
         }
 
     return {
+
         "vote": "NEUTRAL",
+
         "weight": 1,
-        "reason": "TREND_NEUTRAL"
+
+        "reason": "TREND_NEUTRAL",
+
+        "text": "Сила импульса средняя"
+
     }
 
 
