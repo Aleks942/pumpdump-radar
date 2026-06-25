@@ -407,37 +407,72 @@ def update_oi_change_history(symbol, oi_change):
     return OI_CHANGE_HISTORY[symbol]  
 
 def detect_exhaustion(move_type, change, oi_change_history):
+
     if not oi_change_history:
         return None
 
-    if len(oi_change_history) < 4:
+    if len(oi_change_history) < 2:
         return None
 
     try:
-        h = [float(x) for x in oi_change_history[-4:]]
+        prev = float(oi_change_history[-2])
+        last = float(oi_change_history[-1])
     except Exception:
         return None
 
-    oi_slowing_down = h[0] > h[1] > h[2] > h[3]
+    acceleration = last < prev
 
-    if not oi_slowing_down:
-        return None
+    slowing = last > prev
 
-    if move_type == "PUMP" and change > 0:
-        return {
-            "type": "LONGS_EXHAUSTING",
-            "side_hint": "SHORT",
-            "text": "🔥 LONGS EXHAUSTING\n⚠️ Высокая вероятность коррекции.",
-            "history": h
-        }
+    # ==========================
+    # PUMP
+    # ==========================
 
-    if move_type == "DUMP" and change < 0:
-        return {
-            "type": "SHORTS_EXHAUSTING",
-            "side_hint": "LONG",
-            "text": "🔥 SHORTS EXHAUSTING\n⚠️ Высокая вероятность отскока.",
-            "history": h
-        }
+    if move_type == "PUMP":
+
+        # Деньги выходят всё быстрее
+        if last <= -3 and acceleration:
+
+            return {
+                "type": "LONGS_EXHAUSTING",
+                "strength": 9,
+                "side_hint": "SHORT",
+                "history": [prev, last]
+            }
+
+        # Деньги ещё выходят, но уже слабее
+        if last <= -3 and slowing:
+
+            return {
+                "type": "LONGS_COOLING",
+                "strength": 5,
+                "side_hint": "WAIT",
+                "history": [prev, last]
+            }
+
+    # ==========================
+    # DUMP
+    # ==========================
+
+    if move_type == "DUMP":
+
+        if last <= -3 and acceleration:
+
+            return {
+                "type": "SHORTS_EXHAUSTING",
+                "strength": 9,
+                "side_hint": "LONG",
+                "history": [prev, last]
+            }
+
+        if last <= -3 and slowing:
+
+            return {
+                "type": "SHORTS_COOLING",
+                "strength": 5,
+                "side_hint": "WAIT",
+                "history": [prev, last]
+            }
 
     return None
 
