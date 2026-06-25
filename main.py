@@ -1302,7 +1302,7 @@ def build_message(signal):
                 "Шорты капитулировали.\n"
                 "Высока вероятность коррекции вниз."
             )
-   return f"""
+    return f"""
 {emoji} <b>{signal["symbol"]}</b> | {signal["change"]:.2f}%
 
 🎯 <b>{setup}</b>
