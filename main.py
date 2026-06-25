@@ -716,6 +716,7 @@ def analyze(ticker):
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
         
         move_status = classify_move_status(temp_signal)
+        decision = decision_engine(temp_signal)
 
         best_signal = {
             "symbol": symbol,
@@ -738,6 +739,7 @@ def analyze(ticker):
             "liquidations": liquidations,
             "trend_strength": temp_signal["trend_strength"],
             "move_status": move_status,
+            "decision": decision,
         }
 
         break
