@@ -805,6 +805,13 @@ def analyze_trend_strength(signal):
         score = 0
         reasons = []
 
+        move_type = signal.get("type")
+        change = signal.get("change", 0)
+        oi_change = signal.get("oi_change")
+        funding = signal.get("funding")
+        money = signal.get("money")
+        liquidations = signal.get("liquidations")
+
         # ==========================
         # PRICE STRENGTH
         # ==========================
@@ -816,14 +823,7 @@ def analyze_trend_strength(signal):
         elif abs(change) >= 5:
             score += 1
             reasons.append("PRICE_STRONG")
-
-        move_type = signal.get("type")
-        change = signal.get("change", 0)
-        oi_change = signal.get("oi_change")
-        funding = signal.get("funding")
-        money = signal.get("money")
-        liquidations = signal.get("liquidations")
-
+       
         money_score = 0
         pressure = ""
 
