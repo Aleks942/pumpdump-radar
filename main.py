@@ -1342,6 +1342,32 @@ def chief_trader(signal):
         elif v["vote"] == "EXHAUSTION":
     
             exhaustion_score += v["weight"]
+    # ============================
+    # CHIEF EXPLAINER
+    # ============================
+
+    reasons = sorted(
+
+        reasons,
+
+        key=lambda x: x["weight"],
+
+        reverse=True
+
+    )
+
+    explanation = []
+
+    for r in reasons[:3]:
+
+        if r["text"]:
+
+            explanation.append(
+
+                f"• {r['text']}"
+
+            )
+    
     # =====================================
     # CHIEF TRADER PRIORITY RULES
     # =====================================
