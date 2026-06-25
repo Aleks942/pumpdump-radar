@@ -1274,6 +1274,106 @@ def chief_trader(signal):
         elif v["vote"] == "EXHAUSTION":
             exhaustion_score += v["weight"]
 
+    # =====================================
+    # CHIEF TRADER PRIORITY RULES
+    # =====================================
+
+    votes_map = {
+        v["reason"]: v
+        for v in votes
+    }
+
+    # =====================================
+    # RULE 1
+    # OI EXIT + CAPITULATION
+    # Самый сильный сигнал
+    # =====================================
+
+    if (
+        votes_map.get("OI_DOWN_EXIT", {}).get("vote") == "EXHAUSTION"
+        and
+        votes_map.get("LONG_CAPITULATION", {}).get("vote") == "EXHAUSTION"
+    ):
+
+        return {
+
+            "stage": "EXHAUSTION",
+
+            "action": "LOOK_REVERSAL",
+
+            "confidence": 95,
+
+            "continue_score": continue_score,
+
+            "exhaustion_score": exhaustion_score,
+
+            "reasons": reasons
+
+        }
+
+    # =====================================
+    # RULE 2
+    # TREND + NEW MONEY
+    # =====================================
+
+    if (
+        votes_map.get("TREND", {}).get("vote") == "CONTINUE"
+        and
+        votes_map.get("OI_UP_NEW_MONEY", {}).get("vote") == "CONTINUE"
+    ):
+
+        return {
+
+            "stage": "EARLY",
+
+            "action": "IGNORE_REVERSAL",
+
+            "confidence": 95,
+
+            "continue_score": continue_score,
+
+            "exhaustion_score": exhaustion_score,
+
+            "reasons": reasons
+
+        }
+
+    # =====================================
+    # RULE 3
+    # Everything is getting weaker
+    # =====================================
+
+    weak = 0
+
+    if votes_map.get("WEAK_TREND"):
+        weak += 1
+
+    if votes_map.get("WEAK_MONEY_FLOW"):
+        weak += 1
+
+    pressure_vote_data = votes_map.get("PRESSURE_EXHAUSTION")
+
+    if pressure_vote_data:
+        weak += 1
+
+    if weak >= 2:
+
+        return {
+
+            "stage": "LATE",
+
+            "action": "WATCH",
+
+            "confidence": 80,
+
+            "continue_score": continue_score,
+
+            "exhaustion_score": exhaustion_score,
+
+            "reasons": reasons
+
+        }
+
     # ===========================
     # STAGE CLASSIFIER
     # ===========================
