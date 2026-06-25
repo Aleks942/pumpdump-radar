@@ -1202,6 +1202,60 @@ def liquidation_vote(signal):
         "reason": "UNKNOWN"
     }
 
+def chief_trader(signal):
+
+    votes = []
+
+    votes.append(oi_vote(signal))
+    votes.append(trend_vote(signal))
+    votes.append(money_vote(signal))
+    votes.append(pressure_vote(signal))
+    votes.append(liquidation_vote(signal))
+
+    continue_score = 0
+    exhaustion_score = 0
+
+    reasons = []
+
+    for v in votes:
+
+        reasons.append(v["reason"])
+
+        if v["vote"] == "CONTINUE":
+            continue_score += v["weight"]
+
+        elif v["vote"] == "EXHAUSTION":
+            exhaustion_score += v["weight"]
+
+    # ===========================
+    # DECISION
+    # ===========================
+
+    if exhaustion_score >= continue_score + 3:
+
+        return {
+            "status": "EXHAUSTION",
+            "action": "LOOK_REVERSE",
+            "confidence": min(100, 50 + exhaustion_score * 5),
+            "reasons": reasons
+        }
+
+    if continue_score >= exhaustion_score + 3:
+
+        return {
+            "status": "CONTINUE",
+            "action": "DO_NOT_TOUCH",
+            "confidence": min(100, 50 + continue_score * 5),
+            "reasons": reasons
+        }
+
+    return {
+        "status": "UNCLEAR",
+        "action": "WAIT",
+        "confidence": 50,
+        "reasons": reasons
+    }
+
 def decision_engine(signal):
 
     continuation = 0
