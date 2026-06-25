@@ -864,6 +864,14 @@ def analyze_trend_strength(signal):
                 score -= 2
                 reasons.append("OI_EXITING")
 
+        # NO OI
+
+        if oi_change is None:
+        
+            score -= 2
+        
+            reasons.append("NO_OI_DATA")
+
         # MONEY FLOW
         if money_score >= 4:
             score += 2
