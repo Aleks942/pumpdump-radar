@@ -849,17 +849,19 @@ def analyze_trend_strength(signal):
             reasons.append("PRICE_DOWN")
 
         # OI
+
         if oi_change is not None:
+        
             if move_type == "PUMP" and oi_change >= 3:
-                score += 2
+                score += 3
                 reasons.append("OI_SUPPORTS_PUMP")
-
+        
             elif move_type == "DUMP" and oi_change >= 3:
-                score += 2
+                score += 3
                 reasons.append("OI_SUPPORTS_DUMP")
-
+        
             elif oi_change <= -3:
-                score -= 1
+                score -= 2
                 reasons.append("OI_EXITING")
 
         # MONEY FLOW
