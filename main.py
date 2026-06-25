@@ -1600,7 +1600,7 @@ def build_message(signal):
 
 📊 <b>{move_status}</b>
 
-🎯 <b>{setup}</b>
+🎯 <b>{decision_text}</b>
 
 ──────────────
 
