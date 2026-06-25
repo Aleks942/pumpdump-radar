@@ -682,10 +682,13 @@ def analyze(ticker):
             "oi_flow": oi_flow,
             "signal_24h": signal_count,
             "oi_change_history": oi_change_history,
-
             "money": money,
             "liquidations": liquidations,
         }
+
+        trend = analyze_trend_strength(best_signal)
+
+        best_signal["trend_strength"] = trend
 
         break
 
