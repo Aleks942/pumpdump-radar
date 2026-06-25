@@ -989,6 +989,36 @@ def classify_move_status(signal):
             "reasons": []
         }
 
+def oi_vote(signal):
+    oi = signal.get("oi_change")
+
+    if oi is None:
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "OI_NO_DATA"
+        }
+
+    if oi >= 3:
+        return {
+            "vote": "CONTINUE",
+            "weight": 3,
+            "reason": "OI_UP_NEW_MONEY"
+        }
+
+    if oi <= -3:
+        return {
+            "vote": "EXHAUSTION",
+            "weight": 3,
+            "reason": "OI_DOWN_EXIT"
+        }
+
+    return {
+        "vote": "NEUTRAL",
+        "weight": 0,
+        "reason": "OI_NEUTRAL"
+    }
+
 def decision_engine(signal):
 
     continuation = 0
