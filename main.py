@@ -800,6 +800,18 @@ def analyze_trend_strength(signal):
         score = 0
         reasons = []
 
+        # ==========================
+        # PRICE STRENGTH
+        # ==========================
+
+        if abs(change) >= 10:
+            score += 2
+            reasons.append("PRICE_IMPULSE")
+
+        elif abs(change) >= 5:
+            score += 1
+            reasons.append("PRICE_STRONG")
+
         move_type = signal.get("type")
         change = signal.get("change", 0)
         oi_change = signal.get("oi_change")
