@@ -987,6 +987,131 @@ def classify_move_status(signal):
             "reasons": []
         }
 
+def decision_engine(signal):
+
+    continuation = 0
+    exhaustion = 0
+
+    reasons = []
+
+    trend = signal.get("trend_strength", {})
+    trend_score = trend.get("score", 0)
+
+    oi = signal.get("oi_change")
+    money = signal.get("money", {})
+    pressure = money.get("pressure", "")
+
+    liq = signal.get("liquidations", {})
+
+    long_liq = liq.get("long_liq", 0)
+    short_liq = liq.get("short_liq", 0)
+
+    move = signal.get("type")
+
+    # =====================
+    # TREND
+    # =====================
+
+    if trend_score >= 7:
+        continuation += 3
+        reasons.append("TREND")
+
+    elif trend_score <= 2:
+        exhaustion += 3
+        reasons.append("WEAK_TREND")
+
+    # =====================
+    # OI
+    # =====================
+
+    if oi is not None:
+
+        if oi >= 3:
+            continuation += 3
+            reasons.append("OI_UP")
+
+        elif oi <= -3:
+            exhaustion += 3
+            reasons.append("OI_DOWN")
+
+    # =====================
+    # PRESSURE
+    # =====================
+
+    if move == "PUMP":
+
+        if "BUY" in pressure:
+            continuation += 1
+
+        if "SELL" in pressure:
+            exhaustion += 1
+
+    if move == "DUMP":
+
+        if "SELL" in pressure:
+            continuation += 1
+
+        if "BUY" in pressure:
+            exhaustion += 1
+
+    # =====================
+    # LIQUIDATIONS
+    # =====================
+
+    if move == "PUMP":
+
+        if short_liq > long_liq * 2:
+            exhaustion += 2
+            reasons.append("SHORT_SQUEEZE")
+
+    if move == "DUMP":
+
+        if long_liq > short_liq * 2:
+            exhaustion += 2
+            reasons.append("LONG_CAPITULATION")
+
+    # =====================
+    # RESULT
+    # =====================
+
+    if continuation >= exhaustion + 3:
+
+        return {
+            "action": "CONTINUE",
+            "text": "🚫 НЕ ЛЕЗТЬ ПРОТИВ ТРЕНДА",
+            "continuation": continuation,
+            "exhaustion": exhaustion,
+            "reasons": reasons
+        }
+
+    if exhaustion >= continuation + 3:
+
+        if move == "PUMP":
+
+            return {
+                "action": "SHORT",
+                "text": "🔴 ИСКАТЬ ШОРТ",
+                "continuation": continuation,
+                "exhaustion": exhaustion,
+                "reasons": reasons
+            }
+
+        return {
+            "action": "LONG",
+            "text": "🟢 ИСКАТЬ ЛОНГ",
+            "continuation": continuation,
+            "exhaustion": exhaustion,
+            "reasons": reasons
+        }
+
+    return {
+        "action": "WAIT",
+        "text": "🟡 ЖДАТЬ",
+        "continuation": continuation,
+        "exhaustion": exhaustion,
+        "reasons": reasons
+    }
+
 def analyze_trend_strength(signal):
     try:
         score = 0
