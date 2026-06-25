@@ -1094,6 +1094,53 @@ def money_vote(signal):
         "weight": 1,
         "reason": "MONEY_NEUTRAL"
     }
+
+def pressure_vote(signal):
+
+    money = signal.get("money")
+
+    if not money:
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "NO_PRESSURE"
+        }
+
+    pressure = money.get("pressure", "")
+
+    if pressure == "STRONG_BUY_PRESSURE":
+        return {
+            "vote": "CONTINUE",
+            "weight": 3,
+            "reason": "STRONG_BUY"
+        }
+
+    if pressure == "BUY_PRESSURE":
+        return {
+            "vote": "CONTINUE",
+            "weight": 2,
+            "reason": "BUY"
+        }
+
+    if pressure == "STRONG_SELL_PRESSURE":
+        return {
+            "vote": "CONTINUE",
+            "weight": 3,
+            "reason": "STRONG_SELL"
+        }
+
+    if pressure == "SELL_PRESSURE":
+        return {
+            "vote": "CONTINUE",
+            "weight": 2,
+            "reason": "SELL"
+        }
+
+    return {
+        "vote": "NEUTRAL",
+        "weight": 1,
+        "reason": "BALANCED"
+    }
 def decision_engine(signal):
 
     continuation = 0
