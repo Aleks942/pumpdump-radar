@@ -1176,14 +1176,50 @@ def build_message(signal):
     trend = signal.get("trend_strength", {})
     trend_score = trend.get("score", 0)
 
-    if trend_score >= 8:
+    if trend_score >= 9:
         trend_text = "🟢 ОЧЕНЬ СИЛЬНЫЙ ТРЕНД — против движения опасно"
-    elif trend_score >= 6:
+    elif trend_score >= 7:
         trend_text = "🟡 СИЛЬНЫЙ ТРЕНД — лучше ждать подтверждения отката"
     elif trend_score >= 4:
         trend_text = "🟠 СРЕДНИЙ ТРЕНД — возможен откат"
     else:
         trend_text = "🔴 СЛАБЫЙ ТРЕНД — движение может выдыхаться"
+
+    # =========================
+    # DECISION ENGINE V1
+    # =========================
+
+    if trend_score >= 8:
+
+        if signal["type"] == "PUMP":
+            setup = "🚫 ШОРТ ОТМЕНЁН"
+            setup_reason = (
+                "Импульс ещё очень сильный. "
+                "Деньги продолжают поддерживать рост."
+            )
+
+        else:
+            setup = "🚫 ЛОНГ ОТМЕНЁН"
+            setup_reason = (
+                "Импульс ещё очень сильный. "
+                "Давление продавцов сохраняется."
+            )
+
+    elif trend_score >= 6:
+
+        if signal["type"] == "PUMP":
+            setup = "⏳ ЖДАТЬ ШОРТ"
+            setup_reason = (
+                "Есть признаки силы. "
+                "Нужен выдох импульса."
+            )
+
+        else:
+            setup = "⏳ ЖДАТЬ ЛОНГ"
+            setup_reason = (
+                "Есть признаки силы. "
+                "Нужен выдох дампа."
+            )
     return f"""
 {emoji} <b>{signal["symbol"]}</b> | <b>{side_text}</b>
 
