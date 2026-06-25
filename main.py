@@ -998,14 +998,11 @@ def oi_vote(signal):
         return {
             "vote": "UNKNOWN",
             "weight": 0,
-            "reason": "OI_NO_DATA"
+            "reason": "OI_NO_DATA",
+            "text": "OI нет данных"
         }
 
     abs_oi = abs(oi)
-
-    # =========================
-    # Dynamic Weight
-    # =========================
 
     if abs_oi >= 10:
         weight = 6
@@ -1022,16 +1019,13 @@ def oi_vote(signal):
     else:
         weight = 1
 
-    # =========================
-    # Vote
-    # =========================
-
     if oi >= 3:
 
         return {
             "vote": "CONTINUE",
             "weight": weight,
-            "reason": "OI_UP_NEW_MONEY"
+            "reason": "OI_UP_NEW_MONEY",
+            "text": f"OI растёт (+{oi:.2f}%)"
         }
 
     if oi <= -3:
@@ -1039,15 +1033,16 @@ def oi_vote(signal):
         return {
             "vote": "EXHAUSTION",
             "weight": weight,
-            "reason": "OI_DOWN_EXIT"
+            "reason": "OI_DOWN_EXIT",
+            "text": f"OI падает ({oi:.2f}%)"
         }
 
     return {
         "vote": "NEUTRAL",
         "weight": 1,
-        "reason": "OI_NEUTRAL"
+        "reason": "OI_NEUTRAL",
+        "text": f"OI почти без изменений ({oi:.2f}%)"
     }
-
 
 def trend_vote(signal):
 
