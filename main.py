@@ -431,7 +431,7 @@ def detect_exhaustion(move_type, change, oi_change_history):
     if move_type == "PUMP":
 
         # Деньги выходят всё быстрее
-        if last <= -3 and acceleration:
+        if last <= -2 and acceleration:
 
             return {
                 "type": "LONGS_EXHAUSTING",
@@ -441,7 +441,7 @@ def detect_exhaustion(move_type, change, oi_change_history):
             }
 
         # Деньги ещё выходят, но уже слабее
-        if last <= -3 and slowing:
+        if last <= -2 and slowing:
 
             return {
                 "type": "LONGS_COOLING",
@@ -456,7 +456,7 @@ def detect_exhaustion(move_type, change, oi_change_history):
 
     if move_type == "DUMP":
 
-        if last <= -3 and acceleration:
+        if last <= -2 and acceleration:
 
             return {
                 "type": "SHORTS_EXHAUSTING",
@@ -465,7 +465,7 @@ def detect_exhaustion(move_type, change, oi_change_history):
                 "history": [prev, last]
             }
 
-        if last <= -3 and slowing:
+        if last <= -2 and slowing:
 
             return {
                 "type": "SHORTS_COOLING",
