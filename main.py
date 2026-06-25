@@ -1507,6 +1507,12 @@ def build_message(signal):
         "🟡 НЕЯСНО"
     )
 
+    decision = signal.get("decision", {})
+
+    decision_text = decision.get(
+        "text",
+        "🟡 ЖДАТЬ"
+    )
     if trend_score >= 9:
         trend_text = "🟢 ОЧЕНЬ СИЛЬНЫЙ ТРЕНД — против движения опасно"
     elif trend_score >= 7:
