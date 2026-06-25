@@ -1051,6 +1051,49 @@ def trend_vote(signal):
         "reason": "TREND_MIDDLE"
     }
 
+def money_vote(signal):
+
+    money = signal.get("money")
+
+    if not money:
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "NO_MONEY_DATA"
+        }
+
+    score = money.get("money_score", 0)
+    state = money.get("money_state", "")
+
+    if score >= 4:
+        return {
+            "vote": "CONTINUE",
+            "weight": 3,
+            "reason": "STRONG_NEW_MONEY"
+        }
+
+    if score >= 2:
+        return {
+            "vote": "CONTINUE",
+            "weight": 2,
+            "reason": "BUILDING_MONEY"
+        }
+
+    if (
+        "WEAK" in state
+        or "NO_CLEAR" in state
+    ):
+        return {
+            "vote": "EXHAUSTION",
+            "weight": 2,
+            "reason": "WEAK_MONEY_FLOW"
+        }
+
+    return {
+        "vote": "NEUTRAL",
+        "weight": 1,
+        "reason": "MONEY_NEUTRAL"
+    }
 def decision_engine(signal):
 
     continuation = 0
