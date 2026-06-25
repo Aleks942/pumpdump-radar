@@ -868,7 +868,7 @@ def analyze_trend_strength(signal):
 
         if oi_change is None:
         
-            score -= 2
+            score = min(score, 3)
         
             reasons.append("NO_OI_DATA")
 
