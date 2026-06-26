@@ -2165,11 +2165,8 @@ while True:
             continue
 
         update_signal_result(
-
-            signal["symbol"]
-        
+            signal["symbol"],
             signal["price"]
-        
         )
 
         signals += 1
