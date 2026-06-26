@@ -2134,28 +2134,44 @@ def build_message(signal):
 
     )
 
+
+    if "Продавцы очень активны" in pressure_state:
+        pressure_state = "🔴 SELL+++"
+    
+    elif "Продавцы сильнее" in pressure_state:
+        pressure_state = "🔴 SELL"
+    
+    elif "Покупатели очень активны" in pressure_state:
+        pressure_state = "🟢 BUY+++"
+    
+    elif "Покупатели сильнее" in pressure_state:
+        pressure_state = "🟢 BUY"
+    
+    elif "равны" in pressure_state.lower():
+        pressure_state = "⚪ BALANCE"
+
     return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
-🎯 <b>Решение</b>
+🎯 <b>{decision_text}</b>
 
-{decision_text}
+━━━━━━━━━━━━━━
 
-📊 <b>Что видит бот</b>
+📊 <b>Рынок</b>
 
-OI            {oi_text}
-Давление      {pressure_state}
-Ликвидации    L ${long_liq:,.0f} | S ${short_liq:,.0f}
+📦 OI      {oi_text}
+⚖️ PRESS   {pressure_state}
+💥 LIQ     L ${long_liq:,.0f} | S ${short_liq:,.0f}
 
-🧠 <b>Логика</b>
+━━━━━━━━━━━━━━
+
+🧠 <b>Почему</b>
 
 {reasons_text}
 
-🎲 <b>Уверенность:</b> {confidence}%
+━━━━━━━━━━━━━━
 
-📈 <b>Стадия</b>
-
-{move_status}
+🎲 <b>{confidence}%</b>   {move_status}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
