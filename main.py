@@ -2054,6 +2054,13 @@ def build_message(signal):
     quality = decision.get("quality", 0)
     
     confidence = confidence_level(quality)
+
+    # =========================
+    # NO OI = LOWER CONFIDENCE
+    # =========================
+    
+    if oi_change is None:
+        confidence = min(confidence, 60)
     
     stage = decision.get("stage", "UNKNOWN")
     
