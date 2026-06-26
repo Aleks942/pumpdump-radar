@@ -627,6 +627,15 @@ def analyze(ticker):
             continue
 
         print(
+            "[MOVE FOUND]",
+            symbol,
+            move_type,
+            change,
+            window_name,
+            flush=True
+        )
+
+        print(
             "[MOVE]",
             symbol,
             move_type,
