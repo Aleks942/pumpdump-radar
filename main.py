@@ -636,17 +636,6 @@ def analyze(ticker):
         else:
             continue
 
-        if window_name == "5m":
-            trigger_5 += 1
-        
-        elif window_name == "10m":
-            trigger_10 += 1
-        
-        elif window_name == "20m":
-            trigger_20 += 1
-        
-        elif window_name == "30m":
-            trigger_30 += 1
         
         print(
             "[MOVE FOUND]",
