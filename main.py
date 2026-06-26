@@ -1863,6 +1863,13 @@ def build_message(signal):
             and oi_change >= 5
         ):
             money_state = "Заходят реальные деньги"
+
+        # =========================
+        # НЕТ OI → не делаем выводов
+        # =========================
+        
+        if oi_change is None:
+            money_state = "Недостаточно данных OI"
             
         pressure_state = PRESSURE_MAP.get(
             money.get("pressure"),
