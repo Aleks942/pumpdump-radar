@@ -643,10 +643,10 @@ def analyze(ticker):
         )
         move_type = None
 
-        if change > 0:
+        if change >= cfg["pump"]:
             move_type = "PUMP"
         
-        elif change < 0:
+        elif change <= cfg["dump"]:
             move_type = "DUMP"
         
         else:
