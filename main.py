@@ -2082,11 +2082,39 @@ def build_message(signal):
         action,
         "🟡 ЖДАТЬ"
     )
+
+
+    # =========================
+    # Убираем причины про OI,
+    # если OI отсутствует
+    # =========================
     
+    if oi_change is None:
+    
+        filtered = []
+    
+        for r in decision.get("explanation", []):
+    
+            txt = r.lower()
+    
+            if (
+                "oi" in txt
+                or "деньг" in txt
+                or "новые деньги" in txt
+                or "заходят" in txt
+                or "выходят" in txt
+            ):
+                continue
+    
+            filtered.append(r)
+    
+        if filtered:
+            decision["explanation"] = filtered
     # =========================
     # CHIEF EXPLAINER
     # =========================
 
+    
     reasons_text = "\n".join(
 
         decision.get(
@@ -2098,6 +2126,7 @@ def build_message(signal):
         )
 
     )
+
     return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
