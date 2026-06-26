@@ -2159,14 +2159,15 @@ while True:
     no_signal = 0
 
 
-
     for ticker in current_chunk:
         checked += 1
-
+    
         signal = analyze(ticker)
-
-        if signal:
-            
+    
+        if not signal:
+            no_signal += 1
+            continue
+    
         print(
             "[SIGNAL READY]",
             signal["symbol"],
@@ -2174,35 +2175,34 @@ while True:
             signal["change"],
             flush=True
         )
-
-        if not signal:
-            no_signal += 1
-            continue
-
+    
         update_signal_result(
             signal["symbol"],
             signal["price"]
         )
-
+    
         signals += 1
-
+    
         send_telegram(build_message(signal))
         register_signal(signal)
-
+    
         print(
             "[SIGNAL]",
             signal["window"],
             signal["symbol"],
             signal["type"],
-            round(signal["change"], 2)
+            round(signal["change"], 2),
+            flush=True
         )
-
+    
     print(
         "[SCAN_STATS]",
         "checked=", checked,
         "signals=", signals,
-        "no_signal=", no_signal
+        "no_signal=", no_signal,
+        flush=True
     )
     
-   
     time.sleep(SCAN_SLEEP)
+
+   
