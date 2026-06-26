@@ -25,18 +25,44 @@ def save_stats(data):
 def register_signal(signal):
     data = load_stats()
 
+    decision = signal.get("decision", {})
+
     item = {
+
         "ts": time.time(),
+    
         "symbol": signal.get("symbol"),
+    
         "type": signal.get("type"),
+    
         "window": signal.get("window"),
-        "change": signal.get("change"),
+    
         "price": signal.get("price"),
-        "setup": signal.get("setup", "НЕТ"),
+    
+        "change": round(signal.get("change", 0), 2),
+    
         "oi_change": signal.get("oi_change"),
+    
+        "confidence": decision.get("confidence", 0),
+    
+        "quality": decision.get("quality", 0),
+    
+        "stage": decision.get("stage", ""),
+    
+        "action": decision.get("action", ""),
+    
+        "explanation": decision.get("explanation", []),
+    
+        "price_15m": None,
+    
+        "price_30m": None,
+    
         "result_15m": None,
+    
         "result_30m": None
     }
+    
+        
 
     data.append(item)
 
