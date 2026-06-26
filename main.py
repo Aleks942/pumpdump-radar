@@ -642,15 +642,24 @@ def analyze(ticker):
             flush=True
         )
         move_type = None
-        
-        if change >= cfg["pump"]:
+
+        if change > 0:
             move_type = "PUMP"
         
-        elif change <= cfg["dump"]:
+        elif change < 0:
             move_type = "DUMP"
         
         else:
             continue
+        
+        print(
+            "[MOVE FOUND]",
+            symbol,
+            move_type,
+            round(change, 2),
+            window_name,
+            flush=True
+        )
 
         print(
             "[MOVE FOUND]",
