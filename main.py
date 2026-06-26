@@ -2166,6 +2166,7 @@ while True:
         signal = analyze(ticker)
 
         if signal:
+            
         print(
             "[SIGNAL READY]",
             signal["symbol"],
