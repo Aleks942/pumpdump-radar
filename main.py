@@ -744,34 +744,35 @@ def analyze(ticker):
         )
         
         if quality < 6:
-        
             continue
-
-        best_signal = {
-            "symbol": symbol,
-            "type": move_type,
-            "window": window_name,
-            "change": change,
-            "start_price": move["start_price"],
-            "end_price": move["end_price"],
-            "price": price,
-            "volume": volume_24h,
-            "funding": funding,
-            "oi": oi,
-            "oi_change": oi_change,
-            "oi_warning": oi_warning,
-            "flow_comment": flow_comment,
-            "oi_flow": oi_flow,
-            "signal_24h": signal_count,
-            "oi_change_history": oi_change_history,
-            "money": money,
-            "liquidations": liquidations,
-            "trend_strength": temp_signal["trend_strength"],
-            "move_status": move_status,
-            "decision": decision,
-        }
-
-        break
+        
+        if quality > best_quality:
+        
+            best_quality = quality
+        
+            best_signal = {
+                "symbol": symbol,
+                "type": move_type,
+                "window": window_name,
+                "change": change,
+                "start_price": move["start_price"],
+                "end_price": move["end_price"],
+                "price": price,
+                "volume": volume_24h,
+                "funding": funding,
+                "oi": oi,
+                "oi_change": oi_change,
+                "oi_warning": oi_warning,
+                "flow_comment": flow_comment,
+                "oi_flow": oi_flow,
+                "signal_24h": signal_count,
+                "oi_change_history": oi_change_history,
+                "money": money,
+                "liquidations": liquidations,
+                "trend_strength": temp_signal["trend_strength"],
+                "move_status": move_status,
+                "decision": decision,
+            }
 
     return best_signal
 
