@@ -2137,33 +2137,28 @@ def build_message(signal):
     return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
-🎯 <b>{decision_text}</b>
+🎯 <b>Решение</b>
 
-🎲 <b>Уверенность:</b> {confidence}%
+{decision_text}
 
-📊 <b>{move_status}</b>
+📊 <b>Что видит бот</b>
 
-──────────────
+OI            {oi_text}
+Давление      {pressure_state}
+Ликвидации    L ${long_liq:,.0f} | S ${short_liq:,.0f}
 
-📦 <b>OI</b>
-{oi_text}
-
-💰 <b>Деньги</b>
-{money_state}
-
-⚖️ <b>Давление</b>
-{pressure_state}
-
-💥 <b>Ликвидации</b>
-L ${long_liq:,.0f} | S ${short_liq:,.0f}
-
-──────────────
-
-🧠 <b>Почему</b>
+🧠 <b>Логика</b>
 
 {reasons_text}
 
+🎲 <b>Уверенность:</b> {confidence}%
+
+📈 <b>Стадия</b>
+
+{move_status}
+
 🕒 {datetime.now(UTC).strftime("%H:%M")}
+"""
 """
 
 print("🚀 PumpDump Radar V2 started")
