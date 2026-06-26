@@ -2141,6 +2141,7 @@ test_binance()
 test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
+send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
 start_liquidation_streams()
 
