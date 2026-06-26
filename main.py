@@ -1522,18 +1522,25 @@ def chief_trader(signal):
     )
     
     return {
-    
+
         "stage": stage,
     
         "action": action,
     
         "confidence": confidence,
     
+        "quality": max(
+            continue_score,
+            exhaustion_score
+        ),
+    
         "continue_score": continue_score,
     
         "exhaustion_score": exhaustion_score,
     
-        "reasons": reasons
+        "reasons": reasons,
+    
+        "explanation": explanation
     
     }
 
