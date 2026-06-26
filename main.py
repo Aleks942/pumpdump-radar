@@ -2054,14 +2054,14 @@ def build_message(signal):
         )
 
     )
-    return f"""
-{emoji} <b>{signal["symbol"]}</b>
-
-📈 {signal["change"]:.2f}% за {signal["window"]}
-
-📊 <b>{move_status}</b>
+return f"""
+{emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
 🎯 <b>{decision_text}</b>
+
+🎲 <b>Уверенность:</b> {confidence}%
+
+📊 <b>{move_status}</b>
 
 ──────────────
 
