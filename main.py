@@ -2166,9 +2166,7 @@ while True:
 
         update_signal_result(
 
-            signal["symbol"],
-        
-            time.time(),
+            signal["symbol"]
         
             signal["price"]
         
