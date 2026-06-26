@@ -2122,19 +2122,6 @@ def build_message(signal):
     # =========================
 
     
-    reasons_text = "\n".join(
-
-        decision.get(
-
-            "explanation",
-
-            ["• Нет сильных подтверждений"]
-
-        )
-
-    )
-
-
     if "Продавцы очень активны" in pressure_state:
         pressure_state = "🔴 SELL+++"
     
@@ -2147,9 +2134,47 @@ def build_message(signal):
     elif "Покупатели сильнее" in pressure_state:
         pressure_state = "🟢 BUY"
     
-    elif "равны" in pressure_state.lower():
+    elif pressure_state and "равны" in pressure_state.lower():
         pressure_state = "⚪ BALANCE"
 
+    SHORT_REASON_MAP = {
+
+    "Импульс сохраняет силу": "Импульс сильный",
+
+    "Импульс выдыхается": "Импульс слабеет",
+
+    "Покупатели начинают перехватывать инициативу": "Покупатели усиливаются",
+
+    "Продавцы начинают перехватывать инициативу": "Продавцы усиливаются",
+
+    "Покупатели сильнее продавцов": "Покупатели сильнее",
+
+    "Продавцы полностью контролируют движение": "Продавцы контролируют",
+
+    "Заходят новые деньги": "Заходят деньги",
+
+    "Деньги выходят из рынка": "Деньги выходят",
+
+    "Лонги массово капитулируют": "Вынос лонгов",
+
+    "Шортистов массово выносит": "Вынос шортов",
+
+    "OI растёт": "OI растёт",
+
+    "OI падает": "OI падает",
+}
+
+
+    reasons = []
+
+    for r in decision.get("explanation", ["Нет сильных подтверждений"]):
+    
+        for old, new in SHORT_REASON_MAP.items():
+            r = r.replace(old, new)
+    
+        reasons.append("• " + r.replace("• ", ""))
+    
+    reasons_text = "\n".join(reasons)
     return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
@@ -2175,7 +2200,6 @@ def build_message(signal):
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
-
 
 print("🚀 PumpDump Radar V2 started")
 
