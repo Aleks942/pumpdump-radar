@@ -2054,7 +2054,7 @@ def build_message(signal):
         )
 
     )
-return f"""
+    return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
 🎯 <b>{decision_text}</b>
