@@ -1473,7 +1473,7 @@ def chief_trader(signal):
 
     weak = 0
 
-    if votes_map.get("WEAK_TREND"):
+    if votes_map.get("TREND_EXHAUSTION"):
         weak += 1
 
     if votes_map.get("WEAK_MONEY_FLOW"):
@@ -1489,22 +1489,24 @@ def chief_trader(signal):
         return {
 
             "stage": "LATE",
-
+        
             "action": "WATCH",
-
+        
             "confidence": 80,
-
+        
             "quality": max(
                 continue_score,
                 exhaustion_score
             ),
-
+        
             "continue_score": continue_score,
-
+        
             "exhaustion_score": exhaustion_score,
-
-            "reasons": reasons
-
+        
+            "reasons": reasons,
+        
+            "explanation": explanation
+        
         }
 
     # ===========================
