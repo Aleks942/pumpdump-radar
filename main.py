@@ -734,13 +734,15 @@ def analyze(ticker):
         quality = decision.get("quality", 0)
         
         print(
-        
             "[QUALITY]",
-        
             symbol,
-        
-            quality
-        
+            "window=", window_name,
+            "quality=", quality,
+            "stage=", decision.get("stage"),
+            "action=", decision.get("action"),
+            "continue=", decision.get("continue_score"),
+            "exhaustion=", decision.get("exhaustion_score"),
+            flush=True
         )
         
         if quality < 6:
