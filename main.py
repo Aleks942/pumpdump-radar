@@ -2158,10 +2158,7 @@ while True:
     no_signal = 0
 
 
-    trigger_5 = 0
-    trigger_10 = 0
-    trigger_20 = 0
-    trigger_30 = 0
+
     for ticker in current_chunk:
         checked += 1
 
@@ -2196,12 +2193,5 @@ while True:
         "no_signal=", no_signal
     )
     
-    print(
-        "[TRIGGERS]",
-        "5m =", trigger_5,
-        "10m =", trigger_10,
-        "20m =", trigger_20,
-        "30m =", trigger_30,
-        flush=True
-    )
+   
     time.sleep(SCAN_SLEEP)
