@@ -2065,10 +2065,15 @@ def build_message(signal):
     stage = decision.get("stage", "UNKNOWN")
     
     stage_map = {
-        "EARLY": "🟢 РАННИЙ ИМПУЛЬС",
-        "BUILDING": "🟡 ИМПУЛЬС РАЗВИВАЕТСЯ",
-        "LATE": "🟠 ПОЗДНЯЯ СТАДИЯ",
-        "EXHAUSTION": "🔴 ИМПУЛЬС ВЫДЫХАЕТСЯ",
+
+        "EARLY": "🔴 ИМПУЛЬС СИЛЬНЫЙ",
+    
+        "BUILDING": "🟠 ПОКА РАНО",
+    
+        "LATE": "🟡 НАБЛЮДАЙ",
+    
+        "EXHAUSTION": "🟢 ГОТОВ К КОРРЕКЦИИ",
+    
     }
     
     move_status = stage_map.get(
