@@ -71,7 +71,7 @@ def register_signal(signal):
 
     save_stats(data)
 
-def update_signal_result(symbol, signal_time, current_price):
+def update_signal_result(symbol, current_price):
     data = load_stats()
 
     changed = False
