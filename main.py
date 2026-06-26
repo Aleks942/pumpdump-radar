@@ -2004,32 +2004,36 @@ def build_message(signal):
     # =========================
     # CHIEF TRADER RESULT
     # =========================
-
+    
     decision = signal.get("decision", {})
-
+    
+    quality = decision.get("quality", 0)
+    
+    confidence = confidence_level(quality)
+    
     stage = decision.get("stage", "UNKNOWN")
-
+    
     stage_map = {
         "EARLY": "🟢 РАННИЙ ИМПУЛЬС",
         "BUILDING": "🟡 ИМПУЛЬС РАЗВИВАЕТСЯ",
         "LATE": "🟠 ПОЗДНЯЯ СТАДИЯ",
         "EXHAUSTION": "🔴 ИМПУЛЬС ВЫДЫХАЕТСЯ",
     }
-
+    
     move_status = stage_map.get(
         stage,
         "⚪ НЕТ ДАННЫХ"
     )
-
+    
     action = decision.get("action", "WAIT")
-
+    
     action_map = {
         "IGNORE_REVERSAL": "🚫 НЕ ЛЕЗТЬ",
         "WAIT": "🟡 ЖДАТЬ",
         "WATCH": "👀 НАБЛЮДАТЬ",
-        "LOOK_REVERSAL": "ИСКАТЬ КОРРЕКЦИЮ",
+        "LOOK_REVERSAL": "🎯 ИСКАТЬ КОРРЕКЦИЮ",
     }
-
+    
     decision_text = action_map.get(
         action,
         "🟡 ЖДАТЬ"
