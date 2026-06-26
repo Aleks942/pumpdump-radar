@@ -2145,6 +2145,11 @@ while True:
     signals = 0
     no_signal = 0
 
+
+    trigger_5 = 0
+    trigger_10 = 0
+    trigger_20 = 0
+    trigger_30 = 0
     for ticker in current_chunk:
         checked += 1
 
