@@ -2121,6 +2121,16 @@ while True:
             no_signal += 1
             continue
 
+        update_signal_result(
+
+            signal["symbol"],
+        
+            time.time(),
+        
+            signal["price"]
+        
+        )
+
         signals += 1
 
         send_telegram(build_message(signal))
