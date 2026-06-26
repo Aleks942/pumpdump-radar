@@ -566,13 +566,22 @@ def analyze(ticker):
         symbol,
         oi_change
     )
-
+    
     print(
         "[OI_CHANGE_HISTORY]",
         symbol,
         [round(x, 2) for x in oi_change_history]
     )
+    
+    # ====================================
+    # BEST SIGNAL SELECTOR
+    # ====================================
+    
+    best_signal = None
+    best_quality = -1
+    
     exhaustion = None
+    
     for window_name, cfg in TIME_WINDOWS.items():
 
         move = get_window_move(
