@@ -1999,19 +1999,6 @@ def build_message(signal):
 
     trend = signal.get("trend_strength", {})
     trend_score = trend.get("score", 0)
-    move = signal.get("move_status", {})
-
-    move_status = move.get(
-        "status",
-        "🟡 НЕЯСНО"
-    )
-
-    decision = signal.get("decision", {})
-
-    decision_text = decision.get(
-        "text",
-        "🟡 ЖДАТЬ"
-    )
     
  
     # =========================
