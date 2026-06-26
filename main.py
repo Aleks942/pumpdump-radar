@@ -718,6 +718,26 @@ def analyze(ticker):
         move_status = classify_move_status(temp_signal)
         decision = chief_trader(temp_signal)
 
+        # ====================================
+        # SIGNAL QUALITY FILTER
+        # ====================================
+        
+        quality = decision.get("quality", 0)
+        
+        print(
+        
+            "[QUALITY]",
+        
+            symbol,
+        
+            quality
+        
+        )
+        
+        if quality < 6:
+        
+            continue
+
         best_signal = {
             "symbol": symbol,
             "type": move_type,
