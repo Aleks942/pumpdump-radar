@@ -2195,5 +2195,13 @@ while True:
         "signals=", signals,
         "no_signal=", no_signal
     )
-
+    
+    print(
+        "[TRIGGERS]",
+        "5m =", trigger_5,
+        "10m =", trigger_10,
+        "20m =", trigger_20,
+        "30m =", trigger_30,
+        flush=True
+    )
     time.sleep(SCAN_SLEEP)
