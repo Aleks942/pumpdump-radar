@@ -249,11 +249,27 @@ def get_window_move(raw_symbol, bar, candles_count):
 
         candles = data.get("data", [])
 
+        print(
+            "[CANDLES]",
+            raw_symbol,
+            "requested=", candles_count,
+            "received=", len(candles),
+            flush=True
+        )
+
         if len(candles) < candles_count:
             return None
 
         newest = candles[0]
         oldest = candles[-1]
+
+        print(
+            "[MOVE_CALC]",
+            raw_symbol,
+            "start=", oldest[1],
+            "end=", newest[4],
+            flush=True
+        )
 
         start_price = float(oldest[1])
         end_price = float(newest[4])
