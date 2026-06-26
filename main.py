@@ -2017,56 +2017,20 @@ def build_message(signal):
     )
     
     # =========================
-    # CHIEF TRADER REASONS
+    # CHIEF EXPLAINER
     # =========================
-    
-    reason_map = {
-    
-        "NO_OI": "• OI отсутствует",
-    
-        "OI_EXIT": "• Деньги выходят из OI",
-    
-        "OI_NEW": "• Заходят новые деньги",
-    
-        "TREND_VERY_STRONG": "• Очень сильный тренд",
-    
-        "TREND_STRONG": "• Сильный тренд",
-    
-        "TREND_WEAK": "• Тренд выдыхается",
-    
-        "STRONG_NEW_MONEY": "• Заходят крупные деньги",
-    
-        "BUILDING_MONEY": "• Деньги постепенно заходят",
-    
-        "WEAK_MONEY_FLOW": "• Слабый поток денег",
-    
-        "STRONG_BUY": "• Сильное давление покупателей",
-    
-        "BUY": "• Давление покупателей",
-    
-        "STRONG_SELL": "• Сильное давление продавцов",
-    
-        "SELL": "• Давление продавцов",
-    
-        "SHORT_SQUEEZE": "• Ликвидация шортов",
-    
-        "LONG_CAPITULATION": "• Капитуляция лонгов",
-    }
-    
-    reasons = []
-    
-    for r in decision.get("reasons", []):
-    
-        if r in reason_map:
-    
-            reasons.append(reason_map[r])
-    
-    if not reasons:
-    
-        reasons.append("• Нет сильных подтверждений")
-    
-    reasons_text = "\n".join(reasons[:3])
-    
+
+    reasons_text = "\n".join(
+
+        decision.get(
+
+            "explanation",
+
+            ["• Нет сильных подтверждений"]
+
+        )
+
+    )
     return f"""
 {emoji} <b>{signal["symbol"]}</b>
 
