@@ -1,7 +1,9 @@
 import os
+import csv
 import time
-import requests
 import random
+import requests
+
 from datetime import datetime, UTC
 
 from money_flow_engine import analyze_new_money
@@ -14,7 +16,8 @@ from liquidation_engine import (
 
 from stats_engine import (
     register_signal,
-    update_signal_result
+    update_signal_result,
+    save_signal
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
