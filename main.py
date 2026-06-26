@@ -778,7 +778,13 @@ def analyze(ticker):
             "exhaustion=", decision.get("exhaustion_score"),
             flush=True
         )
-        
+        print(
+            "[QUALITY FILTER]",
+            symbol,
+            window_name,
+            "quality=", quality,
+            flush=True
+        )
         if quality < 6:
             continue
         
