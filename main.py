@@ -2165,6 +2165,15 @@ while True:
 
         signal = analyze(ticker)
 
+        if signal:
+        print(
+            "[SIGNAL READY]",
+            signal["symbol"],
+            signal["window"],
+            signal["change"],
+            flush=True
+        )
+
         if not signal:
             no_signal += 1
             continue
