@@ -604,19 +604,23 @@ def analyze(ticker):
             )
 
         print(
-            "[RAW_CHANGE]",
+            "[WINDOW]",
             symbol,
-            change
+            window_name,
+            "change=", round(change, 2),
+            "pump=", cfg["pump"],
+            "dump=", cfg["dump"],
+            flush=True
         )
-
+        
         move_type = None
-
+        
         if change >= cfg["pump"]:
             move_type = "PUMP"
-
+        
         elif change <= cfg["dump"]:
             move_type = "DUMP"
-
+        
         else:
             continue
 
