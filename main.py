@@ -1413,17 +1413,24 @@ def chief_trader(signal):
         return {
 
             "stage": "EXHAUSTION",
-
+        
             "action": "LOOK_REVERSAL",
-
+        
             "confidence": 95,
-
+        
+            "quality": max(
+                continue_score,
+                exhaustion_score
+            ),
+        
             "continue_score": continue_score,
-
+        
             "exhaustion_score": exhaustion_score,
-
-            "reasons": reasons
-
+        
+            "reasons": reasons,
+        
+            "explanation": explanation
+        
         }
 
     # =====================================
@@ -1444,6 +1451,11 @@ def chief_trader(signal):
             "action": "IGNORE_REVERSAL",
 
             "confidence": 95,
+
+            "quality": max(
+                continue_score,
+                exhaustion_score
+            ),
 
             "continue_score": continue_score,
 
@@ -1481,6 +1493,11 @@ def chief_trader(signal):
             "action": "WATCH",
 
             "confidence": 80,
+
+            "quality": max(
+                continue_score,
+                exhaustion_score
+            ),
 
             "continue_score": continue_score,
 
