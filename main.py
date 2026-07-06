@@ -2312,8 +2312,13 @@ while True:
         signals += 1
 
         if not should_send_signal(signal):
+            print(
+                "[SKIP DUPLICATE]",
+                signal["symbol"],
+                flush=True
+            )
             continue
-    
+        
         send_telegram(build_message(signal))
         register_signal(signal)
     
