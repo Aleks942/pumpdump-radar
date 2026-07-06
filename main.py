@@ -2204,6 +2204,63 @@ def build_message(signal):
 🕒 {datetime.now(UTC).strftime("%H:%M")}
 """
 
+def should_send_signal(signal):
+    symbol = signal["symbol"]
+    decision = signal.get("decision", {})
+    action = decision.get("action")
+    stage = decision.get("stage")
+    change = abs(signal.get("change", 0))
+
+    now = time.time()
+
+    state = signal_memory.get(symbol)
+
+    if state is None:
+        signal_memory[symbol] = {
+            "last_action": action,
+            "last_stage": stage,
+            "last_change": change,
+            "last_time": now,
+        }
+        return True
+
+    old_action = state.get("last_action")
+    old_stage = state.get("last_stage")
+    old_change = state.get("last_change", 0)
+    old_time = state.get("last_time", 0)
+
+    # если решение или стадия изменились — шлём
+    if action != old_action or stage != old_stage:
+        signal_memory[symbol] = {
+            "last_action": action,
+            "last_stage": stage,
+            "last_change": change,
+            "last_time": now,
+        }
+        return True
+
+    # если движение стало намного сильнее — шлём обновление
+    if change >= old_change + 3:
+        signal_memory[symbol] = {
+            "last_action": action,
+            "last_stage": stage,
+            "last_change": change,
+            "last_time": now,
+        }
+        return True
+
+    # через 30 минут можно напомнить
+    if now - old_time >= 1800:
+        signal_memory[symbol] = {
+            "last_action": action,
+            "last_stage": stage,
+            "last_change": change,
+            "last_time": now,
+        }
+        return True
+
+    return False
+
 print("🚀 PumpDump Radar V2 started")
 
 
@@ -2252,6 +2309,9 @@ while True:
         )
     
         signals += 1
+
+        if not should_send_signal(signal):
+            continue
     
         send_telegram(build_message(signal))
         register_signal(signal)
