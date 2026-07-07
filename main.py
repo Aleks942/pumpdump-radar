@@ -2187,7 +2187,57 @@ def build_message(signal):
 
     reasons = []
 
+    used_oi = False
+    
     for r in decision.get("explanation", ["Нет сильных подтверждений"]):
+    
+        # -----------------------------
+        # OI растет
+        # -----------------------------
+        if oi_change is not None and oi_change >= 2:
+    
+            if (
+                "выход" in r.lower()
+                or "OI падает" in r
+            ):
+                continue
+    
+        # -----------------------------
+        # OI падает
+        # -----------------------------
+        if oi_change is not None and oi_change <= -2:
+    
+            if (
+                "заход" in r.lower()
+                or "OI растёт" in r
+            ):
+                continue
+    
+        # -----------------------------
+        # если OI нет
+        # -----------------------------
+        if oi_change is None:
+    
+            if (
+                "OI" in r
+                or "деньг" in r.lower()
+            ):
+                continue
+    
+        # -----------------------------
+        # Не повторять деньги дважды
+        # -----------------------------
+        if (
+            "деньг" in r.lower()
+            or "OI" in r
+        ):
+    
+            if used_money:
+                continue
+    
+            used_money = True
+    
+        # сокращаем текст
     
         for old, new in SHORT_REASON_MAP.items():
             r = r.replace(old, new)
