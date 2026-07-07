@@ -2085,7 +2085,7 @@ def build_message(signal):
     action = decision.get("action", "WAIT")
     
     action_map = {
-        "IGNORE_REVERSAL": "🚫 НЕ ЛЕЗТЬ",
+        "IGNORE_REVERSAL": "🚫 НЕ ЛОВИТЬ РАЗВОРОТ",
         "WAIT": "🟡 ЖДАТЬ",
         "WATCH": "👀 НАБЛЮДАТЬ",
         "LOOK_REVERSAL": "🎯 ИСКАТЬ КОРРЕКЦИЮ",
