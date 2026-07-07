@@ -2084,18 +2084,34 @@ def build_message(signal):
     
     action = decision.get("action", "WAIT")
     
-    action_map = {
-        "IGNORE_REVERSAL": "🚫 НЕ ЛОВИТЬ РАЗВОРОТ",
-        "WAIT": "🟡 ЖДАТЬ",
-        "WATCH": "👀 НАБЛЮДАТЬ",
-        "LOOK_REVERSAL": "🎯 ИСКАТЬ КОРРЕКЦИЮ",
-    }
+    # =========================
+    # Понятные торговые решения
+    # =========================
     
-    decision_text = action_map.get(
-        action,
-        "🟡 ЖДАТЬ"
-    )
-
+    if action == "IGNORE_REVERSAL":
+    
+        if signal["type"] == "PUMP":
+            decision_text = "⛔ НЕ ШОРТИТЬ"
+    
+        else:
+            decision_text = "⛔ НЕ ПОКУПАТЬ"
+    
+    elif action == "WATCH":
+    
+        decision_text = "👀 НАБЛЮДАТЬ"
+    
+    elif action == "LOOK_REVERSAL":
+    
+        decision_text = "🎯 ИСКАТЬ КОРРЕКЦИЮ"
+    
+    elif action == "WAIT":
+    
+        decision_text = "🟡 ЖДАТЬ"
+    
+    else:
+    
+        decision_text = "🟡 ЖДАТЬ"
+    
 
     # =========================
     # Убираем причины про OI,
