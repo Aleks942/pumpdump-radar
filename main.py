@@ -787,7 +787,7 @@ def analyze(ticker):
             "quality=", quality,
             flush=True
         )
-        if quality < 6:
+        if quality < 3:
             continue
         
         if quality > best_quality:
