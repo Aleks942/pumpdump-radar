@@ -2033,7 +2033,17 @@ def build_message(signal):
             "⚠️ Возможна новая или низколиквидная монета. "
             "Движение может быть манипулятивным."
         )
-
+    
+    # ===================================
+    # Бонус за очень сильный импульс
+    # ===================================
+    
+    if abs(signal["change"]) >= 8:
+        quality += 1
+    
+    if abs(signal["change"]) >= 12:
+        quality += 1
+    
     market_state = classify_market_state(
         signal["type"],
         oi_change,
@@ -2041,7 +2051,7 @@ def build_message(signal):
         short_liq,
         pressure_state
     )
-
+    
     trend = signal.get("trend_strength", {})
     trend_score = trend.get("score", 0)
     
