@@ -2005,12 +2005,12 @@ def build_message(signal):
     new_listing_warning = ""
 
     # =========================
-    # NO OI = LOW CONFIDENCE
+    # NO OI = LOWER CONFIDENCE
     # =========================
     
     if oi_change is None:
     
-        quality = min(quality, 2)
+        quality = min(quality, 3)
     
         if "ШОРТ" in setup:
             setup = "ШОРТ ⭐⭐"
@@ -2022,7 +2022,11 @@ def build_message(signal):
             "Нет данных OI. "
             "Уверенность снижена."
         )
-
+    
+    # =========================
+    # VERY LARGE OI
+    # =========================
+    
     if (
         oi_change is not None
         and abs(oi_change) >= 80
@@ -2033,16 +2037,6 @@ def build_message(signal):
             "⚠️ Возможна новая или низколиквидная монета. "
             "Движение может быть манипулятивным."
         )
-    
-    # ===================================
-    # Бонус за очень сильный импульс
-    # ===================================
-    
-    if abs(signal["change"]) >= 8:
-        quality += 1
-    
-    if abs(signal["change"]) >= 12:
-        quality += 1
     
     market_state = classify_market_state(
         signal["type"],
@@ -2055,7 +2049,23 @@ def build_message(signal):
     trend = signal.get("trend_strength", {})
     trend_score = trend.get("score", 0)
     
- 
+    # =========================
+    # BONUS FOR VERY STRONG MOVE
+    # =========================
+    
+    # Бонус только если OI есть
+    
+    if oi_change is not None:
+    
+        if abs(signal["change"]) >= 8 and trend_score >= 4:
+            quality += 1
+    
+        if abs(signal["change"]) >= 12 and trend_score >= 6:
+            quality += 2
+    
+    # Ограничиваем максимум
+    quality = min(10, quality)
+    
     # =========================
     # CHIEF TRADER RESULT
     # =========================
