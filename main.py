@@ -2068,70 +2068,64 @@ def build_message(signal):
     
     # =========================
     # CHIEF TRADER RESULT
+    # Единственный источник решения
     # =========================
-    
+
     decision = signal.get("decision", {})
-    
+
     quality = decision.get("quality", 0)
-    
+
     confidence = confidence_level(quality)
 
-    # =========================
-    # NO OI = LOWER CONFIDENCE
-    # =========================
-    
     if oi_change is None:
         confidence = min(confidence, 60)
-    
+
     stage = decision.get("stage", "UNKNOWN")
-    
+    action = decision.get("action", "WAIT")
+
     stage_map = {
 
         "EARLY": "🔴 ИМПУЛЬС СИЛЬНЫЙ",
-    
+
         "BUILDING": "🟠 ПОКА РАНО",
-    
+
         "LATE": "🟡 НАБЛЮДАЙ",
-    
+
         "EXHAUSTION": "🟢 ГОТОВ К КОРРЕКЦИИ",
-    
+
     }
-    
+
     move_status = stage_map.get(
         stage,
         "⚪ НЕТ ДАННЫХ"
     )
-    
-    action = decision.get("action", "WAIT")
-    
+
     # =========================
     # Понятные торговые решения
     # =========================
-    
+
     if action == "IGNORE_REVERSAL":
-    
+
         if signal["type"] == "PUMP":
             decision_text = "⛔ НЕ ШОРТИТЬ"
-    
         else:
             decision_text = "⛔ НЕ ПОКУПАТЬ"
-    
+
     elif action == "WATCH":
-    
+
         decision_text = "👀 НАБЛЮДАТЬ"
-    
+
     elif action == "LOOK_REVERSAL":
-    
+
         decision_text = "🎯 ИСКАТЬ КОРРЕКЦИЮ"
-    
+
     elif action == "WAIT":
-    
+
         decision_text = "🟡 ЖДАТЬ"
-    
+
     else:
-    
+
         decision_text = "🟡 ЖДАТЬ"
-    
 
     # =========================
     # Убираем причины про OI,
