@@ -835,25 +835,6 @@ PRESSURE_MAP = {
     "STRONG_SELL_PRESSURE": "Продавцы очень активны"
 }
 
-def liquidation_strength(long_liq, short_liq):
-    total = long_liq + short_liq
-
-    if total >= 1000000:
-        return "🔴 Очень сильные"
-
-    elif total >= 250000:
-        return "🟠 Сильные"
-
-    elif total >= 50000:
-        return "🟡 Средние"
-
-    else:
-        return "⚪ Слабые"
-
-
-
-
-
 def classify_market_state(
     move_type,
     oi_change,
