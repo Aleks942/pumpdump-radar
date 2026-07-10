@@ -851,27 +851,6 @@ def liquidation_strength(long_liq, short_liq):
         return "⚪ Слабые"
 
 
-def signal_quality(money, long_liq, short_liq):
-    score = 0
-
-    total = long_liq + short_liq
-
-    if total >= 50000:
-        score += 3
-
-    if total >= 250000:
-        score += 2
-
-    if money:
-        money_score = money.get("money_score", 0)
-
-        if money_score >= 4:
-            score += 3
-
-        elif money_score >= 2:
-            score += 1
-
-    return min(score, 10)
 
 
 
