@@ -2018,6 +2018,8 @@ def build_message(signal):
         reasons.append("• " + r.replace("• ", "").strip())
     
     reasons_text = "\n".join(reasons)
+    if not reasons_text.strip():
+        reasons_text = "• Нет сильных подтверждений"
     return f"""
 {emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
 
