@@ -2207,49 +2207,41 @@ def build_message(signal):
 
     reasons = []
 
-    used_oi = False
+    used_money = False
     
     for r in decision.get("explanation", ["Нет сильных подтверждений"]):
     
-        # -----------------------------
-        # OI растет
-        # -----------------------------
+        # OI растёт — не допускаем вывод про выход денег
         if oi_change is not None and oi_change >= 2:
     
             if (
                 "выход" in r.lower()
-                or "OI падает" in r
+                or "oi падает" in r.lower()
             ):
                 continue
     
-        # -----------------------------
-        # OI падает
-        # -----------------------------
+        # OI падает — не допускаем вывод про вход денег
         if oi_change is not None and oi_change <= -2:
     
             if (
                 "заход" in r.lower()
-                or "OI растёт" in r
+                or "oi растёт" in r.lower()
             ):
                 continue
     
-        # -----------------------------
-        # если OI нет
-        # -----------------------------
+        # Если OI отсутствует — убираем выводы про OI и деньги
         if oi_change is None:
     
             if (
-                "OI" in r
+                "oi" in r.lower()
                 or "деньг" in r.lower()
             ):
                 continue
     
-        # -----------------------------
-        # Не повторять деньги дважды
-        # -----------------------------
+        # Не повторяем OI/деньги два раза
         if (
             "деньг" in r.lower()
-            or "OI" in r
+            or "oi" in r.lower()
         ):
     
             if used_money:
@@ -2257,12 +2249,10 @@ def build_message(signal):
     
             used_money = True
     
-        # сокращаем текст
-    
         for old, new in SHORT_REASON_MAP.items():
             r = r.replace(old, new)
     
-        reasons.append("• " + r.replace("• ", ""))
+        reasons.append("• " + r.replace("• ", "").strip())
     
     reasons_text = "\n".join(reasons)
     return f"""
