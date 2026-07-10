@@ -1838,10 +1838,7 @@ def build_message(signal):
     money_state = "Нет данных"
     pressure_state = "Нет данных"
     
-    setup = "НЕТ"
-    risk_note = ""
-    
-    
+   
     if money:
     
         money_state = STATE_MAP.get(
