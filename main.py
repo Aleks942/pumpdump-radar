@@ -760,7 +760,6 @@ def analyze(ticker):
         
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
         
-        move_status = classify_move_status(temp_signal)
         decision = chief_trader(temp_signal)
 
         # ====================================
@@ -814,7 +813,6 @@ def analyze(ticker):
                 "money": money,
                 "liquidations": liquidations,
                 "trend_strength": temp_signal["trend_strength"],
-                "move_status": move_status,
                 "decision": decision,
             }
 
@@ -884,144 +882,6 @@ def classify_market_state(
 
     return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
     
-
-def classify_move_status(signal):
-
-    try:
-
-        move_type = signal.get("type")
-        oi = signal.get("oi_change")
-        trend = signal.get("trend_strength", {})
-        trend_score = trend.get("score", 0)
-
-        money = signal.get("money")
-        pressure = ""
-
-        if money:
-            pressure = money.get("pressure", "")
-
-        liquidations = signal.get("liquidations")
-
-        long_liq = 0
-        short_liq = 0
-
-        if liquidations:
-            long_liq = liquidations.get("long_liq", 0)
-            short_liq = liquidations.get("short_liq", 0)
-
-        score = 0
-        reasons = []
-
-        # ======================
-        # OI
-        # ======================
-
-        if oi is not None:
-
-            if oi >= 3:
-                score += 2
-                reasons.append("NEW_MONEY")
-
-            elif oi <= -3:
-                score -= 2
-                reasons.append("MONEY_EXIT")
-
-        # ======================
-        # TREND
-        # ======================
-
-        if trend_score >= 7:
-            score += 2
-            reasons.append("TREND_STRONG")
-
-        elif trend_score <= 3:
-            score -= 2
-            reasons.append("TREND_WEAK")
-
-        # ======================
-        # PRESSURE
-        # ======================
-
-        if move_type == "PUMP":
-
-            if "BUY" in pressure:
-                score += 1
-                reasons.append("BUY_PRESSURE")
-
-            elif "SELL" in pressure:
-                score -= 1
-                reasons.append("SELL_PRESSURE")
-
-        if move_type == "DUMP":
-
-            if "SELL" in pressure:
-                score += 1
-                reasons.append("SELL_PRESSURE")
-
-            elif "BUY" in pressure:
-                score -= 1
-                reasons.append("BUY_PRESSURE")
-
-        # ======================
-        # LIQUIDATIONS
-        # ======================
-
-        if move_type == "PUMP":
-
-            if short_liq > long_liq * 2 and short_liq > 100000:
-                score -= 1
-                reasons.append("SHORTS_FLUSHED")
-
-        if move_type == "DUMP":
-
-            if long_liq > short_liq * 2 and long_liq > 100000:
-                score -= 1
-                reasons.append("LONGS_FLUSHED")
-
-        # ======================
-        # FINAL
-        # ======================
-
-        if score >= 3:
-
-            status = "🟢 ПРОДОЛЖАЕТСЯ"
-
-        elif score <= -2:
-
-            status = "🔴 ВЫДЫХАЕТСЯ"
-
-        else:
-
-            status = "🟡 НЕЯСНО"
-
-        print(
-            "[MOVE_STATUS]",
-            signal.get("symbol"),
-            status,
-            score,
-            reasons,
-            flush=True
-        )
-
-        return {
-            "status": status,
-            "score": score,
-            "reasons": reasons
-        }
-
-    except Exception as e:
-
-        print(
-            "[MOVE_STATUS_ERROR]",
-            e,
-            flush=True
-        )
-
-        return {
-            "status": "🟡 НЕЯСНО",
-            "score": 0,
-            "reasons": []
-        }
 
 def oi_vote(signal):
 
