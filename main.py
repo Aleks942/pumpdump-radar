@@ -766,6 +766,25 @@ def analyze(ticker):
         }
         
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
+
+        money_scenario = detect_money_scenario(temp_signal)
+        
+        temp_signal["money_scenario"] = money_scenario
+        
+        print(
+            "[MONEY_SCENARIO]",
+            symbol,
+            money_scenario.get("name"),
+            "title=",
+            money_scenario.get("title"),
+            "bias=",
+            money_scenario.get("bias"),
+            "strength=",
+            money_scenario.get("strength"),
+            "text=",
+            money_scenario.get("text"),
+            flush=True
+        )
         
         decision = chief_trader(temp_signal)
 
