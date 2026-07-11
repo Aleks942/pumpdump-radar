@@ -2095,8 +2095,10 @@ def should_send_signal(signal):
 print("🚀 PumpDump Radar V2 started")
 
 initialize_market_memory()
+print("========== INIT DONE ==========", flush=True)
 
 market_memory_healthcheck()
+print("========== HEALTH DONE ==========", flush=True)
 
 test_binance()
 test_bybit()
