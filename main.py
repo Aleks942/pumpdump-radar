@@ -839,6 +839,7 @@ def analyze(ticker):
                 "money": money,
                 "spot_cvd": spot_cvd,
                 "liquidations": liquidations,
+                "money_scenario": money_scenario,
                 "trend_strength": temp_signal["trend_strength"],
                 "decision": decision,
             }
