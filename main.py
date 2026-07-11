@@ -1236,242 +1236,275 @@ def liquidation_vote(signal):
 
 def chief_trader(signal):
 
-    votes = []
+    # ==========================
+    # COLLECT EXPERT VOTES
+    # ==========================
 
-    votes.append(oi_vote(signal))
-    votes.append(trend_vote(signal))
-    votes.append(money_vote(signal))
-    votes.append(pressure_vote(signal))
-    votes.append(liquidation_vote(signal))
+    votes = [
+        oi_vote(signal),
+        trend_vote(signal),
+        money_vote(signal),
+        pressure_vote(signal),
+        liquidation_vote(signal),
+    ]
 
     continue_score = 0
     exhaustion_score = 0
 
     reasons = []
 
-    for v in votes:
+    for vote_data in votes:
+
+        vote = vote_data.get("vote", "UNKNOWN")
+        weight = vote_data.get("weight", 0)
+        reason = vote_data.get("reason", "UNKNOWN")
+        text = vote_data.get("text", "")
 
         reasons.append({
-    
-            "reason": v["reason"],
-    
-            "text": v.get("text", ""),
-    
-            "weight": v["weight"]
-    
+            "reason": reason,
+            "text": text,
+            "weight": weight,
+            "vote": vote,
         })
-    
-        if v["vote"] == "CONTINUE":
-    
-            continue_score += v["weight"]
-    
-        elif v["vote"] == "EXHAUSTION":
-    
-            exhaustion_score += v["weight"]
-    # ============================
-    # CHIEF EXPLAINER
-    # ============================
+
+        if vote == "CONTINUE":
+            continue_score += weight
+
+        elif vote == "EXHAUSTION":
+            exhaustion_score += weight
+
+    # ==========================
+    # SORT EXPLANATIONS
+    # ==========================
 
     reasons = sorted(
-
         reasons,
-
-        key=lambda x: x["weight"],
-
+        key=lambda item: item["weight"],
         reverse=True
-
     )
 
     explanation = []
 
-    for r in reasons[:3]:
+    for reason_data in reasons[:3]:
 
-        if r["text"]:
+        text = reason_data.get("text", "")
 
-            explanation.append(
+        if text:
+            explanation.append(f"• {text}")
 
-                f"• {r['text']}"
-
-            )
-    
-    # =====================================
-    # CHIEF TRADER PRIORITY RULES
-    # =====================================
+    # ==========================
+    # FAST ACCESS TO VOTES
+    # ==========================
 
     votes_map = {
-        v["reason"]: v
-        for v in votes
+        vote_data.get("reason"): vote_data
+        for vote_data in votes
     }
 
-    # =====================================
+    # ==========================
+    # RULE BONUSES
+    # ==========================
+
+    continue_bonus = 0
+    exhaustion_bonus = 0
+
+    applied_rules = []
+
+    # ==========================
     # RULE 1
-    # OI EXIT + CAPITULATION
-    # Самый сильный сигнал
-    # =====================================
+    # STRONG PRICE + OI GROWTH
+    # ==========================
 
-    if (
-        votes_map.get("OI_DOWN_EXIT", {}).get("vote") == "EXHAUSTION"
-        and
-        votes_map.get("LONG_CAPITULATION", {}).get("vote") == "EXHAUSTION"
-    ):
+    strong_trend = (
+        votes_map.get("TREND_STRONG", {}).get("vote") == "CONTINUE"
+        or
+        votes_map.get("TREND_GOOD", {}).get("vote") == "CONTINUE"
+    )
 
-        return {
-
-            "stage": "EXHAUSTION",
-        
-            "action": "LOOK_REVERSAL",
-        
-            "confidence": 95,
-        
-            "quality": max(
-                continue_score,
-                exhaustion_score
-            ),
-        
-            "continue_score": continue_score,
-        
-            "exhaustion_score": exhaustion_score,
-        
-            "reasons": reasons,
-        
-            "explanation": explanation
-        
-        }
-
-    # =====================================
-    # RULE 2
-    # STRONG TREND + NEW MONEY
-    # =====================================
-
-    if (
-        (
-            votes_map.get("TREND_STRONG", {}).get("vote") == "CONTINUE"
-            or
-            votes_map.get("TREND_GOOD", {}).get("vote") == "CONTINUE"
-        )
-        and
+    oi_new_money = (
         votes_map.get("OI_UP_NEW_MONEY", {}).get("vote") == "CONTINUE"
-    ):
+    )
 
-        return {
+    if strong_trend and oi_new_money:
 
-            "stage": "EARLY",
+        continue_bonus += 3
 
-            "action": "IGNORE_REVERSAL",
+        applied_rules.append({
+            "rule": "STRONG_TREND_WITH_NEW_MONEY",
+            "side": "CONTINUE",
+            "bonus": 3,
+        })
 
-            "confidence": 95,
+    # ==========================
+    # RULE 2
+    # OI EXIT + LONG CAPITULATION
+    # ==========================
 
-            "quality": max(
-                continue_score,
-                exhaustion_score
-            ),
+    oi_exit = (
+        votes_map.get("OI_DOWN_EXIT", {}).get("vote") == "EXHAUSTION"
+    )
 
-            "continue_score": continue_score,
+    long_capitulation = (
+        votes_map.get("LONG_CAPITULATION", {}).get("vote")
+        == "EXHAUSTION"
+    )
 
-            "exhaustion_score": exhaustion_score,
+    if oi_exit and long_capitulation:
 
-            "reasons": reasons,
+        exhaustion_bonus += 4
 
-            "explanation": explanation
+        applied_rules.append({
+            "rule": "OI_EXIT_WITH_LONG_CAPITULATION",
+            "side": "EXHAUSTION",
+            "bonus": 4,
+        })
 
-        }
-    # =====================================
+    # ==========================
     # RULE 3
-    # Everything is getting weaker
-    # =====================================
+    # OI EXIT + SHORT SQUEEZE
+    # ==========================
 
-    weak = 0
+    short_squeeze = (
+        votes_map.get("SHORT_SQUEEZE", {}).get("vote")
+        == "EXHAUSTION"
+    )
+
+    if oi_exit and short_squeeze:
+
+        exhaustion_bonus += 4
+
+        applied_rules.append({
+            "rule": "OI_EXIT_WITH_SHORT_SQUEEZE",
+            "side": "EXHAUSTION",
+            "bonus": 4,
+        })
+
+    # ==========================
+    # RULE 4
+    # SEVERAL MODULES WEAKEN
+    # ==========================
+
+    weak_modules = 0
 
     if votes_map.get("TREND_WEAK"):
-        weak += 1
+        weak_modules += 1
 
     if votes_map.get("WEAK_MONEY_FLOW"):
-        weak += 1
+        weak_modules += 1
 
-    pressure_vote_data = votes_map.get("PRESSURE_EXHAUSTION")
+    if votes_map.get("PRESSURE_EXHAUSTION"):
+        weak_modules += 1
 
-    if pressure_vote_data:
-        weak += 1
+    if weak_modules >= 2:
 
-    if weak >= 2:
+        exhaustion_bonus += 2
 
-        return {
+        applied_rules.append({
+            "rule": "MULTIPLE_MODULES_WEAKENING",
+            "side": "EXHAUSTION",
+            "bonus": 2,
+        })
 
-            "stage": "LATE",
-        
-            "action": "WATCH",
-        
-            "confidence": 80,
-        
-            "quality": max(
-                continue_score,
-                exhaustion_score
-            ),
-        
-            "continue_score": continue_score,
-        
-            "exhaustion_score": exhaustion_score,
-        
-            "reasons": reasons,
-        
-            "explanation": explanation
-        
-        }
+    # ==========================
+    # FINAL SCORES
+    # ==========================
 
-    # ===========================
-    # STAGE CLASSIFIER
-    # ===========================
-    
-    score = continue_score - exhaustion_score
-    
+    final_continue_score = continue_score + continue_bonus
+    final_exhaustion_score = exhaustion_score + exhaustion_bonus
+
+    score = final_continue_score - final_exhaustion_score
+
+    # ==========================
+    # SINGLE CLASSIFIER
+    # ==========================
+
     if score >= 6:
-    
+
         stage = "EARLY"
         action = "IGNORE_REVERSAL"
-    
+
     elif score >= 3:
-    
+
         stage = "BUILDING"
         action = "WAIT"
-    
+
     elif score > -3:
-    
+
         stage = "LATE"
         action = "WATCH"
-    
+
     else:
-    
+
         stage = "EXHAUSTION"
         action = "LOOK_REVERSAL"
-    
-    confidence = min(
-        100,
-        55 + abs(score) * 7
+
+    # ==========================
+    # SINGLE CONFIDENCE ENGINE
+    # ==========================
+
+    confidence = 55 + abs(score) * 5
+
+    if applied_rules:
+        confidence += 5
+
+    confidence = min(95, confidence)
+
+    # Без OI уверенность ограничиваем здесь,
+    # а не внутри build_message()
+    if signal.get("oi_change") is None:
+        confidence = min(confidence, 60)
+
+    quality = max(
+        final_continue_score,
+        final_exhaustion_score
     )
-    
+
+    print(
+        "[CHIEF_TRADER_V2]",
+        signal.get("symbol"),
+        "continue_base=", continue_score,
+        "exhaustion_base=", exhaustion_score,
+        "continue_bonus=", continue_bonus,
+        "exhaustion_bonus=", exhaustion_bonus,
+        "continue_final=", final_continue_score,
+        "exhaustion_final=", final_exhaustion_score,
+        "score=", score,
+        "stage=", stage,
+        "action=", action,
+        "confidence=", confidence,
+        "rules=", [
+            rule["rule"]
+            for rule in applied_rules
+        ],
+        flush=True
+    )
+
+    # ==========================
+    # ONE RETURN
+    # ==========================
+
     return {
+        "stage": stage,
+        "action": action,
+        "confidence": confidence,
+        "quality": quality,
 
-    "stage": stage,
+        "continue_score": final_continue_score,
+        "exhaustion_score": final_exhaustion_score,
 
-    "action": action,
+        "continue_base_score": continue_score,
+        "exhaustion_base_score": exhaustion_score,
 
-    "confidence": confidence,
+        "continue_bonus": continue_bonus,
+        "exhaustion_bonus": exhaustion_bonus,
 
-    "quality": max(
-        continue_score,
-        exhaustion_score
-    ),
+        "score": score,
 
-    "continue_score": continue_score,
+        "reasons": reasons,
+        "explanation": explanation,
 
-    "exhaustion_score": exhaustion_score,
-
-    "reasons": reasons,
-
-    "explanation": explanation
-
-}
-
+        "applied_rules": applied_rules,
+    }
 
 def analyze_trend_strength(signal):
     try:
