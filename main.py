@@ -1238,6 +1238,34 @@ def liquidation_vote(signal):
         "text": ""
     }
 
+def spot_vote(signal):
+
+    spot = signal.get("spot_cvd")
+
+    if not spot or not spot.get("available"):
+
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "SPOT_NO_DATA",
+            "text": "Нет данных Spot"
+        }
+
+    return {
+
+        # Пока Spot только наблюдает
+        "vote": "NEUTRAL",
+
+        # На решение не влияет
+        "weight": 0,
+
+        # Чтобы Chief Trader видел состояние
+        "reason": spot.get("state", "SPOT_UNKNOWN"),
+
+        # Будет выводиться в разделе "Почему"
+        "text": spot.get("text", "")
+
+    }
 
 def chief_trader(signal):
 
