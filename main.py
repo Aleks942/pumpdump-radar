@@ -943,31 +943,43 @@ def trend_vote(signal):
     trend = signal.get("trend_strength", {})
     score = trend.get("score", 0)
 
-    if score >= 8:
+    # =========================
+    # Очень сильный импульс
+    # =========================
 
-        return {
-            "vote": "CONTINUE",
-            "weight": 4,
-            "reason": "TREND_CONTINUE",
-            "text": "Импульс очень сильный"
-        }
-
-    if score >= 6:
+    if score >= 3:
 
         return {
             "vote": "CONTINUE",
             "weight": 3,
-            "reason": "TREND_CONTINUE",
-            "text": "Импульс сохраняет силу"
+            "reason": "TREND_STRONG",
+            "text": "Цена движется очень уверенно"
         }
 
-    if score <= 2:
+    # =========================
+    # Нормальный импульс
+    # =========================
+
+    if score >= 2:
+
+        return {
+            "vote": "CONTINUE",
+            "weight": 2,
+            "reason": "TREND_GOOD",
+            "text": "Цена сохраняет направление"
+        }
+
+    # =========================
+    # Слабый импульс
+    # =========================
+
+    if score <= 1:
 
         return {
             "vote": "EXHAUSTION",
-            "weight": 3,
-            "reason": "TREND_EXHAUSTION",
-            "text": "Импульс выдыхается"
+            "weight": 2,
+            "reason": "TREND_WEAK",
+            "text": "Цена теряет импульс"
         }
 
     return {
@@ -978,10 +990,9 @@ def trend_vote(signal):
 
         "reason": "TREND_NEUTRAL",
 
-        "text": "Сила импульса средняя"
+        "text": "Импульс неоднозначный"
 
     }
-
 
 def money_vote(signal):
 
