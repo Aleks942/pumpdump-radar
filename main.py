@@ -7,6 +7,7 @@ import requests
 from datetime import datetime, UTC
 
 from money_flow_engine import analyze_new_money
+from spot_cvd_engine import get_spot_cvd
 
 from liquidation_engine import (
     start_liquidation_streams,
