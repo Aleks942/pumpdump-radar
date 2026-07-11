@@ -21,6 +21,11 @@ from stats_engine import (
     update_signal_result,
     )
 
+from scenario_stats_engine import (
+    register_scenario_signal,
+    update_scenario_results,
+)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
