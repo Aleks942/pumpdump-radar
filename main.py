@@ -1236,9 +1236,9 @@ def liquidation_vote(signal):
 
 def chief_trader(signal):
 
-    # ==========================
-    # COLLECT EXPERT VOTES
-    # ==========================
+    # =====================================
+    # 1. СОБИРАЕМ НЕЗАВИСИМЫЕ ГОЛОСА
+    # =====================================
 
     votes = [
         oi_vote(signal),
@@ -1248,8 +1248,8 @@ def chief_trader(signal):
         liquidation_vote(signal),
     ]
 
-    continue_score = 0
-    exhaustion_score = 0
+    continue_base_score = 0
+    exhaustion_base_score = 0
 
     reasons = []
 
@@ -1261,71 +1261,87 @@ def chief_trader(signal):
         text = vote_data.get("text", "")
 
         reasons.append({
+            "vote": vote,
+            "weight": weight,
             "reason": reason,
             "text": text,
-            "weight": weight,
-            "vote": vote,
         })
 
         if vote == "CONTINUE":
-            continue_score += weight
+            continue_base_score += weight
 
         elif vote == "EXHAUSTION":
-            exhaustion_score += weight
+            exhaustion_base_score += weight
 
-    # ==========================
-    # SORT EXPLANATIONS
-    # ==========================
+    # =====================================
+    # 2. СОРТИРУЕМ ПРИЧИНЫ ПО ВАЖНОСТИ
+    # =====================================
 
     reasons = sorted(
         reasons,
-        key=lambda item: item["weight"],
+        key=lambda item: item.get("weight", 0),
         reverse=True
     )
 
     explanation = []
 
-    for reason_data in reasons[:3]:
+    for reason_data in reasons:
 
         text = reason_data.get("text", "")
+        vote = reason_data.get("vote")
 
-        if text:
-            explanation.append(f"• {text}")
+        if not text:
+            continue
 
-    # ==========================
-    # FAST ACCESS TO VOTES
-    # ==========================
+        if vote == "UNKNOWN":
+            continue
+
+        explanation.append(f"• {text}")
+
+        if len(explanation) >= 3:
+            break
+
+    if not explanation:
+        explanation = ["• Нет сильных подтверждений"]
+
+    # =====================================
+    # 3. БЫСТРЫЙ ДОСТУП К ГОЛОСАМ
+    # =====================================
 
     votes_map = {
         vote_data.get("reason"): vote_data
         for vote_data in votes
+        if vote_data.get("reason")
     }
 
-    # ==========================
-    # RULE BONUSES
-    # ==========================
+    # =====================================
+    # 4. БОНУСЫ ПРАВИЛ
+    # Правила больше не делают return
+    # =====================================
 
     continue_bonus = 0
     exhaustion_bonus = 0
 
     applied_rules = []
 
-    # ==========================
+    # =====================================
     # RULE 1
-    # STRONG PRICE + OI GROWTH
-    # ==========================
+    # Сильная цена + рост OI
+    # Движение поддерживается новыми позициями
+    # =====================================
 
-    strong_trend = (
+    trend_supports_move = (
         votes_map.get("TREND_STRONG", {}).get("vote") == "CONTINUE"
         or
         votes_map.get("TREND_GOOD", {}).get("vote") == "CONTINUE"
     )
 
-    oi_new_money = (
-        votes_map.get("OI_UP_NEW_MONEY", {}).get("vote") == "CONTINUE"
+    oi_supports_move = (
+        votes_map.get("OI_UP_NEW_MONEY", {}).get("vote")
+        == "CONTINUE"
     )
 
-    if strong_trend and oi_new_money:
+    if trend_supports_move and oi_supports_move:
 
         continue_bonus += 3
 
@@ -1335,13 +1351,15 @@ def chief_trader(signal):
             "bonus": 3,
         })
 
-    # ==========================
+    # =====================================
     # RULE 2
-    # OI EXIT + LONG CAPITULATION
-    # ==========================
+    # Падение OI + капитуляция лонгов
+    # Актуально после сильного DUMP
+    # =====================================
 
     oi_exit = (
-        votes_map.get("OI_DOWN_EXIT", {}).get("vote") == "EXHAUSTION"
+        votes_map.get("OI_DOWN_EXIT", {}).get("vote")
+        == "EXHAUSTION"
     )
 
     long_capitulation = (
@@ -1359,10 +1377,11 @@ def chief_trader(signal):
             "bonus": 4,
         })
 
-    # ==========================
+    # =====================================
     # RULE 3
-    # OI EXIT + SHORT SQUEEZE
-    # ==========================
+    # Падение OI + массовый вынос шортов
+    # Актуально после сильного PUMP
+    # =====================================
 
     short_squeeze = (
         votes_map.get("SHORT_SQUEEZE", {}).get("vote")
@@ -1379,20 +1398,29 @@ def chief_trader(signal):
             "bonus": 4,
         })
 
-    # ==========================
+    # =====================================
     # RULE 4
-    # SEVERAL MODULES WEAKEN
-    # ==========================
+    # Несколько независимых модулей слабеют
+    # =====================================
 
     weak_modules = 0
 
-    if votes_map.get("TREND_WEAK"):
+    if (
+        votes_map.get("TREND_WEAK", {}).get("vote")
+        == "EXHAUSTION"
+    ):
         weak_modules += 1
 
-    if votes_map.get("WEAK_MONEY_FLOW"):
+    if (
+        votes_map.get("WEAK_MONEY_FLOW", {}).get("vote")
+        == "EXHAUSTION"
+    ):
         weak_modules += 1
 
-    if votes_map.get("PRESSURE_EXHAUSTION"):
+    if (
+        votes_map.get("PRESSURE_EXHAUSTION", {}).get("vote")
+        == "EXHAUSTION"
+    ):
         weak_modules += 1
 
     if weak_modules >= 2:
@@ -1405,18 +1433,28 @@ def chief_trader(signal):
             "bonus": 2,
         })
 
-    # ==========================
-    # FINAL SCORES
-    # ==========================
+    # =====================================
+    # 5. ФИНАЛЬНЫЕ БАЛЛЫ
+    # =====================================
 
-    final_continue_score = continue_score + continue_bonus
-    final_exhaustion_score = exhaustion_score + exhaustion_bonus
+    continue_score = (
+        continue_base_score
+        + continue_bonus
+    )
 
-    score = final_continue_score - final_exhaustion_score
+    exhaustion_score = (
+        exhaustion_base_score
+        + exhaustion_bonus
+    )
 
-    # ==========================
-    # SINGLE CLASSIFIER
-    # ==========================
+    score = (
+        continue_score
+        - exhaustion_score
+    )
+
+    # =====================================
+    # 6. ЕДИНЫЙ КЛАССИФИКАТОР
+    # =====================================
 
     if score >= 6:
 
@@ -1438,50 +1476,84 @@ def chief_trader(signal):
         stage = "EXHAUSTION"
         action = "LOOK_REVERSAL"
 
-    # ==========================
-    # SINGLE CONFIDENCE ENGINE
-    # ==========================
+    # =====================================
+    # 7. ЕДИНЫЙ CONFIDENCE
+    # =====================================
 
-    confidence = 55 + abs(score) * 5
+    score_difference = abs(score)
 
+    confidence = (
+        55
+        + score_difference * 5
+    )
+
+    # Если сработало профессиональное правило,
+    # немного повышаем уверенность
     if applied_rules:
         confidence += 5
 
-    confidence = min(95, confidence)
+    # Если эксперты голосуют почти поровну,
+    # высокая уверенность недопустима
+    if abs(continue_score - exhaustion_score) <= 2:
+        confidence = min(confidence, 65)
 
-    # Без OI уверенность ограничиваем здесь,
-    # а не внутри build_message()
+    # Без OI решение менее надёжно
     if signal.get("oi_change") is None:
         confidence = min(confidence, 60)
 
-    quality = max(
-        final_continue_score,
-        final_exhaustion_score
+    confidence = max(
+        50,
+        min(95, confidence)
     )
+
+    # =====================================
+    # 8. QUALITY
+    # Используется выбором лучшего окна
+    # =====================================
+
+    quality = max(
+        continue_score,
+        exhaustion_score
+    )
+
+    # =====================================
+    # 9. ЛОГ CHIEF TRADER V2
+    # =====================================
 
     print(
         "[CHIEF_TRADER_V2]",
         signal.get("symbol"),
-        "continue_base=", continue_score,
-        "exhaustion_base=", exhaustion_score,
-        "continue_bonus=", continue_bonus,
-        "exhaustion_bonus=", exhaustion_bonus,
-        "continue_final=", final_continue_score,
-        "exhaustion_final=", final_exhaustion_score,
-        "score=", score,
-        "stage=", stage,
-        "action=", action,
-        "confidence=", confidence,
-        "rules=", [
-            rule["rule"]
-            for rule in applied_rules
+        "continue_base=",
+        continue_base_score,
+        "exhaustion_base=",
+        exhaustion_base_score,
+        "continue_bonus=",
+        continue_bonus,
+        "exhaustion_bonus=",
+        exhaustion_bonus,
+        "continue_final=",
+        continue_score,
+        "exhaustion_final=",
+        exhaustion_score,
+        "score=",
+        score,
+        "stage=",
+        stage,
+        "action=",
+        action,
+        "confidence=",
+        confidence,
+        "rules=",
+        [
+            rule_data.get("rule")
+            for rule_data in applied_rules
         ],
         flush=True
     )
 
-    # ==========================
-    # ONE RETURN
-    # ==========================
+    # =====================================
+    # 10. ЕДИНСТВЕННЫЙ RETURN
+    # =====================================
 
     return {
         "stage": stage,
@@ -1489,23 +1561,22 @@ def chief_trader(signal):
         "confidence": confidence,
         "quality": quality,
 
-        "continue_score": final_continue_score,
-        "exhaustion_score": final_exhaustion_score,
+        "score": score,
 
-        "continue_base_score": continue_score,
-        "exhaustion_base_score": exhaustion_score,
+        "continue_score": continue_score,
+        "exhaustion_score": exhaustion_score,
+
+        "continue_base_score": continue_base_score,
+        "exhaustion_base_score": exhaustion_base_score,
 
         "continue_bonus": continue_bonus,
         "exhaustion_bonus": exhaustion_bonus,
-
-        "score": score,
 
         "reasons": reasons,
         "explanation": explanation,
 
         "applied_rules": applied_rules,
     }
-
 def analyze_trend_strength(signal):
     try:
         score = 0
