@@ -1194,7 +1194,7 @@ def liquidation_vote(signal):
                 "vote": "EXHAUSTION",
                 "weight": 4,
                 "reason": "SHORT_SQUEEZE",
-                "text": "Шортистов массово выносит"
+                "text": "Вынос шортов"
             }
 
         return {
