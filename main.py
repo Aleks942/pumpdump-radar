@@ -1634,31 +1634,26 @@ def build_message(signal):
     # CHIEF TRADER RESULT
     # Единственный источник решения
     # =========================
-
+    
     decision = signal.get("decision", {})
-
-    quality = decision.get("quality", 0)
-
-    confidence = confidence_level(quality)
-
-    if oi_change is None:
-        confidence = min(confidence, 60)
-
+    
+    confidence = decision.get("confidence", 50)
+    
     stage = decision.get("stage", "UNKNOWN")
     action = decision.get("action", "WAIT")
-
+    
     stage_map = {
-
+    
         "EARLY": "🔴 ИМПУЛЬС СИЛЬНЫЙ",
-
+    
         "BUILDING": "🟠 ПОКА РАНО",
-
+    
         "LATE": "🟡 НАБЛЮДАЙ",
-
+    
         "EXHAUSTION": "🟢 ГОТОВ К КОРРЕКЦИИ",
-
+    
     }
-
+    
     move_status = stage_map.get(
         stage,
         "⚪ НЕТ ДАННЫХ"
