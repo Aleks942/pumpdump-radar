@@ -1371,6 +1371,8 @@ def chief_trader(signal):
     
         spot_vote(signal),
     
+        scenario_vote(signal),
+    
     ]
 
     continue_base_score = 0
