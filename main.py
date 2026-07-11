@@ -1246,11 +1246,19 @@ def chief_trader(signal):
     # =====================================
 
     votes = [
+
         oi_vote(signal),
+    
         trend_vote(signal),
+    
         money_vote(signal),
+    
         pressure_vote(signal),
+    
         liquidation_vote(signal),
+    
+        spot_vote(signal),
+    
     ]
 
     continue_base_score = 0
