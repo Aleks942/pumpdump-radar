@@ -26,6 +26,11 @@ from scenario_stats_engine import (
     update_scenario_results,
 )
 
+from market_memory import (
+    initialize_market_memory,
+    market_memory_healthcheck,
+)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -2089,6 +2094,9 @@ def should_send_signal(signal):
 
 print("🚀 PumpDump Radar V2 started")
 
+initialize_market_memory()
+
+market_memory_healthcheck()
 
 test_binance()
 test_bybit()
