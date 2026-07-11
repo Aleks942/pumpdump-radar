@@ -757,9 +757,11 @@ def analyze(ticker):
             "type": move_type,
             "change": change,
             "oi_change": oi_change,
+            "funding": funding,
             "money": money,
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
+            
         }
         
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
