@@ -758,6 +758,7 @@ def analyze(ticker):
             "change": change,
             "oi_change": oi_change,
             "money": money,
+            "spot_cvd": spot_cvd,
             "liquidations": liquidations,
         }
         
