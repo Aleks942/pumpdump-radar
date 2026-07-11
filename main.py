@@ -1763,9 +1763,6 @@ def build_message(signal):
     
             used_money = True
     
-        for old, new in SHORT_REASON_MAP.items():
-            r = r.replace(old, new)
-    
         reasons.append("• " + r.replace("• ", "").strip())
     
     reasons_text = "\n".join(reasons)
