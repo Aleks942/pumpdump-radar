@@ -1532,21 +1532,7 @@ def analyze_trend_strength(signal):
             "score": 0,
             "reasons": []
         }
-def confidence_level(quality):
 
-    if quality >= 14:
-        return 95
-
-    if quality >= 12:
-        return 90
-
-    if quality >= 10:
-        return 85
-
-    if quality >= 8:
-        return 80
-
-    return 75
     
 def build_message(signal):
 
