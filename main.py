@@ -1290,6 +1290,67 @@ def spot_vote(signal):
 
     }
 
+
+def scenario_vote(signal):
+
+    scenario = signal.get("money_scenario")
+
+    if not scenario:
+
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "NO_SCENARIO",
+            "text": "Сценарий не определён"
+        }
+
+    bias = scenario.get("bias", "WAIT")
+    name = scenario.get("name", "UNKNOWN")
+    title = scenario.get("title", "")
+
+    # ===========================
+    # Продолжение движения
+    # ===========================
+
+    if bias == "CONTINUE":
+
+        return {
+            "vote": "CONTINUE",
+            "weight": 3,
+            "reason": name,
+            "text": f"Сценарий: {title}"
+        }
+
+    # ===========================
+    # Вероятна коррекция
+    # ===========================
+
+    if bias == "CORRECTION":
+
+        return {
+            "vote": "EXHAUSTION",
+            "weight": 3,
+            "reason": name,
+            "text": f"Сценарий: {title}"
+        }
+
+    # ===========================
+    # Нет явного сценария
+    # ===========================
+
+    return {
+
+        "vote": "NEUTRAL",
+
+        "weight": 1,
+
+        "reason": name,
+
+        "text": f"Сценарий: {title}"
+
+    }
+
+
 def chief_trader(signal):
 
     # =====================================
