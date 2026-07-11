@@ -815,6 +815,7 @@ def analyze(ticker):
                 "signal_24h": signal_count,
                 "oi_change_history": oi_change_history,
                 "money": money,
+                "spot_cvd": spot_cvd,
                 "liquidations": liquidations,
                 "trend_strength": temp_signal["trend_strength"],
                 "decision": decision,
