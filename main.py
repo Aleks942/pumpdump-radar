@@ -743,6 +743,8 @@ def analyze(ticker):
 
         money = analyze_new_money(raw_symbol)
 
+        spot_cvd = get_spot_cvd(raw_symbol)
+        
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
 
