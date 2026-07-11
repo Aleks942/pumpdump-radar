@@ -1344,7 +1344,11 @@ def chief_trader(signal):
     # =====================================
 
     if (
-        votes_map.get("TREND_CONTINUE", {}).get("vote") == "CONTINUE"
+        (
+            votes_map.get("TREND_STRONG", {}).get("vote") == "CONTINUE"
+            or
+            votes_map.get("TREND_GOOD", {}).get("vote") == "CONTINUE"
+        )
         and
         votes_map.get("OI_UP_NEW_MONEY", {}).get("vote") == "CONTINUE"
     ):
@@ -1378,7 +1382,7 @@ def chief_trader(signal):
 
     weak = 0
 
-    if votes_map.get("TREND_EXHAUSTION"):
+    if votes_map.get("TREND_WEAK"):
         weak += 1
 
     if votes_map.get("WEAK_MONEY_FLOW"):
