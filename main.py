@@ -1109,7 +1109,7 @@ def pressure_vote(signal):
                 "vote": "EXHAUSTION",
                 "weight": 3,
                 "reason": "PRESSURE_EXHAUSTION",
-                "text": "Продавцы начинают перехватывать инициативу"
+                "text": "Продавцы усиливаются"
             }
 
         if pressure == "SELL_PRESSURE":
@@ -1147,7 +1147,7 @@ def pressure_vote(signal):
                 "vote": "EXHAUSTION",
                 "weight": 3,
                 "reason": "PRESSURE_EXHAUSTION",
-                "text": "Покупатели начинают перехватывать инициативу"
+                "text": "Покупатели усиливаются"
             }
 
         if pressure == "BUY_PRESSURE":
