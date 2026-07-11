@@ -1021,7 +1021,7 @@ def money_vote(signal):
             "vote": "CONTINUE",
             "weight": 4,
             "reason": "STRONG_NEW_MONEY",
-            "text": "Заходят новые деньги"
+            "text": "Заходят деньги"
         }
 
     # ==========================
@@ -1051,7 +1051,7 @@ def money_vote(signal):
             "vote": "EXHAUSTION",
             "weight": 2,
             "reason": "WEAK_MONEY_FLOW",
-            "text": "Деньги выходят из рынка"
+            "text": "Деньги выходят"
         }
 
     return {
@@ -1216,7 +1216,7 @@ def liquidation_vote(signal):
                 "vote": "EXHAUSTION",
                 "weight": 4,
                 "reason": "LONG_CAPITULATION",
-                "text": "Лонги массово капитулируют"
+                "text": "Вынос лонгов"
             }
 
         return {
