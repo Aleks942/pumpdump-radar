@@ -1465,10 +1465,6 @@ def analyze_trend_strength(signal):
 
         move_type = signal.get("type")
         change = signal.get("change", 0)
-        oi_change = signal.get("oi_change")
-        funding = signal.get("funding")
-        money = signal.get("money")
-        liquidations = signal.get("liquidations")
 
         # ==========================
         # PRICE STRENGTH
@@ -1481,91 +1477,18 @@ def analyze_trend_strength(signal):
         elif abs(change) >= 5:
             score += 1
             reasons.append("PRICE_STRONG")
-       
-        money_score = 0
-        pressure = ""
 
-        if money:
-            money_score = money.get("money_score", 0)
-            pressure = money.get("pressure", "")
+        # ==========================
+        # PRICE DIRECTION
+        # ==========================
 
-        long_liq = 0
-        short_liq = 0
-
-        if liquidations:
-            long_liq = liquidations.get("long_liq", 0)
-            short_liq = liquidations.get("short_liq", 0)
-
-        # PRICE
-        
         if move_type == "PUMP" and change > 0:
             score += 1
             reasons.append("PRICE_UP")
-        
-        if move_type == "DUMP" and change < 0:
+
+        elif move_type == "DUMP" and change < 0:
             score += 1
             reasons.append("PRICE_DOWN")
-
-        # OI
-
-        if oi_change is not None:
-        
-            if move_type == "PUMP" and oi_change >= 3:
-                score += 3
-                reasons.append("OI_SUPPORTS_PUMP")
-        
-            elif move_type == "DUMP" and oi_change >= 3:
-                score += 3
-                reasons.append("OI_SUPPORTS_DUMP")
-        
-            elif oi_change <= -3:
-                score -= 2
-                reasons.append("OI_EXITING")
-
-        # NO OI
-
-        if oi_change is None:
-        
-            score = min(score, 3)
-        
-            reasons.append("NO_OI_DATA")
-
-        # MONEY FLOW
-        if money_score >= 4:
-            score += 2
-            reasons.append("STRONG_MONEY_FLOW")
-
-        elif money_score >= 2:
-            score += 1
-            reasons.append("MODERATE_MONEY_FLOW")
-
-        # PRESSURE
-        if move_type == "PUMP" and "BUY" in pressure:
-            score += 1
-            reasons.append("BUY_PRESSURE")
-
-        if move_type == "DUMP" and "SELL" in pressure:
-            score += 1
-            reasons.append("SELL_PRESSURE")
-
-        # FUNDING
-        if funding is not None:
-            if move_type == "PUMP" and funding < 0:
-                score += 1
-                reasons.append("NEGATIVE_FUNDING_SUPPORTS_PUMP")
-
-            if move_type == "DUMP" and funding > 0:
-                score += 1
-                reasons.append("POSITIVE_FUNDING_SUPPORTS_DUMP")
-
-        # LIQUIDATIONS
-        if move_type == "PUMP" and short_liq >= 50000 and short_liq > long_liq:
-            score += 1
-            reasons.append("SHORTS_LIQUIDATED")
-
-        if move_type == "DUMP" and long_liq >= 50000 and long_liq > short_liq:
-            score += 1
-            reasons.append("LONGS_LIQUIDATED")
 
         score = max(0, min(score, 10))
 
@@ -1577,10 +1500,6 @@ def analyze_trend_strength(signal):
             score,
             "change=",
             round(change, 2),
-            "oi=",
-            round(oi_change, 2) if oi_change is not None else None,
-            "funding=",
-            round(funding, 4) if funding is not None else None,
             "reasons=",
             reasons,
             flush=True
@@ -1593,6 +1512,7 @@ def analyze_trend_strength(signal):
 
     except Exception as e:
         print("[SMART_TREND_ERROR]", e, flush=True)
+
         return {
             "score": 0,
             "reasons": []
