@@ -2190,33 +2190,59 @@ def predict_reversal(signal):
     # --------------------------
     # Ограничение
     # --------------------------
-
+    
     score = max(0, min(score, 100))
-
+    
+    # ==========================
+    # Коррекция по собственной статистике
+    # ==========================
+    
+    if stats:
+    
+        probability = stats["probability"]
+    
+        if probability >= 80:
+            score += 20
+    
+        elif probability >= 70:
+            score += 15
+    
+        elif probability >= 60:
+            score += 10
+    
+        elif probability <= 30:
+            score -= 10
+    
+    score = max(0, min(score, 100))
+    
+    # --------------------------
+    # Финальная оценка
+    # --------------------------
+    
     if score >= 70:
-
+    
         return (
             score,
             "🔴 Очень высокая",
             "Откат вероятен в ближайшее время."
         )
-
+    
     if score >= 50:
-
+    
         return (
             score,
             "🟠 Высокая",
             "Лучше дождаться коррекции."
         )
-
+    
     if score >= 30:
-
+    
         return (
             score,
             "🟡 Средняя",
             "Следить за развитием движения."
         )
-
+    
     return (
         score,
         "🟢 Низкая",
