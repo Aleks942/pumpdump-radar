@@ -2409,6 +2409,12 @@ def build_message(signal):
     move_title, move_description = classify_move_type(signal)
 
     # =========================
+    # Прогноз отката
+    # =========================
+    
+    reversal_score, reversal_level, reversal_text = predict_reversal(signal)
+
+    # =========================
     # Убираем причины про OI,
     # если OI отсутствует
     # =========================
@@ -2520,6 +2526,16 @@ def build_message(signal):
 {move_title}
 
 {move_description}
+
+━━━━━━━━━━━━━━
+
+🔄 <b>Вероятность отката</b>
+
+{reversal_level}
+
+Вероятность: <b>{reversal_score}%</b>
+
+{reversal_text}
 
 ━━━━━━━━━━━━━━
 
