@@ -2248,6 +2248,7 @@ def build_message(signal):
 {reasons_text}
 
 🕒 {datetime.now(UTC).strftime("%H:%M")}
+
 def should_send_signal(signal):
     symbol = signal["symbol"]
     decision = signal.get("decision", {})
