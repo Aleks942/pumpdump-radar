@@ -128,6 +128,20 @@ def initialize_market_memory():
 
                 connection.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS oi_history (
+                
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                
+                        symbol TEXT NOT NULL,
+                
+                        created_at REAL NOT NULL,
+                
+                        oi REAL NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
                     CREATE INDEX IF NOT EXISTS
                     idx_market_signals_symbol
                     ON market_signals(symbol)
