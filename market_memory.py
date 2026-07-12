@@ -818,6 +818,45 @@ def update_market_memory(current_prices: dict):
                             flush=True
                         )
 
+                # ===========================
+                # 30 MIN
+                # ===========================
+                
+                if (
+                    age >= 30 * 60
+                    and row["checked_30m_at"] is None
+                ):
+                
+                    move = (
+                        (current_price - entry_price)
+                        / entry_price
+                    ) * 100
+                
+                    connection.execute(
+                        """
+                        UPDATE market_signals
+                
+                        SET
+                
+                            price_30m=?,
+                            move_30m_pct=?,
+                            checked_30m_at=?
+                
+                        WHERE id=?
+                        """,
+                        (
+                            current_price,
+                            move,
+                            now,
+                            signal_id
+                        )
+                    )
+                
+                    print(
+                        f"[30M] {symbol} {move:.2f}%",
+                        flush=True
+                    )
+
                 connection.commit()
 
         
