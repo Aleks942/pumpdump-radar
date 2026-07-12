@@ -19,12 +19,12 @@ from liquidation_engine import (
 from stats_engine import (
     register_signal,
     update_signal_result,
-    )
+)
 
 from scenario_stats_engine import (
     register_scenario_signal,
     update_scenario_results,
-
+)
 from market_memory import (
     initialize_market_memory,
     market_memory_healthcheck,
