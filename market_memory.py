@@ -978,3 +978,92 @@ def get_reversal_statistics():
         "probability": probability
 
     }
+
+def get_similar_reversal_statistics(signal):
+
+    move_type = signal["type"]
+    oi = signal.get("oi_change") or 0
+    change = abs(signal.get("change", 0))
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                rows = connection.execute(
+                    """
+                    SELECT
+
+                        move_type,
+                        trigger_change_pct,
+                        oi_change,
+                        move_60m_pct
+
+                    FROM market_signals
+
+                    WHERE
+
+                        completed=1
+                        AND move_type=?
+                        AND move_60m_pct IS NOT NULL
+                    """,
+                    (
+                        move_type,
+                    )
+                ).fetchall()
+
+        except Exception as e:
+
+            print(
+                "[SIMILAR_STATS_ERROR]",
+                e,
+                flush=True
+            )
+
+            return None
+
+    matched = []
+
+    for row in rows:
+
+        db_change = abs(row["trigger_change_pct"] or 0)
+        db_oi = row["oi_change"] or 0
+
+        if abs(db_change - change) > 2:
+            continue
+
+        if abs(db_oi - oi) > 3:
+            continue
+
+        matched.append(row)
+
+    if len(matched) < 20:
+        return None
+
+    reversals = 0
+
+    for row in matched:
+
+        move = row["move_60m_pct"]
+
+        if move_type == "PUMP":
+
+            if move <= -3:
+                reversals += 1
+
+        else:
+
+            if move >= 3:
+                reversals += 1
+
+    probability = reversals / len(matched) * 100
+
+    return {
+
+        "samples": len(matched),
+
+        "probability": probability
+
+    }
+
