@@ -516,6 +516,16 @@ def analyze(ticker):
     funding = get_funding_rate(raw_symbol)
     oi = get_open_interest(raw_symbol)
 
+    try:
+        save_oi_snapshot(symbol, oi)
+    except Exception as e:
+        print(
+            "[SAVE_OI_SNAPSHOT_ERROR]",
+            symbol,
+            e,
+            flush=True
+        )
+
     oi_change = None
 
     if oi is not None:
