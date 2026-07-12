@@ -601,7 +601,22 @@ def analyze(ticker):
         symbol,
         [round(x, 2) for x in oi_change_history]
     )
+
+    oi_slope = get_oi_slope(symbol)
+
+    if oi_slope:
     
+        print(
+            "[OI_SLOPE]",
+            symbol,
+            "history=",
+            oi_slope["history"],
+            "total=",
+            round(oi_slope["total_change"], 2),
+            "acc=",
+            round(oi_slope["acceleration"], 2),
+            flush=True
+        )
     # ====================================
     # BEST SIGNAL SELECTOR
     # ====================================
