@@ -582,6 +582,46 @@ def update_market_memory():
 
                         continue
 
+        # =========================
+        # 15 MIN RESULT
+        # =========================
+        
+        if (
+            age >= 15 * 60
+            and row["checked_15m_at"] is None
+        ):
+        
+            move_pct = (
+                (current_price - entry_price)
+                / entry_price
+            ) * 100
+        
+            connection.execute(
+                """
+                UPDATE market_signals
+        
+                SET
+        
+                    price_15m=?,
+                    move_15m_pct=?,
+                    checked_15m_at=?
+        
+                WHERE id=?
+                """,
+        
+                (
+                    current_price,
+                    move_pct,
+                    now,
+                    signal_id
+                )
+            )
+        
+            print(
+                f"[15M SAVED] {symbol} {move_pct:.2f}%",
+                flush=True
+            )
+
         except Exception as error:
 
             print(
