@@ -143,6 +143,13 @@ def initialize_market_memory():
                 connection.execute(
                     """
                     CREATE INDEX IF NOT EXISTS
+                    idx_oi_symbol
+                    ON oi_history(symbol)
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS
                     idx_market_signals_symbol
                     ON market_signals(symbol)
                     """
