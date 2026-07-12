@@ -412,18 +412,63 @@ def classify_oi_flow(move_type, oi_change):
 
 
 def update_oi_change_history(symbol, oi_change):
+
     if oi_change is None:
         return []
-    
+
     if symbol not in OI_CHANGE_HISTORY:
         OI_CHANGE_HISTORY[symbol] = []
-    
-    OI_CHANGE_HISTORY[symbol].append(oi_change)
-    
-    if len(OI_CHANGE_HISTORY[symbol]) > 5:
-        OI_CHANGE_HISTORY[symbol].pop(0)
-    
-    return OI_CHANGE_HISTORY[symbol]  
+
+    history = OI_CHANGE_HISTORY[symbol]
+
+    history.append(float(oi_change))
+
+    if len(history) > 12:
+        history.pop(0)
+
+    # ===========================
+    # SMART OI ANALYSIS
+    # ===========================
+
+    if len(history) >= 5:
+
+        avg = sum(history) / len(history)
+
+        first_half = history[:len(history)//2]
+        second_half = history[len(history)//2:]
+
+        avg_first = sum(first_half) / len(first_half)
+        avg_second = sum(second_half) / len(second_half)
+
+        acceleration = avg_second - avg_first
+
+        print(
+            "[SMART_OI]",
+            symbol,
+            "AVG=",
+            round(avg, 3),
+            "ACC=",
+            round(acceleration, 3),
+            flush=True
+        )
+
+        if avg > 0.25 and acceleration > 0.15:
+
+            print(
+                "[SMART_ACCUMULATION]",
+                symbol,
+                flush=True
+            )
+
+        elif avg < -0.25 and acceleration < -0.15:
+
+            print(
+                "[SMART_DISTRIBUTION]",
+                symbol,
+                flush=True
+            )
+
+    return history
 
 def detect_exhaustion(move_type, change, oi_change_history):
 
