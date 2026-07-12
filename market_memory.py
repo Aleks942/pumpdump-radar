@@ -818,86 +818,86 @@ def update_market_memory(current_prices: dict):
                             flush=True
                         )
 
-                # ===========================
-                # 30 MIN
-                # ===========================
-                
-                if (
-                    age >= 30 * 60
-                    and row["checked_30m_at"] is None
-                ):
-                
-                    move = (
-                        (current_price - entry_price)
-                        / entry_price
-                    ) * 100
-                
-                    connection.execute(
-                        """
-                        UPDATE market_signals
-                
-                        SET
-                
-                            price_30m=?,
-                            move_30m_pct=?,
-                            checked_30m_at=?
-                
-                        WHERE id=?
-                        """,
-                        (
-                            current_price,
-                            move,
-                            now,
-                            signal_id
+                    # ===========================
+                    # 30 MIN
+                    # ===========================
+                    
+                    if (
+                        age >= 30 * 60
+                        and row["checked_30m_at"] is None
+                    ):
+                    
+                        move = (
+                            (current_price - entry_price)
+                            / entry_price
+                        ) * 100
+                    
+                        connection.execute(
+                            """
+                            UPDATE market_signals
+                    
+                            SET
+                    
+                                price_30m=?,
+                                move_30m_pct=?,
+                                checked_30m_at=?
+                    
+                            WHERE id=?
+                            """,
+                            (
+                                current_price,
+                                move,
+                                now,
+                                signal_id
+                            )
                         )
-                    )
-                
-                    print(
-                        f"[30M] {symbol} {move:.2f}%",
-                        flush=True
-                    )
-
-
-                # ===========================
-                # 60 MIN
-                # ===========================
-                
-                if (
-                    age >= 60 * 60
-                    and row["checked_60m_at"] is None
-                ):
-                
-                    move = (
-                        (current_price - entry_price)
-                        / entry_price
-                    ) * 100
-                
-                    connection.execute(
-                        """
-                        UPDATE market_signals
-                
-                        SET
-                
-                            price_60m=?,
-                            move_60m_pct=?,
-                            checked_60m_at=?,
-                            completed=1
-                
-                        WHERE id=?
-                        """,
-                        (
-                            current_price,
-                            move,
-                            now,
-                            signal_id
+                    
+                        print(
+                            f"[30M] {symbol} {move:.2f}%",
+                            flush=True
                         )
-                    )
-                
-                    print(
-                        f"[60M COMPLETE] {symbol} {move:.2f}%",
-                        flush=True
-                    )
-                connection.commit()
+    
+    
+                    # ===========================
+                    # 60 MIN
+                    # ===========================
+                    
+                    if (
+                        age >= 60 * 60
+                        and row["checked_60m_at"] is None
+                    ):
+                    
+                        move = (
+                            (current_price - entry_price)
+                            / entry_price
+                        ) * 100
+                    
+                        connection.execute(
+                            """
+                            UPDATE market_signals
+                    
+                            SET
+                    
+                                price_60m=?,
+                                move_60m_pct=?,
+                                checked_60m_at=?,
+                                completed=1
+                    
+                            WHERE id=?
+                            """,
+                            (
+                                current_price,
+                                move,
+                                now,
+                                signal_id
+                            )
+                        )
+                    
+                        print(
+                            f"[60M COMPLETE] {symbol} {move:.2f}%",
+                            flush=True
+                        )
+                    connection.commit()
 
         
 
