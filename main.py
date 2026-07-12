@@ -2214,8 +2214,11 @@ def build_message(signal):
 
 🎲 <b>{confidence}%</b>   {move_status}
 
+📈 <b>ФАЗА</b>
+
+{market_phase}
+
 🕒 {datetime.now(UTC).strftime("%H:%M")}
-"""
 
 def should_send_signal(signal):
     symbol = signal["symbol"]
