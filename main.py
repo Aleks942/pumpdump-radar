@@ -2214,7 +2214,7 @@ def build_message(signal):
 
 🎲 <b>{confidence}%</b>   {move_status}
 
-📈 <b>ФАЗА</b>
+📈 <b>Состояние рынка</b>
 
 {market_phase}
 
