@@ -2402,15 +2402,21 @@ def build_message(signal):
 
 ━━━━━━━━━━━━━━
 
-🎯 <b>{decision_text}</b>
-
-📈 <b>Состояние рынка</b>
-
-{market_phase}
-
 💡 <b>Что делать сейчас</b>
 
 {trade_advice}
+
+━━━━━━━━━━━━━━
+
+🎯 <b>Тип движения</b>
+
+{move_title}
+
+{move_description}
+
+━━━━━━━━━━━━━━
+
+🎯 <b>Оценка ситуации</b>
 
 ━━━━━━━━━━━━━━
 
