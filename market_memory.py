@@ -504,7 +504,7 @@ def save_market_signal(signal):
             )
 
             return None
-            
+
 def update_market_memory():
 
     """
@@ -517,7 +517,51 @@ def update_market_memory():
     После 60 минут помечает сигнал completed=1.
     """
 
-    pass
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                cursor = connection.execute(
+                    """
+                    SELECT
+                        id,
+                        symbol,
+                        move_type,
+                        created_at,
+                        entry_price,
+
+                        price_15m,
+                        price_30m,
+                        price_60m,
+
+                        completed
+
+                    FROM market_signals
+
+                    WHERE completed = 0
+                    """
+                )
+
+                signals = cursor.fetchall()
+
+        except Exception as error:
+
+            print(
+                "[MARKET_MEMORY_UPDATE_ERROR]",
+                error,
+                flush=True
+            )
+
+            return
+
+    print(
+        "[MARKET_MEMORY_PENDING]",
+        len(signals),
+        flush=True
+    )
+
 
 if __name__ == "__main__":
 
