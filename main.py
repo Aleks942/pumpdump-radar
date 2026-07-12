@@ -2212,34 +2212,42 @@ def build_message(signal):
     if not reasons_text.strip():
         reasons_text = "• Нет сильных подтверждений"
     return f"""
-{emoji} <b>{signal["symbol"]}</b> {signal["change"]:.2f}% | {signal["window"]}
+{emoji} <b>{signal["symbol"]}</b>   {signal["change"]:.2f}%   |   {signal["window"]}
+
+━━━━━━━━━━━━━━
 
 🎯 <b>{decision_text}</b>
-
-━━━━━━━━━━━━━━
-
-📊 <b>Рынок</b>
-
-📦 OI      {oi_text}
-⚖️ PRESS   {pressure_state}
-💥 LIQ     L ${long_liq:,.0f} | S ${short_liq:,.0f}
-
-━━━━━━━━━━━━━━
-
-🧠 <b>Почему</b>
-
-{reasons_text}
-
-━━━━━━━━━━━━━━
-
-🎲 <b>{confidence}%</b>   {move_status}
 
 📈 <b>Состояние рынка</b>
 
 {market_phase}
 
-🕒 {datetime.now(UTC).strftime("%H:%M")}
+💡 <b>Что делать сейчас</b>
 
+{trade_advice}
+
+━━━━━━━━━━━━━━
+
+🎯 <b>Оценка ситуации</b>
+
+{move_status}
+Уверенность: <b>{confidence}%</b>
+
+━━━━━━━━━━━━━━
+
+📊 <b>Что видит бот</b>
+
+📦 OI        {oi_text}
+⚖️ Давление  {pressure_state}
+💥 Ликвидации  L ${long_liq:,.0f} | S ${short_liq:,.0f}
+
+━━━━━━━━━━━━━━
+
+🧠 <b>Почему принято такое решение</b>
+
+{reasons_text}
+
+🕒 {datetime.now(UTC).strftime("%H:%M")}
 def should_send_signal(signal):
     symbol = signal["symbol"]
     decision = signal.get("decision", {})
