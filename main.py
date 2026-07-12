@@ -2109,6 +2109,113 @@ def classify_move_type(signal):
         "Явных признаков преимущества пока нет."
     )
 
+def predict_reversal(signal):
+
+    score = 0
+
+    oi = signal.get("oi_change")
+    change = abs(signal.get("change", 0))
+
+    liq = signal.get("liquidations") or {}
+
+    long_liq = liq.get("long_liq", 0)
+    short_liq = liq.get("short_liq", 0)
+
+    money = signal.get("money") or {}
+    pressure = money.get("pressure")
+
+    # --------------------------
+    # OI
+    # --------------------------
+
+    if oi is not None:
+
+        if oi <= -5:
+            score += 35
+
+        elif oi <= -2:
+            score += 20
+
+        elif oi >= 5:
+            score -= 20
+
+    # --------------------------
+    # Размер движения
+    # --------------------------
+
+    if change >= 10:
+        score += 30
+
+    elif change >= 7:
+        score += 20
+
+    elif change >= 5:
+        score += 10
+
+    # --------------------------
+    # Давление
+    # --------------------------
+
+    if pressure == "BUYERS_DOMINATE":
+
+        if signal["type"] == "PUMP":
+            score -= 10
+
+    elif pressure == "SELLERS_DOMINATE":
+
+        if signal["type"] == "DUMP":
+            score -= 10
+
+    # --------------------------
+    # Ликвидации
+    # --------------------------
+
+    if signal["type"] == "PUMP":
+
+        if short_liq > long_liq * 2:
+            score += 15
+
+    else:
+
+        if long_liq > short_liq * 2:
+            score += 15
+
+    # --------------------------
+    # Ограничение
+    # --------------------------
+
+    score = max(0, min(score, 100))
+
+    if score >= 70:
+
+        return (
+            score,
+            "🔴 Очень высокая",
+            "Откат вероятен в ближайшее время."
+        )
+
+    if score >= 50:
+
+        return (
+            score,
+            "🟠 Высокая",
+            "Лучше дождаться коррекции."
+        )
+
+    if score >= 30:
+
+        return (
+            score,
+            "🟡 Средняя",
+            "Следить за развитием движения."
+        )
+
+    return (
+        score,
+        "🟢 Низкая",
+        "Пока движение выглядит здоровым."
+    )
+
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
