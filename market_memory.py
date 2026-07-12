@@ -505,16 +505,16 @@ def save_market_signal(signal):
 
             return None
 
-def update_market_memory():
+def update_market_memory(current_prices: dict):
 
     """
-    Обновляет результаты сигналов.
+    current_prices:
 
-    15m
-    30m
-    60m
-
-    После 60 минут помечает сигнал completed=1.
+    {
+        "BTCUSDT": 108522.4,
+        "ETHUSDT": 2654.8,
+        ...
+    }
     """
 
     now = time.time()
@@ -530,13 +530,9 @@ def update_market_memory():
                     SELECT
                         id,
                         symbol,
-                        move_type,
-                        created_at,
                         entry_price,
 
-                        price_15m,
-                        price_30m,
-                        price_60m,
+                        created_at,
 
                         checked_15m_at,
                         checked_30m_at,
@@ -546,7 +542,7 @@ def update_market_memory():
 
                     FROM market_signals
 
-                    WHERE completed = 0
+                    WHERE completed=0
                     """
                 ).fetchall()
 
@@ -558,74 +554,65 @@ def update_market_memory():
                 for row in rows:
 
                     signal_id = row["id"]
+
                     symbol = row["symbol"]
+
                     entry_price = row["entry_price"]
-                    created_at = row["created_at"]
 
-                    age = now - created_at
+                    created = row["created_at"]
 
-                    try:
+                    age = now - created
 
-                        current_price = get_last_price(symbol)
+                    current_price = current_prices.get(symbol)
 
-                        if current_price is None:
-                            continue
+                    if current_price is None:
+                        continue
 
-                    except Exception as e:
+                    # ===========================
+                    # 15 MIN
+                    # ===========================
+
+                    if (
+                        age >= 15 * 60
+                        and row["checked_15m_at"] is None
+                    ):
+
+                        move = (
+                            (current_price - entry_price)
+                            / entry_price
+                        ) * 100
+
+                        connection.execute(
+                            """
+                            UPDATE market_signals
+
+                            SET
+
+                                price_15m=?,
+                                move_15m_pct=?,
+                                checked_15m_at=?
+
+                            WHERE id=?
+                            """,
+                            (
+                                current_price,
+                                move,
+                                now,
+                                signal_id
+                            )
+                        )
 
                         print(
-                            "[PRICE_ERROR]",
-                            symbol,
-                            e,
+                            f"[15M] {symbol} {move:.2f}%",
                             flush=True
                         )
 
-                        continue
+                connection.commit()
 
-        # =========================
-        # 15 MIN RESULT
-        # =========================
-        
-        if (
-            age >= 15 * 60
-            and row["checked_15m_at"] is None
-        ):
-        
-            move_pct = (
-                (current_price - entry_price)
-                / entry_price
-            ) * 100
-        
-            connection.execute(
-                """
-                UPDATE market_signals
-        
-                SET
-        
-                    price_15m=?,
-                    move_15m_pct=?,
-                    checked_15m_at=?
-        
-                WHERE id=?
-                """,
-        
-                (
-                    current_price,
-                    move_pct,
-                    now,
-                    signal_id
-                )
-            )
-        
-            print(
-                f"[15M SAVED] {symbol} {move_pct:.2f}%",
-                flush=True
-            )
-
-        except Exception as error:
+        except Exception as e:
 
             print(
                 "[MARKET_MEMORY_UPDATE_ERROR]",
-                error,
+                e,
                 flush=True
             )
