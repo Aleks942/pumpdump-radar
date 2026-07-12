@@ -1928,7 +1928,86 @@ def analyze_trend_strength(signal):
             "reasons": []
         }
 
-    
+
+def calculate_signal_quality(signal):
+
+    score = 0
+
+    # -------------------------
+    # OI
+    # -------------------------
+
+    oi = signal.get("oi_change")
+
+    if oi is not None:
+
+        if oi >= 8:
+            score += 20
+
+        elif oi >= 5:
+            score += 15
+
+        elif oi >= 2:
+            score += 8
+
+    # -------------------------
+    # Давление
+    # -------------------------
+
+    money = signal.get("money")
+
+    if money:
+
+        pressure = money.get("pressure")
+
+        if pressure == "BUYERS_DOMINATE":
+            score += 15
+
+        elif pressure == "SELLERS_DOMINATE":
+            score += 15
+
+    # -------------------------
+    # Ликвидации
+    # -------------------------
+
+    liq = signal.get("liquidations")
+
+    if liq:
+
+        total = (
+            liq.get("long_liq", 0)
+            +
+            liq.get("short_liq", 0)
+        )
+
+        if total > 2_000_000:
+            score += 20
+
+        elif total > 500_000:
+            score += 10
+
+    # -------------------------
+    # Скорость цены
+    # -------------------------
+
+    move = abs(signal.get("change", 0))
+
+    if move >= 8:
+        score += 20
+
+    elif move >= 5:
+        score += 15
+
+    elif move >= 3:
+        score += 10
+
+    # -------------------------
+    # Ограничение
+    # -------------------------
+
+    score = min(score, 100)
+
+    return score
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
