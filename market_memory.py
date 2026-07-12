@@ -181,12 +181,7 @@ def initialize_market_memory():
 
                 connection.commit()
 
-            print(
-                "[OI_SAVED]",
-                symbol,
-                oi,
-                flush=True
-            )
+            
 
             print(
                 "[MARKET_MEMORY_READY]",
