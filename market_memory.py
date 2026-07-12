@@ -279,6 +279,232 @@ def get_memory_status():
             "completed": 0,
         }
 
+def save_market_signal(signal):
+    """
+    Сохраняет отправленный Telegram-сигнал в SQLite.
+    Повторный signal_key не записывается.
+    """
+
+    if not signal:
+        return None
+
+    symbol = signal.get("symbol")
+    move_type = signal.get("type")
+    entry_price = signal.get("price")
+    window_name = signal.get("window")
+
+    if not symbol or not move_type or entry_price is None:
+        print(
+            "[MARKET_MEMORY_SAVE_SKIP]",
+            "incomplete signal",
+            symbol,
+            flush=True
+        )
+        return None
+
+    try:
+        entry_price = float(entry_price)
+    except (TypeError, ValueError):
+        return None
+
+    if entry_price <= 0:
+        return None
+
+    created_at = time.time()
+
+    signal_key = (
+        f"{symbol}_"
+        f"{move_type}_"
+        f"{window_name}_"
+        f"{int(created_at * 1000)}"
+    )
+
+    scenario = signal.get("money_scenario") or {}
+    decision = signal.get("decision") or {}
+    spot = signal.get("spot_cvd") or {}
+    money = signal.get("money") or {}
+    liquidations = signal.get("liquidations") or {}
+    trend = signal.get("trend_strength") or {}
+
+    applied_rules = decision.get("applied_rules") or []
+    explanation = decision.get("explanation") or []
+
+    try:
+        import json
+
+        applied_rules_json = json.dumps(
+            applied_rules,
+            ensure_ascii=False
+        )
+
+        explanation_json = json.dumps(
+            explanation,
+            ensure_ascii=False
+        )
+
+    except Exception:
+        applied_rules_json = "[]"
+        explanation_json = "[]"
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                cursor = connection.execute(
+                    """
+                    INSERT INTO market_signals (
+                        signal_key,
+                        created_at,
+                        created_at_utc,
+
+                        symbol,
+                        move_type,
+                        window_name,
+
+                        entry_price,
+                        trigger_change_pct,
+
+                        scenario_name,
+                        scenario_title,
+                        scenario_bias,
+                        scenario_strength,
+
+                        decision_stage,
+                        decision_action,
+                        decision_confidence,
+
+                        chief_score,
+                        continue_score,
+                        exhaustion_score,
+
+                        oi_change,
+                        funding,
+
+                        spot_available,
+                        spot_state,
+                        spot_cvd_percent,
+                        spot_buy_volume,
+                        spot_sell_volume,
+
+                        money_state,
+                        money_score,
+                        pressure,
+
+                        long_liquidations,
+                        short_liquidations,
+
+                        trend_score,
+
+                        applied_rules,
+                        explanation
+                    )
+                    VALUES (
+                        ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?,
+                        ?,
+                        ?, ?
+                    )
+                    """,
+                    (
+                        signal_key,
+                        created_at,
+                        time.strftime(
+                            "%Y-%m-%d %H:%M:%S",
+                            time.gmtime(created_at)
+                        ),
+
+                        symbol,
+                        move_type,
+                        window_name,
+
+                        entry_price,
+                        signal.get("change"),
+
+                        scenario.get("name"),
+                        scenario.get("title"),
+                        scenario.get("bias"),
+                        scenario.get("strength"),
+
+                        decision.get("stage"),
+                        decision.get("action"),
+                        decision.get("confidence"),
+
+                        decision.get("score"),
+                        decision.get("continue_score"),
+                        decision.get("exhaustion_score"),
+
+                        signal.get("oi_change"),
+                        signal.get("funding"),
+
+                        1 if spot.get("available") else 0,
+                        spot.get("state"),
+                        spot.get("cvd_percent"),
+                        spot.get("buy_quote_volume"),
+                        spot.get("sell_quote_volume"),
+
+                        money.get("money_state"),
+                        money.get("money_score"),
+                        money.get("pressure"),
+
+                        liquidations.get("long_liq", 0),
+                        liquidations.get("short_liq", 0),
+
+                        trend.get("score"),
+
+                        applied_rules_json,
+                        explanation_json,
+                    )
+                )
+
+                connection.commit()
+
+                record_id = cursor.lastrowid
+
+            print(
+                "[MARKET_MEMORY_SAVED]",
+                symbol,
+                "id=",
+                record_id,
+                "scenario=",
+                scenario.get("name"),
+                "action=",
+                decision.get("action"),
+                flush=True
+            )
+
+            return record_id
+
+        except sqlite3.IntegrityError:
+
+            print(
+                "[MARKET_MEMORY_DUPLICATE]",
+                signal_key,
+                flush=True
+            )
+
+            return None
+
+        except Exception as error:
+
+            print(
+                "[MARKET_MEMORY_SAVE_ERROR]",
+                symbol,
+                error,
+                flush=True
+            )
+
+            return None
+
 
 if __name__ == "__main__":
 
