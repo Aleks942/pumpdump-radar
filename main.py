@@ -29,6 +29,7 @@ from market_memory import (
     initialize_market_memory,
     market_memory_healthcheck,
     save_market_signal,
+    update_market_memory,
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -2192,6 +2193,14 @@ while True:
         flush=True
     )
     
+    try:
+        update_market_memory()
+    except Exception as e:
+        print(
+            "[MARKET_MEMORY_UPDATE_LOOP_ERROR]",
+            e,
+            flush=True
+        )
+    
     time.sleep(SCAN_SLEEP)
-
    
