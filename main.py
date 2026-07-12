@@ -25,11 +25,14 @@ from scenario_stats_engine import (
     register_scenario_signal,
     update_scenario_results,
 )
+
 from market_memory import (
     initialize_market_memory,
     market_memory_healthcheck,
     save_market_signal,
     update_market_memory,
+    save_oi_snapshot,
+    load_recent_oi_history,
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -2110,6 +2113,21 @@ print("========== INIT DONE ==========", flush=True)
 
 market_memory_healthcheck()
 print("========== HEALTH DONE ==========", flush=True)
+
+restored_oi_history = load_recent_oi_history(limit=60)
+
+if restored_oi_history:
+    OI_HISTORY.clear()
+    OI_HISTORY.update(restored_oi_history)
+
+print(
+    "[OI_HISTORY_READY]",
+    "symbols=",
+    len(OI_HISTORY),
+    "points=",
+    sum(len(values) for values in OI_HISTORY.values()),
+    flush=True
+)
 
 test_binance()
 test_bybit()
