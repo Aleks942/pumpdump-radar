@@ -495,6 +495,53 @@ def detect_exhaustion(move_type, change, oi_change_history):
 
     return None
 
+def get_oi_slope(symbol):
+
+    history = OI_HISTORY.get(symbol, [])
+
+    if len(history) < 5:
+        return None
+
+    first = history[0]
+    last = history[-1]
+
+    if first <= 0:
+        return None
+
+    total_change = (
+        (last - first)
+        / first
+    ) * 100
+
+    diffs = []
+
+    for i in range(1, len(history)):
+
+        prev = history[i - 1]
+        cur = history[i]
+
+        if prev <= 0:
+            continue
+
+        diff = (
+            (cur - prev)
+            / prev
+        ) * 100
+
+        diffs.append(diff)
+
+    acceleration = 0.0
+
+    if len(diffs) >= 2:
+        acceleration = diffs[-1] - diffs[0]
+
+    return {
+        "history": len(history),
+        "total_change": total_change,
+        "acceleration": acceleration
+    }
+
+
 def analyze(ticker):
     try:
         raw_symbol = ticker["instId"]
