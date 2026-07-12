@@ -2022,6 +2022,34 @@ def build_message(signal):
     
     stage = decision.get("stage", "UNKNOWN")
     action = decision.get("action", "WAIT")
+
+    # ==========================
+    # MARKET PHASE ENGINE
+    # ==========================
+
+    market_phase = "⚪ НЕИЗВЕСТНО"
+
+    oi_slope = signal.get("oi_slope")
+
+    if oi_slope:
+
+        total = oi_slope.get("total_change", 0)
+        accel = oi_slope.get("acceleration", 0)
+
+        if total > 8 and accel > 0:
+            market_phase = "🟢 ACCUMULATION"
+
+        elif total > 3:
+            market_phase = "🟡 LAUNCH"
+
+        elif total > 0:
+            market_phase = "🚀 MOMENTUM"
+
+        elif total < -5:
+            market_phase = "🔴 DISTRIBUTION"
+
+        elif accel < -1:
+            market_phase = "🟠 EXHAUSTION"
     
     stage_map = {
     
