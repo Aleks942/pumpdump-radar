@@ -2347,5 +2347,12 @@ while True:
             e,
             flush=True
         )
+
+    print(
+        "[OI_MEMORY]",
+        "symbols=",
+        len(OI_HISTORY),
+        flush=True
+    )
     
     time.sleep(SCAN_SLEEP)
