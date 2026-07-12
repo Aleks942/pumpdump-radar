@@ -2121,6 +2121,8 @@ def predict_reversal(signal):
     
     stats = get_reversal_statistics()
 
+    similar_stats = get_similar_reversal_statistics(signal)
+
     oi = signal.get("oi_change")
     change = abs(signal.get("change", 0))
 
