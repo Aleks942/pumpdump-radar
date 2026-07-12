@@ -517,13 +517,15 @@ def update_market_memory():
     После 60 минут помечает сигнал completed=1.
     """
 
+    now = time.time()
+
     with _db_lock:
 
         try:
 
             with closing(get_connection()) as connection:
 
-                cursor = connection.execute(
+                rows = connection.execute(
                     """
                     SELECT
                         id,
@@ -536,15 +538,49 @@ def update_market_memory():
                         price_30m,
                         price_60m,
 
+                        checked_15m_at,
+                        checked_30m_at,
+                        checked_60m_at,
+
                         completed
 
                     FROM market_signals
 
                     WHERE completed = 0
                     """
+                ).fetchall()
+
+                print(
+                    f"[MARKET_MEMORY_PENDING] {len(rows)}",
+                    flush=True
                 )
 
-                signals = cursor.fetchall()
+                for row in rows:
+
+                    signal_id = row["id"]
+                    symbol = row["symbol"]
+                    entry_price = row["entry_price"]
+                    created_at = row["created_at"]
+
+                    age = now - created_at
+
+                    try:
+
+                        current_price = get_last_price(symbol)
+
+                        if current_price is None:
+                            continue
+
+                    except Exception as e:
+
+                        print(
+                            "[PRICE_ERROR]",
+                            symbol,
+                            e,
+                            flush=True
+                        )
+
+                        continue
 
         except Exception as error:
 
@@ -553,26 +589,3 @@ def update_market_memory():
                 error,
                 flush=True
             )
-
-            return
-
-    print(
-        "[MARKET_MEMORY_PENDING]",
-        len(signals),
-        flush=True
-    )
-
-
-if __name__ == "__main__":
-
-    initialize_market_memory()
-
-    market_memory_healthcheck()
-
-    status = get_memory_status()
-
-    print(
-        "[MARKET_MEMORY_STATUS]",
-        status,
-        flush=True
-    )
