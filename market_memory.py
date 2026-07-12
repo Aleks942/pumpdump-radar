@@ -829,3 +829,73 @@ def update_market_memory(current_prices: dict):
                 e,
                 flush=True
             )
+
+
+def get_reversal_statistics():
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                rows = connection.execute(
+                    """
+                    SELECT
+
+                        move_type,
+                        move_15m_pct,
+                        move_30m_pct,
+                        move_60m_pct
+
+                    FROM market_signals
+
+                    WHERE
+
+                        completed = 1
+                        AND move_60m_pct IS NOT NULL
+                    """
+                ).fetchall()
+
+        except Exception as e:
+
+            print(
+                "[REVERSAL_STATS_ERROR]",
+                e,
+                flush=True
+            )
+
+            return None
+
+    total = len(rows)
+
+    if total == 0:
+        return None
+
+    reversals = 0
+
+    for row in rows:
+
+        move_type = row["move_type"]
+
+        m60 = row["move_60m_pct"]
+
+        if move_type == "PUMP":
+
+            if m60 <= -3:
+                reversals += 1
+
+        else:
+
+            if m60 >= 3:
+                reversals += 1
+
+    probability = reversals / total * 100
+
+    return {
+
+        "total": total,
+        "reversals": reversals,
+        "probability": probability
+
+    }
