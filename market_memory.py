@@ -504,7 +504,20 @@ def save_market_signal(signal):
             )
 
             return None
+            
+def update_market_memory():
 
+    """
+    Обновляет результаты сигналов.
+
+    15m
+    30m
+    60m
+
+    После 60 минут помечает сигнал completed=1.
+    """
+
+    pass
 
 if __name__ == "__main__":
 
