@@ -633,6 +633,12 @@ def analyze(ticker):
         OI_HISTORY[symbol].append(oi)
 
         print(
+            "[OI_KEYS]",
+            len(OI_HISTORY),
+            flush=True
+        )
+
+        print(
             "[OI_LEN]",
             symbol,
             len(OI_HISTORY[symbol])
