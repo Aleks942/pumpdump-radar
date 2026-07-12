@@ -335,6 +335,13 @@ def save_oi_snapshot(symbol: str, oi: float):
 
                 connection.commit()
 
+                print(
+                    "[OI_SAVED]",
+                    symbol,
+                    oi,
+                    flush=True
+                )
+
         except Exception as e:
 
             print(
@@ -774,6 +781,8 @@ def update_market_memory(current_prices: dict):
                         )
 
                 connection.commit()
+
+        
 
         except Exception as e:
 
