@@ -2112,95 +2112,117 @@ start_liquidation_streams()
 while True:
     print("[SCAN] scanning market...")
 
-    tickers = get_market_tickers()
-    print(f"[TICKERS] {len(tickers)}")
+tickers = get_market_tickers()
+print(f"[TICKERS] {len(tickers)}")
 
-    current_chunk = get_rotation_chunk(tickers)
-    print(f"[CHUNK] {len(current_chunk)}")
+current_chunk = get_rotation_chunk(tickers)
+print(f"[CHUNK] {len(current_chunk)}")
 
-    checked = 0
-    signals = 0
-    no_signal = 0
+current_prices = {}
 
+for t in current_chunk:
 
-    for ticker in current_chunk:
-        checked += 1
-    
-        signal = analyze(ticker)
-    
-        if not signal:
-            no_signal += 1
-            continue
-    
-        print(
-            "[SIGNAL READY]",
-            signal["symbol"],
-            signal["window"],
-            signal["change"],
-            flush=True
+    symbol = (
+        t.get("symbol")
+        or str(t.get("instId") or "")
+        .replace("-USDT-SWAP", "USDT")
+        .replace("-", "")
+    )
+
+    try:
+        price = float(
+            t.get("lastPrice")
+            or t.get("last")
+            or 0
         )
-    
-        update_signal_result(
-            signal["symbol"],
-            signal["price"]
-        )
-    
-        signals += 1
-    
-        if not should_send_signal(signal):
-            print(
-                "[SKIP DUPLICATE]",
-                signal["symbol"],
-                flush=True
-            )
-            continue
-    
-        send_telegram(build_message(signal))
-        register_signal(signal)
-    
-        try:
-            register_scenario_signal(signal)
-        except Exception as e:
-            print(
-                "[REGISTER_SCENARIO_ERROR]",
-                e,
-                flush=True
-            )
-    
-        try:
-            save_market_signal(signal)
-        except Exception as e:
-            print(
-                "[MARKET_MEMORY_CALL_ERROR]",
-                e,
-                flush=True
-            )
-    
-        print(
-            "[SIGNAL]",
-            signal["window"],
-            signal["symbol"],
-            signal["type"],
-            round(signal["change"], 2),
-            flush=True
-        )
-    
+
+        if symbol and price > 0:
+            current_prices[symbol] = price
+
+    except (TypeError, ValueError):
+        continue
+
+checked = 0
+signals = 0
+no_signal = 0
+
+for ticker in current_chunk:
+    checked += 1
+
+    signal = analyze(ticker)
+
+    if not signal:
+        no_signal += 1
+        continue
+
     print(
-        "[SCAN_STATS]",
-        "checked=", checked,
-        "signals=", signals,
-        "no_signal=", no_signal,
+        "[SIGNAL READY]",
+        signal["symbol"],
+        signal["window"],
+        signal["change"],
         flush=True
     )
-    
+
+    update_signal_result(
+        signal["symbol"],
+        signal["price"]
+    )
+
+    signals += 1
+
+    if not should_send_signal(signal):
+        print(
+            "[SKIP DUPLICATE]",
+            signal["symbol"],
+            flush=True
+        )
+        continue
+
+    send_telegram(build_message(signal))
+    register_signal(signal)
+
     try:
-        update_market_memory()
+        register_scenario_signal(signal)
     except Exception as e:
         print(
-            "[MARKET_MEMORY_UPDATE_LOOP_ERROR]",
+            "[REGISTER_SCENARIO_ERROR]",
             e,
             flush=True
         )
-    
-    time.sleep(SCAN_SLEEP)
-   
+
+    try:
+        save_market_signal(signal)
+    except Exception as e:
+        print(
+            "[MARKET_MEMORY_CALL_ERROR]",
+            e,
+            flush=True
+        )
+
+    print(
+        "[SIGNAL]",
+        signal["window"],
+        signal["symbol"],
+        signal["type"],
+        round(signal["change"], 2),
+        flush=True
+    )
+
+print(
+    "[SCAN_STATS]",
+    "checked=", checked,
+    "signals=", signals,
+    "no_signal=", no_signal,
+    flush=True
+)
+
+try:
+    update_market_memory(current_prices)
+except Exception as e:
+    print(
+        "[MARKET_MEMORY_UPDATE_LOOP_ERROR]",
+        e,
+        flush=True
+    )
+
+time.sleep(SCAN_SLEEP)
