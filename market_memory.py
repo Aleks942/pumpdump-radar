@@ -344,6 +344,55 @@ def save_oi_snapshot(symbol: str, oi: float):
 
 def load_recent_oi_history(limit=60):
 
+    history = {}
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                rows = connection.execute(
+                    """
+                    SELECT
+                        symbol,
+                        oi
+                    FROM oi_history
+                    ORDER BY created_at DESC
+                    """
+                ).fetchall()
+
+        except Exception as e:
+
+            print(
+                "[LOAD_OI_HISTORY_ERROR]",
+                e,
+                flush=True
+            )
+            return {}
+
+    for row in rows:
+
+        symbol = row["symbol"]
+
+        if symbol not in history:
+            history[symbol] = []
+
+        if len(history[symbol]) < limit:
+            history[symbol].append(float(row["oi"]))
+
+    for symbol in history:
+        history[symbol].reverse()
+
+    print(
+        f"[OI_HISTORY_RESTORED] {len(history)} symbols",
+        flush=True
+    )
+
+    return history
+
+def load_recent_oi_history(limit=60):
+
     result = {}
 
     with _db_lock:
