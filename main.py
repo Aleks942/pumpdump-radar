@@ -2145,7 +2145,7 @@ while True:
         )
     
         signals += 1
-
+    
         if not should_send_signal(signal):
             print(
                 "[SKIP DUPLICATE]",
@@ -2153,9 +2153,27 @@ while True:
                 flush=True
             )
             continue
-        
+    
         send_telegram(build_message(signal))
         register_signal(signal)
+    
+        try:
+            register_scenario_signal(signal)
+        except Exception as e:
+            print(
+                "[REGISTER_SCENARIO_ERROR]",
+                e,
+                flush=True
+            )
+    
+        try:
+            save_market_signal(signal)
+        except Exception as e:
+            print(
+                "[MARKET_MEMORY_CALL_ERROR]",
+                e,
+                flush=True
+            )
     
         print(
             "[SIGNAL]",
