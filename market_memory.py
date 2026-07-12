@@ -299,6 +299,49 @@ def get_memory_status():
             "pending": 0,
             "completed": 0,
         }
+def save_oi_snapshot(symbol: str, oi: float):
+
+    if oi is None:
+        return
+
+    now = time.time()
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                connection.execute(
+                    """
+                    INSERT INTO oi_history(
+
+                        symbol,
+                        created_at,
+                        oi
+
+                    )
+
+                    VALUES(?,?,?)
+                    """,
+                    (
+                        symbol,
+                        now,
+                        float(oi)
+                    )
+                )
+
+                connection.commit()
+
+        except Exception as e:
+
+            print(
+                "[SAVE_OI_ERROR]",
+                symbol,
+                e,
+                flush=True
+            )
+
 
 def save_market_signal(signal):
     """
