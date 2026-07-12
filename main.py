@@ -24,11 +24,11 @@ from stats_engine import (
 from scenario_stats_engine import (
     register_scenario_signal,
     update_scenario_results,
-)
 
 from market_memory import (
     initialize_market_memory,
     market_memory_healthcheck,
+    save_market_signal,
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
