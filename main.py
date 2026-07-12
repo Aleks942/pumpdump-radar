@@ -2418,10 +2418,6 @@ def build_message(signal):
 
 🎯 <b>Оценка ситуации</b>
 
-━━━━━━━━━━━━━━
-
-🎯 <b>Оценка ситуации</b>
-
 {move_status}
 Уверенность: <b>{confidence}%</b>
 
