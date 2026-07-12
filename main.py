@@ -617,6 +617,39 @@ def analyze(ticker):
             round(oi_slope["acceleration"], 2),
             flush=True
         )
+
+
+    smart_money_state = None
+    
+    if oi_slope:
+    
+        if (
+            oi_slope["total_change"] >= 5
+            and oi_slope["acceleration"] > 0
+        ):
+    
+            smart_money_state = "SMART_ACCUMULATION"
+    
+            print(
+                "[SMART_ACCUMULATION]",
+                symbol,
+                round(oi_slope["total_change"], 2),
+                flush=True
+            )
+    
+        elif (
+            oi_slope["total_change"] <= -5
+            and oi_slope["acceleration"] < 0
+        ):
+    
+            smart_money_state = "SMART_DISTRIBUTION"
+    
+            print(
+                "[SMART_DISTRIBUTION]",
+                symbol,
+                round(oi_slope["total_change"], 2),
+                flush=True
+            )
     # ====================================
     # BEST SIGNAL SELECTOR
     # ====================================
