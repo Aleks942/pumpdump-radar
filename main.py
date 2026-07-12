@@ -2217,6 +2217,26 @@ def predict_reversal(signal):
             score -= 10
     
     score = max(0, min(score, 100))
+
+    # =====================================
+    # Похожие исторические ситуации
+    # =====================================
+    
+    if similar_stats:
+    
+        probability = similar_stats["probability"]
+    
+        if probability >= 85:
+            score += 25
+    
+        elif probability >= 75:
+            score += 18
+    
+        elif probability >= 65:
+            score += 12
+    
+        elif probability <= 25:
+            score -= 15
     
     # --------------------------
     # Финальная оценка
