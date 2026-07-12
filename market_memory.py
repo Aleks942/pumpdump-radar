@@ -342,6 +342,57 @@ def save_oi_snapshot(symbol: str, oi: float):
                 flush=True
             )
 
+def load_recent_oi_history(limit=60):
+
+    result = {}
+
+    with _db_lock:
+
+        try:
+
+            with closing(get_connection()) as connection:
+
+                rows = connection.execute(
+                    """
+                    SELECT
+                        symbol,
+                        oi
+                    FROM oi_history
+                    ORDER BY created_at DESC
+                    """
+                ).fetchall()
+
+        except Exception as e:
+
+            print(
+                "[LOAD_OI_HISTORY_ERROR]",
+                e,
+                flush=True
+            )
+
+            return {}
+
+    for row in rows:
+
+        symbol = row["symbol"]
+
+        if symbol not in result:
+            result[symbol] = []
+
+        if len(result[symbol]) < limit:
+            result[symbol].append(row["oi"])
+
+    for symbol in result:
+        result[symbol].reverse()
+
+    print(
+        "[OI_HISTORY_RESTORED]",
+        len(result),
+        "symbols",
+        flush=True
+    )
+
+    return result
 
 def save_market_signal(signal):
     """
