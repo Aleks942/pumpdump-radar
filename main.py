@@ -2027,7 +2027,8 @@ def build_message(signal):
     # MARKET PHASE ENGINE
     # ==========================
 
-    market_phase = "⚪ НЕИЗВЕСТНО"
+    market_phase = "⚪ Рынок пока непонятен"
+    trade_advice = "👀 Просто наблюдаем"
 
     oi_slope = signal.get("oi_slope")
 
@@ -2036,36 +2037,55 @@ def build_message(signal):
         total = oi_slope.get("total_change", 0)
         accel = oi_slope.get("acceleration", 0)
 
+        # Идёт набор крупных позиций
         if total > 8 and accel > 0:
-            market_phase = "🟢 ACCUMULATION"
 
+            market_phase = "🟢 Идёт накопление"
+            trade_advice = "🟢 Можно искать ранний вход"
+
+        # Начинается движение
         elif total > 3:
-            market_phase = "🟡 LAUNCH"
 
+            market_phase = "🟡 Начало движения"
+            trade_advice = "🟡 Готовимся ко входу"
+
+        # Импульс развивается
         elif total > 0:
-            market_phase = "🚀 MOMENTUM"
 
-        elif total < -5:
-            market_phase = "🔴 DISTRIBUTION"
+            market_phase = "🚀 Сильный импульс"
+            trade_advice = "🚀 Можно удерживать позицию"
 
+        # Импульс начинает затухать
         elif accel < -1:
-            market_phase = "🟠 EXHAUSTION"
-    
+
+            market_phase = "🟠 Импульс ослабевает"
+            trade_advice = "⚠️ Возможен откат"
+
+        # Деньги выходят
+        elif total < -5:
+
+            market_phase = "🔴 Идёт распродажа"
+            trade_advice = "📉 Можно искать шорт"
+
+    # ==========================
+    # ОБЩАЯ ОЦЕНКА СИТУАЦИИ
+    # ==========================
+
     stage_map = {
-    
-        "EARLY": "🔴 ИМПУЛЬС СИЛЬНЫЙ",
-    
-        "BUILDING": "🟠 ПОКА РАНО",
-    
-        "LATE": "🟡 НАБЛЮДАЙ",
-    
-        "EXHAUSTION": "🟢 ГОТОВ К КОРРЕКЦИИ",
-    
+
+        "EARLY": "🟢 Отличный момент",
+
+        "BUILDING": "🟡 Сигнал формируется",
+
+        "LATE": "🟠 Движение уже прошло",
+
+        "EXHAUSTION": "🔴 Высока вероятность отката",
+
     }
-    
+
     move_status = stage_map.get(
         stage,
-        "⚪ НЕТ ДАННЫХ"
+        "⚪ Недостаточно данных"
     )
 
     # =========================
