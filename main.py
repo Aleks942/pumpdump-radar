@@ -644,6 +644,14 @@ def analyze(ticker):
             len(OI_HISTORY[symbol])
         )
 
+        if symbol == "DOGEUSDT":
+            print(
+                "[DOGE_HISTORY]",
+                len(OI_HISTORY[symbol]),
+                OI_HISTORY[symbol],
+                flush=True
+            )
+
         if len(OI_HISTORY[symbol]) > 60:
             OI_HISTORY[symbol].pop(0)
 
