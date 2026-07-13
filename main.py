@@ -2212,6 +2212,77 @@ def analyze_oi_price_divergence(signal):
         "risk": 30,
     }
 
+def detect_accumulation(signal):
+
+    """
+    Ищет признаки накопления до импульса.
+    """
+
+    oi_change = signal.get("oi_change")
+    oi_slope = signal.get("oi_slope") or {}
+
+    money = signal.get("money") or {}
+
+    pressure = money.get("pressure")
+
+    change = float(signal.get("change") or 0)
+
+    if oi_change is None:
+        return None
+
+    accel = oi_slope.get("acceleration", 0)
+
+    # ==========================
+    # SMART ACCUMULATION
+    # ==========================
+
+    if (
+        abs(change) <= 2
+        and oi_change >= 3
+        and accel > 0
+        and pressure in (
+            "BUY_PRESSURE",
+            "STRONG_BUY_PRESSURE",
+            "BUYERS_DOMINATE",
+        )
+    ):
+
+        return {
+            "state": "SMART_ACCUMULATION",
+            "title": "🟢 Накопление",
+            "text": (
+                "Цена почти стоит на месте, "
+                "но открытый интерес растёт. "
+                "Появляются признаки набора позиции."
+            )
+        }
+
+    # ==========================
+    # SMART DISTRIBUTION
+    # ==========================
+
+    if (
+        abs(change) <= 2
+        and oi_change >= 3
+        and accel > 0
+        and pressure in (
+            "SELL_PRESSURE",
+            "STRONG_SELL_PRESSURE",
+            "SELLERS_DOMINATE",
+        )
+    ):
+
+        return {
+            "state": "SMART_DISTRIBUTION",
+            "title": "🔴 Распределение",
+            "text": (
+                "Цена почти не меняется, "
+                "но продавцы постепенно усиливаются."
+            )
+        }
+
+    return None
+
 def classify_move_type(signal):
 
     oi = signal.get("oi_change")
