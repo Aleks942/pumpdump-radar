@@ -2027,6 +2027,191 @@ def calculate_signal_quality(signal):
 
     return score
 
+def analyze_oi_price_divergence(signal):
+
+    """
+    Сравнивает:
+    - движение цены;
+    - изменение OI;
+    - ускорение OI;
+    - CVD спота;
+    - давление покупателей и продавцов.
+
+    Возвращает состояние и понятное объяснение.
+    """
+
+    move_type = signal.get("type")
+    price_change = float(signal.get("change") or 0)
+
+    oi_change = signal.get("oi_change")
+    oi_slope = signal.get("oi_slope") or {}
+
+    money = signal.get("money") or {}
+    pressure = money.get("pressure")
+
+    spot_cvd = signal.get("spot_cvd") or {}
+
+    try:
+        spot_cvd_percent = float(
+            spot_cvd.get("cvd_percent")
+            or spot_cvd.get("percent")
+            or 0
+        )
+    except (TypeError, ValueError):
+        spot_cvd_percent = 0.0
+
+    oi_acceleration = float(
+        oi_slope.get("acceleration") or 0
+    )
+
+    if oi_change is None:
+        return {
+            "state": "NO_DATA",
+            "title": "⚪ Недостаточно данных",
+            "text": "Нет надёжных данных OI для сравнения с ценой.",
+            "risk": 0,
+        }
+
+    oi_change = float(oi_change)
+
+    # =====================================
+    # PUMP — движение вверх
+    # =====================================
+
+    if move_type == "PUMP":
+
+        # Цена и OI растут, покупатели сохраняют контроль
+        if (
+            price_change >= 5
+            and oi_change >= 3
+            and pressure in (
+                "BUY_PRESSURE",
+                "STRONG_BUY_PRESSURE",
+                "BUYERS_DOMINATE",
+            )
+            and spot_cvd_percent >= 0
+        ):
+            return {
+                "state": "HEALTHY_PUMP",
+                "title": "🟢 Рост подтверждён деньгами",
+                "text": (
+                    "Цена и OI растут одновременно. "
+                    "Покупатели пока контролируют движение."
+                ),
+                "risk": 20,
+            }
+
+        # OI растёт намного быстрее цены — позиции набиваются,
+        # но цена уже почти не реагирует
+        if (
+            oi_change >= 5
+            and price_change <= 3
+            and oi_acceleration > 0
+        ):
+            return {
+                "state": "OI_PRICE_STALL",
+                "title": "🟠 OI растёт, но цена тормозит",
+                "text": (
+                    "Новые позиции открываются, однако цена почти не растёт. "
+                    "Возможны поглощение покупок и подготовка отката."
+                ),
+                "risk": 65,
+            }
+
+        # OI растёт, но поток ордеров уже становится продающим
+        if (
+            oi_change >= 3
+            and (
+                pressure in (
+                    "SELL_PRESSURE",
+                    "STRONG_SELL_PRESSURE",
+                    "SELLERS_DOMINATE",
+                )
+                or spot_cvd_percent < 0
+            )
+        ):
+            return {
+                "state": "PUMP_TRAP",
+                "title": "🔴 Возможная ловушка покупателей",
+                "text": (
+                    "OI продолжает расти, но CVD или давление уже указывает "
+                    "на продажи. Вероятность резкого отката повышена."
+                ),
+                "risk": 85,
+            }
+
+    # =====================================
+    # DUMP — движение вниз
+    # =====================================
+
+    if move_type == "DUMP":
+
+        # Цена падает и OI растёт — открываются новые шорты
+        if (
+            price_change <= -5
+            and oi_change >= 3
+            and pressure in (
+                "SELL_PRESSURE",
+                "STRONG_SELL_PRESSURE",
+                "SELLERS_DOMINATE",
+            )
+            and spot_cvd_percent <= 0
+        ):
+            return {
+                "state": "HEALTHY_DUMP",
+                "title": "🔴 Падение подтверждено деньгами",
+                "text": (
+                    "Цена падает, OI растёт, продавцы контролируют движение. "
+                    "Лонг против импульса опасен."
+                ),
+                "risk": 20,
+            }
+
+        # Новые шорты набиваются, но цена перестала падать
+        if (
+            oi_change >= 5
+            and abs(price_change) <= 3
+            and oi_acceleration > 0
+        ):
+            return {
+                "state": "SHORT_TRAP",
+                "title": "🟠 Шорты набиваются, цена держится",
+                "text": (
+                    "OI быстро растёт, но цена перестала снижаться. "
+                    "Возможен вынос шортистов и отскок вверх."
+                ),
+                "risk": 70,
+            }
+
+        # OI растёт, но покупки уже усиливаются
+        if (
+            oi_change >= 3
+            and (
+                pressure in (
+                    "BUY_PRESSURE",
+                    "STRONG_BUY_PRESSURE",
+                    "BUYERS_DOMINATE",
+                )
+                or spot_cvd_percent > 0
+            )
+        ):
+            return {
+                "state": "DUMP_REVERSAL",
+                "title": "🟢 Возможен разворот вверх",
+                "text": (
+                    "OI остаётся высоким, но покупатели начинают поглощать "
+                    "продажи. Вероятность отскока повышена."
+                ),
+                "risk": 75,
+            }
+
+    return {
+        "state": "NEUTRAL",
+        "title": "⚪ Явного расхождения нет",
+        "text": "Цена, OI и поток ордеров пока не дают сильного преимущества.",
+        "risk": 30,
+    }
+
 def classify_move_type(signal):
 
     oi = signal.get("oi_change")
