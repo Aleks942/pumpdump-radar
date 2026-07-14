@@ -3390,7 +3390,12 @@ while True:
         "no_signal=", no_signal,
         flush=True
     )
-    
+
+    print(
+        "[CALL_SAVE_MARKET_SIGNAL]",
+        signal["symbol"],
+        flush=True
+    )
     try:
         update_market_memory(current_prices)
     except Exception as e:
