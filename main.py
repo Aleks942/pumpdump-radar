@@ -980,22 +980,36 @@ def analyze(ticker):
             flush=True
         )
         
+        # ====================================
+        # CHIEF TRADER
+        # ====================================
+
         decision = chief_trader(temp_signal)
 
-        # ====================================
-        # SMART SCORE
-        # ====================================
-        
         temp_signal["decision"] = decision
-        
-        smart_score = calculate_smart_score(temp_signal)
-        
+
+        # ====================================
+        # SMART SCORE ENGINE
+        # ====================================
+
+        smart_score = calculate_smart_score(
+            temp_signal
+        )
+
         temp_signal["smart_score"] = smart_score
-        
+
+        print(
+            "[SMART_SCORE]",
+            symbol,
+            smart_score["score"],
+            smart_score["rating"],
+            flush=True
+        )
+
         # ====================================
         # SIGNAL QUALITY FILTER
         # ====================================
-        
+
         quality = decision.get("quality", 0)
         
         print(
