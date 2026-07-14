@@ -2998,52 +2998,53 @@ def build_message(signal):
     reasons_text = "\n".join(reasons)
     if not reasons_text.strip():
         reasons_text = "• Нет сильных подтверждений"
-    return f"""   
-{emoji} <b>{signal["symbol"]}</b>   {signal["change"]:.2f}%   |   {signal["window"]}
-
-━━━━━━━━━━━━━━
-
-📍 <b>Что происходит</b>
-
-{market_summary}
-
-━━━━━━━━━━━━━━
-
-👑 <b>Кто сильнее</b>
-
-{stronger_summary}
-
-━━━━━━━━━━━━━━
-
-🎯 <b>Что делать сейчас</b>
-
-{action_summary}
-
-━━━━━━━━━━━━━━
-
-📈 <b>Что вероятнее дальше</b>
-
-{next_move_summary}
-
-Вероятность разворота: <b>{reversal_score}%</b>
-
-Надёжность анализа: <b>{confidence}%</b>
-━━━━━━━━━━━━━━
-
-📊 <b>Что видит бот</b>
-
-📦 OI        {oi_text}
-⚖️ Давление  {pressure_state}
-💥 Ликвидации  L ${long_liq:,.0f} | S ${short_liq:,.0f}
-
-━━━━━━━━━━━━━━
-
-🧠 <b>Почему принято такое решение</b>
-
-{reasons_text}
-
-🕒 {datetime.now(UTC).strftime("%H:%M")}
-"""
+    return f"""
+    {emoji} <b>{signal["symbol"]}</b>   {signal["change"]:.2f}%   |   {signal["window"]}
+    
+    ━━━━━━━━━━━━━━
+    
+    📍 <b>Что происходит</b>
+    
+    {market_summary}
+    
+    ━━━━━━━━━━━━━━
+    
+    👑 <b>Кто сильнее</b>
+    
+    {stronger_summary}
+    
+    ━━━━━━━━━━━━━━
+    
+    🎯 <b>Что делать сейчас</b>
+    
+    {action_summary}
+    
+    ━━━━━━━━━━━━━━
+    
+    📈 <b>Что вероятнее дальше</b>
+    
+    {next_move_summary}
+    
+    Вероятность сценария: <b>{reversal_score}%</b>
+    
+    🤖 Надёжность анализа: <b>{confidence}%</b>
+    
+    ━━━━━━━━━━━━━━
+    
+    📊 <b>Что видит бот</b>
+    
+    📦 OI        {oi_text}
+    ⚖️ Давление  {pressure_state}
+    💥 Ликвидации  L ${long_liq:,.0f} | S ${short_liq:,.0f}
+    
+    ━━━━━━━━━━━━━━
+    
+    🧠 <b>Почему принято такое решение</b>
+    
+    {reasons_text}
+    
+    🕒 {datetime.now(UTC).strftime("%H:%M")}
+    """
     
 def should_send_signal(signal):
     symbol = signal["symbol"]
