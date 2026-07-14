@@ -2954,49 +2954,57 @@ def build_message(signal):
         "⚪ Недостаточно данных"
     )
 
+    # ============================================================
+    # OLD MARKET PHASE ENGINE
+    # Перенесён в Chief Trader V3.
+    # Пока оставлен для проверки. Не удалять до завершения рефакторинга.
+    # ============================================================
+    
+    """
     # ==========================
     # MARKET PHASE ENGINE
     # ==========================
-
+    
     market_phase = "⚪ Рынок пока непонятен"
     trade_advice = "👀 Просто наблюдаем"
-
+    
     oi_slope = signal.get("oi_slope")
-
+    
     if oi_slope:
-
+    
         total = oi_slope.get("total_change", 0)
         accel = oi_slope.get("acceleration", 0)
-
+    
         # Идёт набор крупных позиций
         if total > 8 and accel > 0:
-
+    
             market_phase = "🟢 Идёт накопление"
             trade_advice = "🟢 Можно искать ранний вход"
-
+    
         # Начинается движение
         elif total > 3:
-
+    
             market_phase = "🟡 Начало движения"
             trade_advice = "🟡 Готовимся ко входу"
-
+    
         # Импульс развивается
         elif total > 0:
-
+    
             market_phase = "🚀 Сильный импульс"
             trade_advice = "🚀 Можно удерживать позицию"
-
+    
         # Импульс начинает затухать
         elif accel < -1:
-
+    
             market_phase = "🟠 Импульс ослабевает"
             trade_advice = "⚠️ Возможен откат"
-
+    
         # Деньги выходят
         elif total < -5:
-
+    
             market_phase = "🔴 Идёт распродажа"
             trade_advice = "📉 Можно искать шорт"
+    """
 
     
     # =========================
