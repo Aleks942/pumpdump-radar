@@ -3365,15 +3365,29 @@ while True:
                 flush=True
             )
     
+        print(
+            "[CALL_SAVE_MARKET_SIGNAL]",
+            signal["symbol"],
+            flush=True
+        )
+        
         try:
-            save_market_signal(signal)
+            record_id = save_market_signal(signal)
+        
+            print(
+                "[SAVE_RESULT]",
+                signal["symbol"],
+                record_id,
+                flush=True
+            )
+
         except Exception as e:
             print(
                 "[MARKET_MEMORY_CALL_ERROR]",
                 e,
                 flush=True
             )
-    
+            
         print(
             "[SIGNAL]",
             signal["window"],
