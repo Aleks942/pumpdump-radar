@@ -1831,6 +1831,37 @@ def chief_trader(signal):
 
         decision_text = "🟡 Подождать"
 
+    # =====================================
+    # MARKET PHASE
+    # =====================================
+
+    market_phase = "⚪ Рынок пока нейтральный"
+
+    if signal.get("oi_slope"):
+
+        total = signal["oi_slope"].get("total_change", 0)
+        accel = signal["oi_slope"].get("acceleration", 0)
+
+        if total >= 8 and accel > 0:
+
+            market_phase = "🟢 Идёт активное накопление"
+
+        elif total >= 3:
+
+            market_phase = "🟡 Начинается движение"
+
+        elif total > 0:
+
+            market_phase = "🚀 Импульс развивается"
+
+        elif total <= -5:
+
+            market_phase = "🔴 Деньги выходят"
+
+        elif accel < -1:
+
+            market_phase = "🟠 Импульс ослабевает"
+
 
     # =====================================
     # Понятное описание стадии
