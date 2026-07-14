@@ -2556,6 +2556,144 @@ def predict_reversal(signal):
         "Пока движение выглядит здоровым."
     )
 
+def build_clear_trade_summary(signal, reversal_score):
+
+    move_type = signal.get("type")
+    oi_change = signal.get("oi_change")
+
+    money = signal.get("money") or {}
+    pressure = money.get("pressure")
+
+    # =========================
+    # КТО СИЛЬНЕЕ
+    # =========================
+
+    if pressure in (
+        "BUY_PRESSURE",
+        "STRONG_BUY_PRESSURE",
+        "BUYERS_DOMINATE",
+    ):
+        stronger_text = "🟢 Покупатели сильнее"
+
+    elif pressure in (
+        "SELL_PRESSURE",
+        "STRONG_SELL_PRESSURE",
+        "SELLERS_DOMINATE",
+    ):
+        stronger_text = "🔴 Продавцы сильнее"
+
+    else:
+        stronger_text = "⚪ Явного преимущества нет"
+
+    # =========================
+    # ПАМП
+    # =========================
+
+    if move_type == "PUMP":
+
+        if oi_change is not None and oi_change >= 3:
+            market_text = (
+                "🟢 Рост поддерживается новыми позициями"
+            )
+
+        elif oi_change is not None and oi_change <= -3:
+            market_text = (
+                "🟠 Цена растёт, но открытые позиции закрываются"
+            )
+
+        else:
+            market_text = "🟡 Рост продолжается без ясного подтверждения OI"
+
+        if reversal_score >= 70:
+
+            action_text = (
+                "🔴 Не покупать. Искать ШОРТ только после подтверждения разворота"
+            )
+
+            next_move_text = "🔴 Вероятна коррекция вниз"
+
+        elif reversal_score >= 50:
+
+            action_text = (
+                "👀 Не покупать по текущей цене. Ждать откат"
+            )
+
+            next_move_text = "🟠 Возможна коррекция вниз"
+
+        elif reversal_score >= 30:
+
+            action_text = (
+                "⚠️ Новый вход рискован. Наблюдать за ослаблением роста"
+            )
+
+            next_move_text = "🟡 Рост может замедлиться"
+
+        else:
+
+            action_text = (
+                "🟢 Не шортить. Искать вход только после небольшого отката"
+            )
+
+            next_move_text = "🟢 Вероятнее продолжение роста"
+
+    # =========================
+    # ДАМП
+    # =========================
+
+    else:
+
+        if oi_change is not None and oi_change >= 3:
+            market_text = (
+                "🔴 Падение поддерживается новыми позициями"
+            )
+
+        elif oi_change is not None and oi_change <= -3:
+            market_text = (
+                "🟠 Цена падает, но открытые позиции закрываются"
+            )
+
+        else:
+            market_text = "🟡 Падение продолжается без ясного подтверждения OI"
+
+        if reversal_score >= 70:
+
+            action_text = (
+                "🟢 Не шортить. Искать ЛОНГ только после подтверждения разворота"
+            )
+
+            next_move_text = "🟢 Вероятен сильный отскок вверх"
+
+        elif reversal_score >= 50:
+
+            action_text = (
+                "👀 Не открывать новый шорт. Ждать отскок"
+            )
+
+            next_move_text = "🟢 Возможен отскок вверх"
+
+        elif reversal_score >= 30:
+
+            action_text = (
+                "⚠️ Новый шорт рискован. Наблюдать за ослаблением падения"
+            )
+
+            next_move_text = "🟡 Падение может замедлиться"
+
+        else:
+
+            action_text = (
+                "🔴 Пока не покупать. Падение может продолжиться"
+            )
+
+            next_move_text = "🔴 Вероятнее продолжение падения"
+
+    return {
+        "market": market_text,
+        "stronger": stronger_text,
+        "action": action_text,
+        "next_move": next_move_text,
+    }
+
 def build_message(signal):
 
     emoji = "🚀" if signal["type"] == "PUMP" else "🔻"
