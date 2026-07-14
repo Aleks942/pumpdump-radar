@@ -1960,6 +1960,7 @@ def chief_trader(signal):
         "reversal_level": reversal_level,
         
         "reversal_text": reversal_text,
+        "move_status": move_status,
         }
 
     
