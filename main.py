@@ -2892,6 +2892,16 @@ def build_message(signal):
     
     reversal_score, reversal_level, reversal_text = predict_reversal(signal)
 
+    clear_summary = build_clear_trade_summary(
+    signal,
+    reversal_score
+    )
+    
+    market_summary = clear_summary["market"]
+    stronger_summary = clear_summary["stronger"]
+    action_summary = clear_summary["action"]
+    next_move_summary = clear_summary["next_move"]
+
     # =========================
     # Убираем причины про OI,
     # если OI отсутствует
