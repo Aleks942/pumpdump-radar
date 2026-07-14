@@ -2864,6 +2864,11 @@ def build_message(signal):
     stage = decision.get("stage", "UNKNOWN")
     action = decision.get("action", "WAIT")
 
+    move_status = decision.get(
+        "move_status",
+        "⚪ Недостаточно данных"
+    )
+
     # ==========================
     # MARKET PHASE ENGINE
     # ==========================
