@@ -2953,6 +2953,22 @@ def build_message(signal):
     
     decision = signal.get("decision", {})
 
+    # =====================================
+    # SMART SCORE
+    # =====================================
+    
+    smart = signal.get("smart_score", {})
+    
+    smart_score = smart.get("score", 0)
+    
+    smart_rating = smart.get("rating", "-")
+    
+    smart_stars = smart.get("stars", "")
+    
+    smart_quality = smart.get("quality", "")
+    
+    smart_risk = smart.get("risk", "")
+
     reversal_score = decision.get("reversal_score", 0)
 
     reversal_level = decision.get(
