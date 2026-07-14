@@ -2032,7 +2032,7 @@ def chief_trader(signal):
         "action_summary": action_summary,
         
         "next_move_summary": next_move_summary,
-        "market_phase": "",
+        "market_phase": market_phase,
 
         "reversal_score": reversal_score,
 
