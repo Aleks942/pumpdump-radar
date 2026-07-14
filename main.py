@@ -1840,6 +1840,25 @@ def chief_trader(signal):
     )
 
     # =====================================
+    # 8.5 ПРОГНОЗ СЛЕДУЮЩЕГО СЦЕНАРИЯ
+    # =====================================
+
+    try:
+
+        reversal_score, reversal_level, reversal_text = predict_reversal(signal)
+
+    except Exception as e:
+
+        print(
+            "[PREDICT_REVERSAL_ERROR]",
+            e,
+            flush=True
+        )
+
+        reversal_score = 0
+        reversal_level = "⚪ Нет данных"
+        reversal_text = "Недостаточно информации."
+    # =====================================
     # 9. ЛОГ CHIEF TRADER V2
     # =====================================
 
