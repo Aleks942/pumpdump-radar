@@ -1933,12 +1933,12 @@ def chief_trader(signal):
 
         "market_phase": "",
 
-        "reversal_score": 0,
+        "reversal_score": reversal_score,
 
-        "reversal_level": "",
-
-        "reversal_text": "",
-    }
+        "reversal_level": reversal_level,
+        
+        "reversal_text": reversal_text,
+        }
 
     
 def analyze_trend_strength(signal):
