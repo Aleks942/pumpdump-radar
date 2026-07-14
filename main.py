@@ -2998,40 +2998,36 @@ def build_message(signal):
     reasons_text = "\n".join(reasons)
     if not reasons_text.strip():
         reasons_text = "• Нет сильных подтверждений"
-    return f"""
+    return f"""   
 {emoji} <b>{signal["symbol"]}</b>   {signal["change"]:.2f}%   |   {signal["window"]}
 
 ━━━━━━━━━━━━━━
 
-💡 <b>Что делать сейчас</b>
+📍 <b>Что происходит</b>
 
-{trade_advice}
-
-━━━━━━━━━━━━━━
-
-🎯 <b>Тип движения</b>
-
-{move_title}
-
-{move_description}
+{market_summary}
 
 ━━━━━━━━━━━━━━
 
-🔄 <b>Вероятность отката</b>
+👑 <b>Кто сильнее</b>
 
-{reversal_level}
-
-Вероятность: <b>{reversal_score}%</b>
-
-{reversal_text}
+{stronger_summary}
 
 ━━━━━━━━━━━━━━
 
-🎯 <b>Оценка ситуации</b>
+🎯 <b>Что делать сейчас</b>
 
-{move_status}
-Уверенность: <b>{confidence}%</b>
+{action_summary}
 
+━━━━━━━━━━━━━━
+
+📈 <b>Что вероятнее дальше</b>
+
+{next_move_summary}
+
+Вероятность разворота: <b>{reversal_score}%</b>
+
+Надёжность анализа: <b>{confidence}%</b>
 ━━━━━━━━━━━━━━
 
 📊 <b>Что видит бот</b>
