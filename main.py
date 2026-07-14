@@ -2823,7 +2823,19 @@ def build_message(signal):
     # =========================
     
     decision = signal.get("decision", {})
+
+    reversal_score = decision.get("reversal_score", 0)
+
+    reversal_level = decision.get(
+        "reversal_level",
+        "⚪ Нет данных"
+    )
     
+    reversal_text = decision.get(
+        "reversal_text",
+        "Недостаточно данных."
+    )
+        
     confidence = decision.get("confidence", 50)
     
     stage = decision.get("stage", "UNKNOWN")
