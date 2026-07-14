@@ -1048,7 +1048,8 @@ def analyze(ticker):
                 "liquidations": liquidations,
                 "money_scenario": money_scenario,
                 "trend_strength": temp_signal["trend_strength"],
-                "decision": decision,
+                "decision": decision,                
+                "smart_score": smart_score,
             }
 
     return best_signal
