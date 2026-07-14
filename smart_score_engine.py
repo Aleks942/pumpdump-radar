@@ -192,7 +192,7 @@ def calculate_smart_score(signal):
     # =====================================
     
     return {
-    
+
         "score": score,
     
         "rating": rating,
@@ -202,6 +202,8 @@ def calculate_smart_score(signal):
         "quality": quality,
     
         "risk": risk,
+    
+        "advice": advice,
     
         "reasons": reasons,
     
