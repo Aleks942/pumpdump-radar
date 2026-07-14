@@ -135,19 +135,70 @@ def calculate_smart_score(signal):
         score -= 10
         reasons.append("Импульс уже далеко")
 
-    # =========================
+    # =====================================
     # Ограничение
-    # =========================
-
+    # =====================================
+    
     score = max(
         0,
         min(score, 100)
     )
-
+    
+    # =====================================
+    # Рейтинг
+    # =====================================
+    
+    if score >= 90:
+    
+        rating = "A+"
+        stars = "⭐⭐⭐⭐⭐"
+        quality = "ELITE"
+        risk = "LOW"
+    
+    elif score >= 75:
+    
+        rating = "A"
+        stars = "⭐⭐⭐⭐"
+        quality = "STRONG"
+        risk = "LOW"
+    
+    elif score >= 60:
+    
+        rating = "B"
+        stars = "⭐⭐⭐"
+        quality = "GOOD"
+        risk = "MEDIUM"
+    
+    elif score >= 40:
+    
+        rating = "C"
+        stars = "⭐⭐"
+        quality = "AVERAGE"
+        risk = "HIGH"
+    
+    else:
+    
+        rating = "D"
+        stars = "⭐"
+        quality = "WEAK"
+        risk = "VERY_HIGH"
+    
+    # =====================================
+    # RETURN
+    # =====================================
+    
     return {
-
+    
         "score": score,
-
-        "reasons": reasons
-
+    
+        "rating": rating,
+    
+        "stars": stars,
+    
+        "quality": quality,
+    
+        "risk": risk,
+    
+        "reasons": reasons,
+    
     }
