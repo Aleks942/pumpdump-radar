@@ -1993,6 +1993,7 @@ def chief_trader(signal):
         
         "reversal_text": reversal_text,
         "move_status": move_status,
+        "decision_text": decision_text,
         }
 
     
