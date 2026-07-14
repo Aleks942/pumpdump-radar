@@ -2927,11 +2927,7 @@ def build_message(signal):
     
     move_title, move_description = classify_move_type(signal)
 
-    # =========================
-    # Прогноз отката
-    # =========================
     
-    reversal_score, reversal_level, reversal_text = predict_reversal(signal)
 
     clear_summary = build_clear_trade_summary(
     signal,
