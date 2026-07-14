@@ -1799,6 +1799,38 @@ def chief_trader(signal):
         stage = "EXHAUSTION"
         action = "LOOK_REVERSAL"
 
+    # =====================================
+    # Понятная рекомендация
+    # =====================================
+
+    if action == "IGNORE_REVERSAL":
+
+        if signal.get("type") == "PUMP":
+            decision_text = "⛔ Не открывать шорт"
+
+        else:
+            decision_text = "⛔ Пока не покупать"
+
+    elif action == "WATCH":
+
+        decision_text = "👀 Наблюдать"
+
+    elif action == "LOOK_REVERSAL":
+
+        if signal.get("type") == "PUMP":
+            decision_text = "🎯 Искать шорт после подтверждения"
+
+        else:
+            decision_text = "🎯 Искать лонг после подтверждения"
+
+    elif action == "WAIT":
+
+        decision_text = "🟡 Подождать"
+
+    else:
+
+        decision_text = "🟡 Подождать"
+
 
     # =====================================
     # Понятное описание стадии
