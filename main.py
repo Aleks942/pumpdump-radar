@@ -983,6 +983,16 @@ def analyze(ticker):
         decision = chief_trader(temp_signal)
 
         # ====================================
+        # SMART SCORE
+        # ====================================
+        
+        temp_signal["decision"] = decision
+        
+        smart_score = calculate_smart_score(temp_signal)
+        
+        temp_signal["smart_score"] = smart_score
+        
+        # ====================================
         # SIGNAL QUALITY FILTER
         # ====================================
         
