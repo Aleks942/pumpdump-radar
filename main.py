@@ -1899,7 +1899,29 @@ def chief_trader(signal):
         "explanation": explanation,
 
         "applied_rules": applied_rules,
+
+        # ==========================
+        # Данные для интерфейса
+        # ==========================
+
+        "market_summary": "",
+
+        "stronger_summary": "",
+
+        "action_summary": "",
+
+        "next_move_summary": "",
+
+        "market_phase": "",
+
+        "reversal_score": 0,
+
+        "reversal_level": "",
+
+        "reversal_text": "",
     }
+
+    
 def analyze_trend_strength(signal):
     try:
         score = 0
