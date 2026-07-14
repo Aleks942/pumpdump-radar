@@ -1994,14 +1994,13 @@ def chief_trader(signal):
         # Данные для интерфейса
         # ==========================
 
-        "market_summary": "",
+        "market_summary": market_summary,
 
-        "stronger_summary": "",
-
-        "action_summary": "",
-
-        "next_move_summary": "",
-
+        "stronger_summary": stronger_summary,
+        
+        "action_summary": action_summary,
+        
+        "next_move_summary": next_move_summary,
         "market_phase": "",
 
         "reversal_score": reversal_score,
