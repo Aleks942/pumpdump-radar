@@ -2897,6 +2897,11 @@ def build_message(signal):
     stage = decision.get("stage", "UNKNOWN")
     action = decision.get("action", "WAIT")
 
+    decision_text = decision.get(
+        "decision_text",
+        "🟡 Подождать"
+    )
+
     move_status = decision.get(
         "move_status",
         "⚪ Недостаточно данных"
