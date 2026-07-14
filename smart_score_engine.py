@@ -145,44 +145,48 @@ def calculate_smart_score(signal):
     )
     
     # =====================================
-    # Рейтинг
+    # Оценка сигнала
     # =====================================
     
     if score >= 90:
     
-        rating = "A+"
+        rating = "🟢 Отличный сигнал"
         stars = "⭐⭐⭐⭐⭐"
-        quality = "ELITE"
-        risk = "LOW"
+        quality = "Очень сильный"
+        risk = "Низкий"
+        advice = "Можно искать вход"
     
     elif score >= 75:
     
-        rating = "A"
+        rating = "🟢 Сильный сигнал"
         stars = "⭐⭐⭐⭐"
-        quality = "STRONG"
-        risk = "LOW"
+        quality = "Сильный"
+        risk = "Низкий"
+        advice = "Стоит внимательно следить"
     
     elif score >= 60:
     
-        rating = "B"
+        rating = "🟡 Хороший сигнал"
         stars = "⭐⭐⭐"
-        quality = "GOOD"
-        risk = "MEDIUM"
+        quality = "Хороший"
+        risk = "Средний"
+        advice = "Желательно дождаться подтверждения"
     
     elif score >= 40:
     
-        rating = "C"
+        rating = "🟠 Слабый сигнал"
         stars = "⭐⭐"
-        quality = "AVERAGE"
-        risk = "HIGH"
+        quality = "Слабый"
+        risk = "Высокий"
+        advice = "Лучше не торопиться"
     
     else:
     
-        rating = "D"
+        rating = "🔴 Очень слабый"
         stars = "⭐"
-        quality = "WEAK"
-        risk = "VERY_HIGH"
-    
+        quality = "Очень слабый"
+        risk = "Очень высокий"
+        advice = "Лучше пропустить"
     # =====================================
     # RETURN
     # =====================================
