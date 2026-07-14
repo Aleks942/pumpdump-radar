@@ -3222,6 +3222,20 @@ def build_message(signal):
     🤖 Надёжность анализа: <b>{confidence}%</b>
     
     ━━━━━━━━━━━━━━
+
+    ⭐ <b>SMART SCORE</b>
+    
+    {smart_stars}
+    
+    🎯 <b>{smart_score}/100</b>
+    
+    🏆 Рейтинг: <b>{smart_rating}</b>
+    
+    📈 Качество: <b>{smart_quality}</b>
+    
+    ⚠️ Риск: <b>{smart_risk}</b>
+    
+    ━━━━━━━━━━━━━━
     
     📊 <b>Что видит бот</b>
     
