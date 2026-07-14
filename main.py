@@ -1932,22 +1932,22 @@ def chief_trader(signal):
 
         reversal_score, reversal_level, reversal_text = predict_reversal(signal)
 
-    # =====================================
-    # Итоговое объяснение для пользователя
-    # =====================================
-
-    summary = build_clear_trade_summary(
-        signal,
-        reversal_score
-    )
-
-    market_summary = summary["market"]
-
-    stronger_summary = summary["stronger"]
-
-    action_summary = summary["action"]
-
-    next_move_summary = summary["next_move"]
+        # =====================================
+        # Итоговое объяснение для пользователя
+        # =====================================
+    
+        summary = build_clear_trade_summary(
+            signal,
+            reversal_score
+        )
+    
+        market_summary = summary["market"]
+    
+        stronger_summary = summary["stronger"]
+    
+        action_summary = summary["action"]
+    
+        next_move_summary = summary["next_move"]
 
     except Exception as e:
 
