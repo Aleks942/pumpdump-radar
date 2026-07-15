@@ -3420,12 +3420,6 @@ while True:
                 e,
                 flush=True
             )
-    
-        print(
-            "[CALL_SAVE_MARKET_SIGNAL]",
-            signal["symbol"],
-            flush=True
-        )
         
         try:
             record_id = save_market_signal(signal)
