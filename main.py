@@ -3194,7 +3194,7 @@ def build_message(signal):
 
     used_money = False
     
-    for r in decision.get("explanation", ["Нет сильных подтверждений"]):
+    for r in decision.get("reasons", ["Нет сильных подтверждений"]):
     
         # OI растёт — не допускаем вывод про выход денег
         if oi_change is not None and oi_change >= 2:
