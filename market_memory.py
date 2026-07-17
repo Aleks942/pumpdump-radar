@@ -777,6 +777,12 @@ def update_market_memory(current_prices: dict):
                     current_price = current_prices.get(symbol)
 
                     if current_price is None:
+
+                        print(
+                            "[PRICE_NOT_FOUND]",
+                            symbol,
+                            flush=True
+                        )
                         continue
 
                     # ===========================
