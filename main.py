@@ -2997,15 +2997,17 @@ def build_message(signal):
     
     
     # =========================
-    # CHIEF TRADER RESULT
+    # CHIEF TRADER
+    # Главный аналитик
+    # =========================
+    
+    chief = chief_trader(signal)
+    
+    # =========================
     # Единственный источник решения
     # =========================
     
-    decision = signal.get("decision", {})
-
-    # =====================================
-    # SMART SCORE
-    # =====================================
+    decision = chief["decision"]
     
     smart = signal.get("smart_score", {})
     
