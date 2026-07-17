@@ -200,48 +200,66 @@ def build_pump_dump_ui(
     legacy_decision: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Формирует понятный вывод для уже обнаруженного
-    пампа или дампа.
+    Единая логика для пампа и дампа.
 
-    Пока использует готовые данные старого Chief Trader,
-    поэтому существующая логика не теряется.
+    Главная задача:
+    определить, сохраняется ли импульс,
+    начинает ли он ослабевать,
+    или откат уже становится вероятным.
+
+    Все тексты формируются из одного итогового состояния,
+    поэтому противоречий быть не должно.
     """
 
-    move_type = signal.get("type")
+    move_type = str(
+        signal.get("type")
+        or ""
+    ).upper()
 
-    reversal_score = _to_float(
+    change = _to_float(
+        signal.get("change")
+    )
+
+    oi_raw = signal.get("oi_change")
+    oi_available = oi_raw is not None
+    oi_change = _to_float(oi_raw)
+
+    pressure = _get_pressure(signal)
+
+    legacy_reversal_score = _to_float(
         legacy_decision.get("reversal_score")
     )
 
-    confidence = _to_float(
+    legacy_confidence = _to_float(
         legacy_decision.get("confidence"),
         50.0
     )
 
-    pressure = _get_pressure(signal)
-
-    oi_change = signal.get("oi_change")
-
-    # =====================================
-    # КТО СИЛЬНЕЕ
-    # =====================================
-
-    if pressure in (
+    buyers_active = pressure in (
         "BUY_PRESSURE",
         "STRONG_BUY_PRESSURE",
         "BUYERS_DOMINATE",
-    ):
-        stronger_summary = "🟢 Покупатели сильнее"
+        "BUY",
+        "BUY+++",
+    )
 
-    elif pressure in (
+    sellers_active = pressure in (
         "SELL_PRESSURE",
         "STRONG_SELL_PRESSURE",
         "SELLERS_DOMINATE",
-    ):
-        stronger_summary = "🔴 Продавцы сильнее"
+        "SELL",
+        "SELL+++",
+    )
 
-    else:
-        stronger_summary = "⚪ Явного преимущества нет"
+    # =====================================
+    # 1. ОЦЕНКА ПРОДОЛЖЕНИЯ И ОСЛАБЛЕНИЯ
+    # =====================================
+
+    continuation_score = 0
+    weakening_score = 0
+
+    continuation_reasons = []
+    weakening_reasons = []
 
     # =====================================
     # ПАМП
@@ -249,124 +267,395 @@ def build_pump_dump_ui(
 
     if move_type == "PUMP":
 
-        if oi_change is not None and _to_float(oi_change) >= 3:
-            market_summary = (
-                "🟢 Рост поддерживается новыми позициями"
+        # Покупатели поддерживают текущее движение
+        if buyers_active:
+            continuation_score += 30
+            continuation_reasons.append(
+                "Покупатели поддерживают рост"
             )
 
-        elif oi_change is not None and _to_float(oi_change) <= -3:
-            market_summary = (
-                "🟠 Цена растёт, но открытые позиции закрываются"
+        # Продавцы работают против пампа
+        if sellers_active:
+            weakening_score += 30
+            weakening_reasons.append(
+                "Продавцы усиливаются против роста"
             )
 
-        else:
-            market_summary = (
-                "🟡 Рост продолжается без сильного подтверждения OI"
+        # Рост OI подтверждает новые позиции
+        if oi_available and oi_change >= 5:
+            continuation_score += 30
+            continuation_reasons.append(
+                f"OI растёт (+{oi_change:.2f}%)"
             )
 
-        if reversal_score >= 70:
-            action_summary = (
-                "⛔ Не покупать. Шорт искать только "
-                "после подтверждения разворота."
-            )
-            next_move_summary = (
-                "🔴 Вероятна коррекция вниз"
+        elif oi_available and oi_change >= 2:
+            continuation_score += 15
+            continuation_reasons.append(
+                f"OI умеренно растёт (+{oi_change:.2f}%)"
             )
 
-        elif reversal_score >= 50:
-            action_summary = (
-                "👀 Не покупать по текущей цене. "
-                "Дождаться коррекции."
-            )
-            next_move_summary = (
-                "🟠 Возможна коррекция вниз"
+        # Падение OI во время роста — позиции закрываются
+        elif oi_available and oi_change <= -5:
+            weakening_score += 35
+            weakening_reasons.append(
+                f"OI падает ({oi_change:.2f}%)"
             )
 
-        elif reversal_score >= 30:
-            action_summary = (
-                "⚠️ Новый вход рискован. "
-                "Наблюдать за ослаблением роста."
-            )
-            next_move_summary = (
-                "🟡 Рост может замедлиться"
-            )
-
-        else:
-            action_summary = (
-                "🟢 Не шортить. Вход искать после "
-                "небольшого отката и удержания уровня."
-            )
-            next_move_summary = (
-                "🟢 Вероятнее продолжение роста"
+        elif oi_available and oi_change <= -2:
+            weakening_score += 20
+            weakening_reasons.append(
+                f"OI постепенно снижается ({oi_change:.2f}%)"
             )
 
     # =====================================
     # ДАМП
     # =====================================
 
+    elif move_type == "DUMP":
+
+        # Продавцы поддерживают текущее движение
+        if sellers_active:
+            continuation_score += 30
+            continuation_reasons.append(
+                "Продавцы поддерживают падение"
+            )
+
+        # Покупатели работают против дампа
+        if buyers_active:
+            weakening_score += 30
+            weakening_reasons.append(
+                "Покупатели усиливаются против падения"
+            )
+
+        # Рост OI подтверждает новые позиции
+        if oi_available and oi_change >= 5:
+            continuation_score += 30
+            continuation_reasons.append(
+                f"OI растёт (+{oi_change:.2f}%)"
+            )
+
+        elif oi_available and oi_change >= 2:
+            continuation_score += 15
+            continuation_reasons.append(
+                f"OI умеренно растёт (+{oi_change:.2f}%)"
+            )
+
+        # Падение OI во время дампа — позиции закрываются
+        elif oi_available and oi_change <= -5:
+            weakening_score += 35
+            weakening_reasons.append(
+                f"OI падает ({oi_change:.2f}%)"
+            )
+
+        elif oi_available and oi_change <= -2:
+            weakening_score += 20
+            weakening_reasons.append(
+                f"OI постепенно снижается ({oi_change:.2f}%)"
+            )
+
+    # =====================================
+    # 2. УЧИТЫВАЕМ СТАРУЮ ОЦЕНКУ ОТКАТА
+    # Но она больше не принимает решение одна.
+    # =====================================
+
+    if legacy_reversal_score >= 70:
+        weakening_score += 30
+        weakening_reasons.append(
+            "Старый анализ видит сильные признаки отката"
+        )
+
+    elif legacy_reversal_score >= 50:
+        weakening_score += 20
+        weakening_reasons.append(
+            "Есть заметные признаки отката"
+        )
+
+    elif legacy_reversal_score >= 30:
+        weakening_score += 10
+        weakening_reasons.append(
+            "Появились первые признаки ослабления"
+        )
+
+    else:
+        continuation_score += 10
+
+    # =====================================
+    # 3. ПЕРЕГРЕВ
+    # Большое движение повышает риск отката,
+    # но само по себе не подтверждает разворот.
+    # =====================================
+
+    if abs(change) >= 15:
+        weakening_score += 20
+        weakening_reasons.append(
+            "Цена уже прошла очень большое расстояние"
+        )
+
+    elif abs(change) >= 10:
+        weakening_score += 12
+        weakening_reasons.append(
+            "Движение заметно перегрето"
+        )
+
+    elif abs(change) >= 7:
+        weakening_score += 5
+
+    # =====================================
+    # 4. ИТОГОВАЯ ВЕРОЯТНОСТЬ ОТКАТА
+    # =====================================
+
+    total_score = continuation_score + weakening_score
+
+    if total_score > 0:
+        reversal_probability = round(
+            weakening_score
+            / total_score
+            * 100
+        )
+    else:
+        reversal_probability = 50
+
+    reversal_probability = max(
+        10,
+        min(90, reversal_probability)
+    )
+
+    continuation_probability = (
+        100 - reversal_probability
+    )
+
+    # =====================================
+    # 5. ОДНО ИТОГОВОЕ СОСТОЯНИЕ
+    # =====================================
+
+    if reversal_probability >= 70:
+        state = "REVERSAL_RISK"
+
+    elif reversal_probability >= 45:
+        state = "WEAKENING"
+
+    else:
+        state = "MOVEMENT_STRONG"
+
+    # =====================================
+    # 6. СОГЛАСОВАННЫЙ ТЕКСТ ДЛЯ ПАМПА
+    # =====================================
+
+    if move_type == "PUMP":
+
+        if state == "MOVEMENT_STRONG":
+
+            market_summary = (
+                "🟢 Памп пока сохраняет силу"
+            )
+
+            stronger_summary = (
+                "🟢 Покупатели удерживают преимущество"
+            )
+
+            action_summary = (
+                "⛔ Не шортить против сильного движения"
+            )
+
+            next_move_summary = (
+                "🟢 Вероятнее продолжение роста"
+            )
+
+            scenario_probability = (
+                continuation_probability
+            )
+
+            reasons = continuation_reasons
+
+        elif state == "WEAKENING":
+
+            market_summary = (
+                "🟠 Памп начинает ослабевать"
+            )
+
+            stronger_summary = (
+                "🟠 Покупатели ещё удерживают цену, "
+                "но продавцы усиливаются"
+            )
+
+            action_summary = (
+                "👀 Готовиться к откату, "
+                "но шорт пока не подтверждён"
+            )
+
+            next_move_summary = (
+                "🟡 Рост может замедлиться"
+            )
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+            reasons = weakening_reasons
+
+        else:
+
+            market_summary = (
+                "🔴 Памп теряет поддержку"
+            )
+
+            stronger_summary = (
+                "🔴 Продавцы перехватывают преимущество"
+            )
+
+            action_summary = (
+                "🎯 Искать подтверждение разворота "
+                "для входа в шорт"
+            )
+
+            next_move_summary = (
+                "🔴 Вероятен откат вниз"
+            )
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+            reasons = weakening_reasons
+
+    # =====================================
+    # 7. СОГЛАСОВАННЫЙ ТЕКСТ ДЛЯ ДАМПА
+    # =====================================
+
     else:
 
-        if oi_change is not None and _to_float(oi_change) >= 3:
+        if state == "MOVEMENT_STRONG":
+
             market_summary = (
-                "🔴 Падение поддерживается новыми позициями"
+                "🔴 Дамп пока сохраняет силу"
             )
 
-        elif oi_change is not None and _to_float(oi_change) <= -3:
-            market_summary = (
-                "🟠 Цена падает, но открытые позиции закрываются"
+            stronger_summary = (
+                "🔴 Продавцы удерживают преимущество"
             )
 
-        else:
-            market_summary = (
-                "🟡 Падение продолжается без сильного подтверждения OI"
-            )
-
-        if reversal_score >= 70:
             action_summary = (
-                "🟢 Не открывать новый шорт. "
-                "Лонг искать только после подтверждения разворота."
-            )
-            next_move_summary = (
-                "🟢 Вероятен сильный отскок вверх"
+                "⛔ Не покупать против сильного падения"
             )
 
-        elif reversal_score >= 50:
-            action_summary = (
-                "👀 Не открывать новый шорт. "
-                "Дождаться отскока."
-            )
-            next_move_summary = (
-                "🟢 Возможен отскок вверх"
-            )
-
-        elif reversal_score >= 30:
-            action_summary = (
-                "⚠️ Новый шорт рискован. "
-                "Наблюдать за ослаблением падения."
-            )
-            next_move_summary = (
-                "🟡 Падение может замедлиться"
-            )
-
-        else:
-            action_summary = (
-                "⛔ Пока не покупать. "
-                "Падение может продолжиться."
-            )
             next_move_summary = (
                 "🔴 Вероятнее продолжение падения"
             )
 
+            scenario_probability = (
+                continuation_probability
+            )
+
+            reasons = continuation_reasons
+
+        elif state == "WEAKENING":
+
+            market_summary = (
+                "🟠 Дамп начинает ослабевать"
+            )
+
+            stronger_summary = (
+                "🟠 Продавцы ещё удерживают движение, "
+                "но покупатели усиливаются"
+            )
+
+            action_summary = (
+                "👀 Готовиться к отскоку, "
+                "но лонг пока не подтверждён"
+            )
+
+            next_move_summary = (
+                "🟡 Падение может замедлиться"
+            )
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+            reasons = weakening_reasons
+
+        else:
+
+            market_summary = (
+                "🟢 Дамп теряет поддержку"
+            )
+
+            stronger_summary = (
+                "🟢 Покупатели перехватывают преимущество"
+            )
+
+            action_summary = (
+                "🎯 Искать подтверждение разворота "
+                "для входа в лонг"
+            )
+
+            next_move_summary = (
+                "🟢 Вероятен отскок вверх"
+            )
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+            reasons = weakening_reasons
+
+    # =====================================
+    # 8. НАДЁЖНОСТЬ ДАННЫХ
+    # =====================================
+
+    confidence = legacy_confidence
+
+    if not oi_available:
+        confidence = min(
+            confidence,
+            60
+        )
+
+    if not buyers_active and not sellers_active:
+        confidence = min(
+            confidence,
+            70
+        )
+
+    confidence = max(
+        50,
+        min(95, int(confidence))
+    )
+
+    if not reasons:
+        reasons = [
+            "Недостаточно сильных подтверждений"
+        ]
+
     return {
         "mode": "PUMP_DUMP",
+
+        "state": state,
+
         "market_summary": market_summary,
         "stronger_summary": stronger_summary,
         "action_summary": action_summary,
         "next_move_summary": next_move_summary,
-        "scenario_probability": reversal_score,
-        "confidence": confidence,
-    }
 
+        "scenario_probability": int(
+            scenario_probability
+        ),
+
+        "reversal_probability": int(
+            reversal_probability
+        ),
+
+        "continuation_probability": int(
+            continuation_probability
+        ),
+
+        "confidence": confidence,
+
+        "continuation_score": continuation_score,
+        "weakening_score": weakening_score,
+
+        "reasons": reasons[:3],
+    }
 
 def chief_trader_v4(
     signal: Dict[str, Any],
