@@ -2045,7 +2045,7 @@ def chief_trader(signal):
     # Главный результат работы Chief
     # =====================================
 
-       decision = {
+    decision = {
 
         "stage": stage,
 
@@ -2070,7 +2070,6 @@ def chief_trader(signal):
         "reasons": explanation,
 
     }
-
     return {
 
         # ==========================
