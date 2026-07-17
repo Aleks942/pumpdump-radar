@@ -3,7 +3,7 @@ import csv
 import time
 import random
 import requests
-
+from master_trader import master_trader
 from datetime import datetime, UTC
 
 from money_flow_engine import analyze_new_money
