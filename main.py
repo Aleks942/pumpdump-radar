@@ -2399,8 +2399,9 @@ def chief_trader(signal):
         # ==========================
 
         "decision": decision,
-
+        "final_state": final_state,
         "stage": stage,
+        "scenario_probability": scenario_probability,
         "action": action,
         "confidence": confidence,
         "quality": quality,
