@@ -3588,7 +3588,7 @@ def build_message(signal):
     
     {next_move_summary}
     
-    Вероятность сценария: <b>{reversal_score}%</b>
+    Вероятность сценария: <b>{decision.get("scenario_probability", 50)}%</b>
     🤖 Надёжность анализа: <b>{confidence}%</b>
     
     ━━━━━━━━━━━━━━
