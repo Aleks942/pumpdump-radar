@@ -1950,55 +1950,376 @@ def chief_trader(signal):
     )
 
     # =====================================
-    # 8.5 ПРОГНОЗ СЛЕДУЮЩЕГО СЦЕНАРИЯ
-    # Временный возврат к рабочей логике
+    # 8.5 ЕДИНОЕ ФИНАЛЬНОЕ РЕШЕНИЕ
     # =====================================
-    
-    try:
-    
-        reversal_score, reversal_level, reversal_text = predict_reversal(
-            signal
+
+    move_type = str(
+        signal.get("type")
+        or ""
+    ).upper()
+
+    # Разница голосов уже рассчитана:
+    # score > 0  = сильнее продолжение
+    # score < 0  = сильнее ослабление
+    # score около 0 = нет ясного преимущества
+
+    if score >= 6:
+        final_state = "MOVEMENT_STRONG"
+
+    elif score >= 3:
+        final_state = "MOVEMENT_SUPPORTED"
+
+    elif score > -3:
+        final_state = "UNCERTAIN"
+
+    elif score > -6:
+        final_state = "WEAKENING"
+
+    else:
+        final_state = "REVERSAL_READY"
+
+    # =====================================
+    # Вероятности двух сценариев
+    # =====================================
+
+    total_strength = (
+        continue_score
+        + exhaustion_score
+    )
+
+    if total_strength > 0:
+
+        continuation_probability = round(
+            continue_score
+            / total_strength
+            * 100
         )
-    
-        summary = build_clear_trade_summary(
-            signal,
-            reversal_score
+
+        reversal_probability = (
+            100 - continuation_probability
         )
-    
-        market_summary = summary["market"]
-    
-        stronger_summary = summary["stronger"]
-    
-        action_summary = summary["action"]
-    
-        next_move_summary = summary["next_move"]
-    
-        # Пока вероятность сценария берём
-        # из старой оценки разворота,
-        # чтобы код не падал.
-        scenario_probability = reversal_score
-    
-    except Exception as e:
-    
-        print(
-            "[PREDICT_REVERSAL_ERROR]",
-            e,
-            flush=True
+
+    else:
+
+        continuation_probability = 50
+        reversal_probability = 50
+
+    # Не показываем искусственные 0% и 100%.
+    continuation_probability = max(
+        10,
+        min(90, continuation_probability)
+    )
+
+    reversal_probability = max(
+        10,
+        min(90, reversal_probability)
+    )
+
+    # =====================================
+    # Единый текст для PUMP
+    # =====================================
+
+    if move_type == "PUMP":
+
+        if final_state == "MOVEMENT_STRONG":
+
+            market_summary = (
+                "🟢 Памп сохраняет силу"
+            )
+
+            stronger_summary = (
+                "🟢 Покупатели уверенно контролируют движение"
+            )
+
+            action_summary = (
+                "⛔ Не шортить против сильного импульса"
+            )
+
+            next_move_summary = (
+                "🟢 Вероятнее продолжение роста"
+            )
+
+            action = "IGNORE_REVERSAL"
+            stage = "EARLY"
+
+            scenario_probability = (
+                continuation_probability
+            )
+
+        elif final_state == "MOVEMENT_SUPPORTED":
+
+            market_summary = (
+                "🟢 Рост пока поддерживается"
+            )
+
+            stronger_summary = (
+                "🟢 Покупатели сохраняют преимущество"
+            )
+
+            action_summary = (
+                "⛔ Шорт пока рано. Ждать явного ослабления"
+            )
+
+            next_move_summary = (
+                "🟢 Продолжение роста пока немного вероятнее"
+            )
+
+            action = "WAIT"
+            stage = "BUILDING"
+
+            scenario_probability = (
+                continuation_probability
+            )
+
+        elif final_state == "UNCERTAIN":
+
+            market_summary = (
+                "⚪ Памп потерял ясное преимущество"
+            )
+
+            stronger_summary = (
+                "⚪ Покупатели и продавцы близки по силе"
+            )
+
+            action_summary = (
+                "👀 Не входить. Ждать подтверждения одной стороны"
+            )
+
+            next_move_summary = (
+                "⚪ Продолжение и откат примерно равновероятны"
+            )
+
+            action = "WATCH"
+            stage = "LATE"
+
+            scenario_probability = max(
+                continuation_probability,
+                reversal_probability,
+            )
+
+        elif final_state == "WEAKENING":
+
+            market_summary = (
+                "🟠 Памп начинает ослабевать"
+            )
+
+            stronger_summary = (
+                "🟠 Продавцы усиливаются против роста"
+            )
+
+            action_summary = (
+                "👀 Готовиться к откату, "
+                "но шорт открывать только после подтверждения"
+            )
+
+            next_move_summary = (
+                "🟠 Откат вниз становится вероятнее"
+            )
+
+            action = "WATCH"
+            stage = "LATE"
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+        else:
+
+            market_summary = (
+                "🔴 Памп теряет поддержку"
+            )
+
+            stronger_summary = (
+                "🔴 Продавцы получили явное преимущество"
+            )
+
+            action_summary = (
+                "🎯 Искать подтверждённый вход в шорт"
+            )
+
+            next_move_summary = (
+                "🔴 Вероятен откат или разворот вниз"
+            )
+
+            action = "LOOK_REVERSAL"
+            stage = "EXHAUSTION"
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+    # =====================================
+    # Единый текст для DUMP
+    # =====================================
+
+    elif move_type == "DUMP":
+
+        if final_state == "MOVEMENT_STRONG":
+
+            market_summary = (
+                "🔴 Дамп сохраняет силу"
+            )
+
+            stronger_summary = (
+                "🔴 Продавцы уверенно контролируют движение"
+            )
+
+            action_summary = (
+                "⛔ Не покупать против сильного падения"
+            )
+
+            next_move_summary = (
+                "🔴 Вероятнее продолжение падения"
+            )
+
+            action = "IGNORE_REVERSAL"
+            stage = "EARLY"
+
+            scenario_probability = (
+                continuation_probability
+            )
+
+        elif final_state == "MOVEMENT_SUPPORTED":
+
+            market_summary = (
+                "🔴 Падение пока поддерживается"
+            )
+
+            stronger_summary = (
+                "🔴 Продавцы сохраняют преимущество"
+            )
+
+            action_summary = (
+                "⛔ Лонг пока рано. Ждать явного ослабления"
+            )
+
+            next_move_summary = (
+                "🔴 Продолжение падения пока немного вероятнее"
+            )
+
+            action = "WAIT"
+            stage = "BUILDING"
+
+            scenario_probability = (
+                continuation_probability
+            )
+
+        elif final_state == "UNCERTAIN":
+
+            market_summary = (
+                "⚪ Дамп потерял ясное преимущество"
+            )
+
+            stronger_summary = (
+                "⚪ Покупатели и продавцы близки по силе"
+            )
+
+            action_summary = (
+                "👀 Не входить. Ждать подтверждения одной стороны"
+            )
+
+            next_move_summary = (
+                "⚪ Продолжение и отскок примерно равновероятны"
+            )
+
+            action = "WATCH"
+            stage = "LATE"
+
+            scenario_probability = max(
+                continuation_probability,
+                reversal_probability,
+            )
+
+        elif final_state == "WEAKENING":
+
+            market_summary = (
+                "🟠 Дамп начинает ослабевать"
+            )
+
+            stronger_summary = (
+                "🟠 Покупатели усиливаются против падения"
+            )
+
+            action_summary = (
+                "👀 Готовиться к отскоку, "
+                "но лонг открывать только после подтверждения"
+            )
+
+            next_move_summary = (
+                "🟠 Отскок вверх становится вероятнее"
+            )
+
+            action = "WATCH"
+            stage = "LATE"
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+        else:
+
+            market_summary = (
+                "🟢 Дамп теряет поддержку"
+            )
+
+            stronger_summary = (
+                "🟢 Покупатели получили явное преимущество"
+            )
+
+            action_summary = (
+                "🎯 Искать подтверждённый вход в лонг"
+            )
+
+            next_move_summary = (
+                "🟢 Вероятен отскок или разворот вверх"
+            )
+
+            action = "LOOK_REVERSAL"
+            stage = "EXHAUSTION"
+
+            scenario_probability = (
+                reversal_probability
+            )
+
+    else:
+
+        final_state = "UNKNOWN"
+
+        market_summary = (
+            "⚪ Тип движения не определён"
         )
-    
-        reversal_score = 0
-        reversal_level = "⚪ Нет данных"
-        reversal_text = "Недостаточно информации."
-    
-        scenario_probability = 0
-    
-        market_summary = "⚪ Недостаточно данных"
-    
-        stronger_summary = "⚪ Явного преимущества нет"
-    
-        action_summary = "👀 Наблюдать"
-    
-        next_move_summary = "⚪ Сценарий пока не определён"
+
+        stronger_summary = (
+            "⚪ Явного преимущества нет"
+        )
+
+        action_summary = (
+            "👀 Пропустить сигнал"
+        )
+
+        next_move_summary = (
+            "⚪ Направление не подтверждено"
+        )
+
+        scenario_probability = 50
+        action = "WAIT"
+        stage = "UNKNOWN"
+
+    # =====================================
+    # Обновляем понятные поля
+    # =====================================
+
+    reversal_score = int(
+        reversal_probability
+    )
+
+    reversal_level = final_state
+
+    reversal_text = next_move_summary
+
+    move_status = market_summary
+
+    decision_text = action_summary
     # =====================================
     # 9. ЛОГ CHIEF TRADER V2
     # =====================================
