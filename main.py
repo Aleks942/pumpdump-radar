@@ -3168,7 +3168,7 @@ def build_message(signal):
             filtered.append(r)
     
         if filtered:
-            decision["explanation"] = filtered
+            decision["reasons"] = filtered
     # =========================
     # CHIEF EXPLAINER
     # =========================
