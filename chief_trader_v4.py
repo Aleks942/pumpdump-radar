@@ -662,32 +662,20 @@ def chief_trader_v4(
     legacy_decision: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Новый Chief Trader V4.
+    Chief Trader V4 для текущего PumpDump Radar.
 
-    Пока работает параллельно со старым движком:
-    - не заменяет старое решение;
-    - не ломает Pump/Dump;
-    - готовит отдельный режим раннего движения.
+    Этот бот работает только с уже обнаруженными
+    пампами и дампами и оценивает:
+
+    1. движение ещё сильное;
+    2. движение начинает ослабевать;
+    3. появляется высокий риск отката.
+
+    Раннее движение будет реализовано
+    в отдельном проекте.
     """
 
     legacy_decision = legacy_decision or {}
-
-    early_move = detect_early_move(signal)
-
-    if early_move:
-        return {
-            "engine_version": ENGINE_VERSION,
-            "mode": "EARLY_MOVE",
-            "early_move": early_move,
-            "ui": {
-                "market_summary": early_move["market_summary"],
-                "stronger_summary": early_move["stronger_summary"],
-                "action_summary": early_move["action_summary"],
-                "next_move_summary": early_move["next_move_summary"],
-                "scenario_probability": early_move["probability"],
-                "confidence": early_move["probability"],
-            },
-        }
 
     pump_dump_ui = build_pump_dump_ui(
         signal,
