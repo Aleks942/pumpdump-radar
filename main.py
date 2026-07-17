@@ -3136,15 +3136,12 @@ def build_message(signal):
 
     
 
-    clear_summary = build_clear_trade_summary(
-    signal,
-    reversal_score
-    )
+    market_summary = decision["market_summary"]
+    stronger_summary = decision["stronger_summary"]
+    action_summary = decision["action_summary"]
+    next_move_summary = decision["next_move_summary"]
+        
     
-    market_summary = clear_summary["market"]
-    stronger_summary = clear_summary["stronger"]
-    action_summary = clear_summary["action"]
-    next_move_summary = clear_summary["next_move"]
 
     # =========================
     # Убираем причины про OI,
