@@ -1951,50 +1951,55 @@ def chief_trader(signal):
     )
 
     # =====================================
-    # 8.5 НОВЫЙ CHIEF TRADER V4
+    # 8.5 ПРОГНОЗ СЛЕДУЮЩЕГО СЦЕНАРИЯ
+    # Временный возврат к рабочей логике
     # =====================================
     
     try:
     
-        chief = chief_trader_v4(
-            signal,
-            {
-                "reversal_score": reversal_score,
-                "confidence": confidence,
-            }
+        reversal_score, reversal_level, reversal_text = predict_reversal(
+            signal
         )
     
-        ui = chief["ui"]
+        summary = build_clear_trade_summary(
+            signal,
+            reversal_score
+        )
     
-        market_summary = ui["market_summary"]
+        market_summary = summary["market"]
     
-        stronger_summary = ui["stronger_summary"]
+        stronger_summary = summary["stronger"]
     
-        action_summary = ui["action_summary"]
+        action_summary = summary["action"]
     
-        next_move_summary = ui["next_move_summary"]
+        next_move_summary = summary["next_move"]
     
-        scenario_probability = ui["scenario_probability"]
-    
-        confidence = ui["confidence"]
+        # Пока вероятность сценария берём
+        # из старой оценки разворота,
+        # чтобы код не падал.
+        scenario_probability = reversal_score
     
     except Exception as e:
     
         print(
-            "[CHIEF_TRADER_V4_ERROR]",
+            "[PREDICT_REVERSAL_ERROR]",
             e,
             flush=True
         )
     
-        market_summary = "⚪ Нет данных"
-    
-        stronger_summary = "⚪ Нет данных"
-    
-        action_summary = "⚪ Нет данных"
-    
-        next_move_summary = "⚪ Нет данных"
+        reversal_score = 0
+        reversal_level = "⚪ Нет данных"
+        reversal_text = "Недостаточно информации."
     
         scenario_probability = 0
+    
+        market_summary = "⚪ Недостаточно данных"
+    
+        stronger_summary = "⚪ Явного преимущества нет"
+    
+        action_summary = "👀 Наблюдать"
+    
+        next_move_summary = "⚪ Сценарий пока не определён"
     # =====================================
     # 9. ЛОГ CHIEF TRADER V2
     # =====================================
