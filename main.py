@@ -2038,7 +2038,47 @@ def chief_trader(signal):
     # 10. ЕДИНСТВЕННЫЙ RETURN
     # =====================================
 
+
+
+    # =====================================
+    # RAW DECISION
+    # Главный результат работы Chief
+    # =====================================
+
+       decision = {
+
+        "stage": stage,
+
+        "action": action,
+
+        "confidence": confidence,
+
+        "quality": quality,
+
+        "continue_score": continue_score,
+
+        "exhaustion_score": exhaustion_score,
+
+        "reversal_score": reversal_score,
+
+        "market_phase": market_phase,
+
+        "move_status": move_status,
+
+        "decision_text": decision_text,
+
+        "reasons": explanation,
+
+    }
+
     return {
+
+        # ==========================
+        # Итоговое решение Chief
+        # ==========================
+
+        "decision": decision,
+
         "stage": stage,
         "action": action,
         "confidence": confidence,
@@ -2065,24 +2105,21 @@ def chief_trader(signal):
         # ==========================
 
         "market_summary": market_summary,
-
         "stronger_summary": stronger_summary,
-        
         "action_summary": action_summary,
-        
         "next_move_summary": next_move_summary,
+
         "market_phase": market_phase,
 
         "reversal_score": reversal_score,
-
         "reversal_level": reversal_level,
-        
         "reversal_text": reversal_text,
+
         "move_status": move_status,
         "decision_text": decision_text,
-        }
+    }
 
-    
+
 def analyze_trend_strength(signal):
     try:
         score = 0
