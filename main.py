@@ -1951,41 +1951,50 @@ def chief_trader(signal):
     )
 
     # =====================================
-    # 8.5 ПРОГНОЗ СЛЕДУЮЩЕГО СЦЕНАРИЯ
+    # 8.5 НОВЫЙ CHIEF TRADER V4
     # =====================================
-
-    try:
-
-        reversal_score, reversal_level, reversal_text = predict_reversal(signal)
-
-        # =====================================
-        # Итоговое объяснение для пользователя
-        # =====================================
     
-        summary = build_clear_trade_summary(
+    try:
+    
+        chief = chief_trader_v4(
             signal,
-            reversal_score
+            {
+                "reversal_score": reversal_score,
+                "confidence": confidence,
+            }
         )
     
-        market_summary = summary["market"]
+        ui = chief["ui"]
     
-        stronger_summary = summary["stronger"]
+        market_summary = ui["market_summary"]
     
-        action_summary = summary["action"]
+        stronger_summary = ui["stronger_summary"]
     
-        next_move_summary = summary["next_move"]
-
+        action_summary = ui["action_summary"]
+    
+        next_move_summary = ui["next_move_summary"]
+    
+        scenario_probability = ui["scenario_probability"]
+    
+        confidence = ui["confidence"]
+    
     except Exception as e:
-
+    
         print(
-            "[PREDICT_REVERSAL_ERROR]",
+            "[CHIEF_TRADER_V4_ERROR]",
             e,
             flush=True
         )
-
-        reversal_score = 0
-        reversal_level = "⚪ Нет данных"
-        reversal_text = "Недостаточно информации."
+    
+        market_summary = "⚪ Нет данных"
+    
+        stronger_summary = "⚪ Нет данных"
+    
+        action_summary = "⚪ Нет данных"
+    
+        next_move_summary = "⚪ Нет данных"
+    
+        scenario_probability = 0
     # =====================================
     # 9. ЛОГ CHIEF TRADER V2
     # =====================================
