@@ -3231,8 +3231,7 @@ def build_message(signal):
     
     {next_move_summary}
     
-    Вероятность сценария: <b>{scenario_probability}%</b>
-
+    Вероятность сценария: <b>{reversal_score}%</b>
     🤖 Надёжность анализа: <b>{confidence}%</b>
     
     ━━━━━━━━━━━━━━
