@@ -1668,10 +1668,22 @@ def chief_trader(signal):
         })
 
         if vote == "CONTINUE":
-            continue_base_score += weight
 
+            continue_votes += 1
+            continue_base_score += weight
+        
         elif vote == "EXHAUSTION":
+        
+            exhaustion_votes += 1
             exhaustion_base_score += weight
+        
+        elif vote == "NEUTRAL":
+        
+            neutral_votes += 1
+        
+        else:
+        
+            unknown_votes += 1
 
     # =====================================
     # 2. СОРТИРУЕМ ПРИЧИНЫ ПО ВАЖНОСТИ
