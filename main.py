@@ -1641,6 +1641,15 @@ def chief_trader(signal):
 
     continue_base_score = 0
     exhaustion_base_score = 0
+    
+    # =====================================
+    # Consensus Engine
+    # =====================================
+    
+    continue_votes = 0
+    exhaustion_votes = 0
+    neutral_votes = 0
+    unknown_votes = 0
 
     reasons = []
 
