@@ -1147,6 +1147,8 @@ def oi_vote(signal):
 
     oi = signal.get("oi_change")
 
+    move_type = signal.get("type")
+
     if oi is None:
 
         return {
@@ -1173,23 +1175,53 @@ def oi_vote(signal):
     else:
         weight = 1
 
-    if oi >= 3:
+    # =====================================
+    # PUMP
+    # =====================================
 
-        return {
-            "vote": "CONTINUE",
-            "weight": weight,
-            "reason": "OI_UP_NEW_MONEY",
-            "text": f"OI растёт (+{oi:.2f}%)"
-        }
+    if move_type == "PUMP":
 
-    if oi <= -3:
+        if oi >= 3:
 
-        return {
-            "vote": "EXHAUSTION",
-            "weight": weight,
-            "reason": "OI_DOWN_EXIT",
-            "text": f"OI падает ({oi:.2f}%)"
-        }
+            return {
+                "vote": "CONTINUE",
+                "weight": weight,
+                "reason": "LONGS_OPENING",
+                "text": f"Во время роста OI увеличивается (+{oi:.2f}%). Покупатели продолжают открывать новые позиции."
+            }
+
+        if oi <= -3:
+
+            return {
+                "vote": "EXHAUSTION",
+                "weight": weight,
+                "reason": "LONGS_CLOSING",
+                "text": f"Во время роста OI уменьшается ({oi:.2f}%). Покупатели закрывают позиции, импульс начинает слабеть."
+            }
+
+    # =====================================
+    # DUMP
+    # =====================================
+
+    if move_type == "DUMP":
+
+        if oi >= 3:
+
+            return {
+                "vote": "CONTINUE",
+                "weight": weight,
+                "reason": "SHORTS_OPENING",
+                "text": f"Во время падения OI увеличивается (+{oi:.2f}%). Продавцы продолжают открывать новые шорты."
+            }
+
+        if oi <= -3:
+
+            return {
+                "vote": "EXHAUSTION",
+                "weight": weight,
+                "reason": "SHORTS_CLOSING",
+                "text": f"Во время падения OI уменьшается ({oi:.2f}%). Продавцы закрывают шорты, давление ослабевает."
+            }
 
     return {
         "vote": "NEUTRAL",
