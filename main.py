@@ -1686,6 +1686,37 @@ def chief_trader(signal):
             unknown_votes += 1
 
     # =====================================
+    # CONSENSUS ENGINE
+    # Согласие экспертов
+    # =====================================
+
+    active_votes = continue_votes + exhaustion_votes
+
+    if active_votes == 0:
+
+        consensus = 0
+
+    else:
+
+        consensus = round(
+            max(
+                continue_votes,
+                exhaustion_votes
+            )
+            / active_votes
+            * 100
+        )
+
+    print(
+        "[CONSENSUS]",
+        f"continue={continue_votes}",
+        f"exhaustion={exhaustion_votes}",
+        f"neutral={neutral_votes}",
+        f"agreement={consensus}%",
+        flush=True
+    )
+
+    # =====================================
     # 2. СОРТИРУЕМ ПРИЧИНЫ ПО ВАЖНОСТИ
     # =====================================
 
