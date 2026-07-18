@@ -2452,102 +2452,102 @@ def chief_trader(signal):
         "decision_text": decision_text,
     }
 
-        # =====================================
-        # 0. НОРМАЛИЗОВАННЫЕ ФАКТЫ
-        # Decision Matrix использует только их
-        # =====================================
-    
-        move_type = str(
-            signal.get("type")
-            or ""
-        ).upper()
-    
-        change = float(
-            signal.get("change")
-            or 0
-        )
-    
-        oi_change = signal.get("oi_change")
-    
-        if oi_change is not None:
-            try:
-                oi_change = float(oi_change)
-            except (TypeError, ValueError):
-                oi_change = None
-    
-        oi_slope = signal.get("oi_slope") or {}
-    
-        oi_total = float(
-            oi_slope.get("total_change")
-            or 0
-        )
-    
-        oi_acceleration = float(
-            oi_slope.get("acceleration")
-            or 0
-        )
-    
-        money = signal.get("money") or {}
-    
-        pressure = str(
-            money.get("pressure")
-            or ""
-        ).upper()
-    
-        money_state = str(
-            money.get("money_state")
-            or ""
-        ).upper()
-    
-        spot = (
-            signal.get("spot_cvd")
-            or {}
-        )
-    
-        spot_state = str(
-            spot.get("state")
-            or ""
-        ).upper()
-    
-        spot_cvd_percent = float(
-            spot.get("cvd_percent")
-            or 0
-        )
-    
-        liquidations = (
-            signal.get("liquidations")
-            or {}
-        )
-    
-        long_liq = float(
-            liquidations.get("long_liq")
-            or 0
-        )
-    
-        short_liq = float(
-            liquidations.get("short_liq")
-            or 0
-        )
-    
-        trend = (
-            signal.get("trend_strength")
-            or {}
-        )
-    
-        trend_score = float(
-            trend.get("score")
-            or 0
-        )
-    
-        money_scenario = (
-            signal.get("money_scenario")
-            or {}
-        )
-    
-        scenario_name = str(
-            money_scenario.get("name")
-            or ""
-        ).upper()
+    # =====================================
+    # 0. НОРМАЛИЗОВАННЫЕ ФАКТЫ
+    # Decision Matrix использует только их
+    # =====================================
+
+    move_type = str(
+        signal.get("type")
+        or ""
+    ).upper()
+
+    change = float(
+        signal.get("change")
+        or 0
+    )
+
+    oi_change = signal.get("oi_change")
+
+    if oi_change is not None:
+        try:
+            oi_change = float(oi_change)
+        except (TypeError, ValueError):
+            oi_change = None
+
+    oi_slope = signal.get("oi_slope") or {}
+
+    oi_total = float(
+        oi_slope.get("total_change")
+        or 0
+    )
+
+    oi_acceleration = float(
+        oi_slope.get("acceleration")
+        or 0
+    )
+
+    money = signal.get("money") or {}
+
+    pressure = str(
+        money.get("pressure")
+        or ""
+    ).upper()
+
+    money_state = str(
+        money.get("money_state")
+        or ""
+    ).upper()
+
+    spot = (
+        signal.get("spot_cvd")
+        or {}
+    )
+
+    spot_state = str(
+        spot.get("state")
+        or ""
+    ).upper()
+
+    spot_cvd_percent = float(
+        spot.get("cvd_percent")
+        or 0
+    )
+
+    liquidations = (
+        signal.get("liquidations")
+        or {}
+    )
+
+    long_liq = float(
+        liquidations.get("long_liq")
+        or 0
+    )
+
+    short_liq = float(
+        liquidations.get("short_liq")
+        or 0
+    )
+
+    trend = (
+        signal.get("trend_strength")
+        or {}
+    )
+
+    trend_score = float(
+        trend.get("score")
+        or 0
+    )
+
+    money_scenario = (
+        signal.get("money_scenario")
+        or {}
+    )
+
+    scenario_name = str(
+        money_scenario.get("name")
+        or ""
+    ).upper()
         
 
     
