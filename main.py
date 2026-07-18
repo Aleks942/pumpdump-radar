@@ -2453,9 +2453,6 @@ def chief_trader(signal):
     }
 
    
-        
-
-    
 def analyze_trend_strength(signal):
     try:
         score = 0
