@@ -1896,6 +1896,20 @@ def analyze_quality(signal):
 def chief_trader(signal):
 
     # =====================================
+    # QUALITY ENGINE
+    # =====================================
+
+    quality = analyze_quality(signal)
+
+    print(
+        "[QUALITY]",
+        signal.get("symbol"),
+        quality["score"],
+        quality["level"],
+        flush=True
+    )
+
+    # =====================================
     # 1. СОБИРАЕМ НЕЗАВИСИМЫЕ ГОЛОСА
     # =====================================
 
