@@ -1613,7 +1613,285 @@ def scenario_vote(signal):
         "text": f"Сценарий: {title}"
 
     }
+def analyze_quality(signal):
 
+    """
+    Оценивает качество текущего движения.
+
+    Возвращает:
+    score: 0–100
+    level: текстовая оценка
+    reasons: причины оценки
+
+    Эта функция НЕ решает:
+    - входить или нет;
+    - поздний ли вход;
+    - будет ли разворот.
+
+    Она оценивает только подтверждение движения.
+    """
+
+    move_type = str(
+        signal.get("type")
+        or ""
+    ).upper()
+
+    score = 0
+    reasons = []
+
+    # =====================================
+    # 1. СИЛА ЦЕНОВОГО ДВИЖЕНИЯ
+    # =====================================
+
+    try:
+        change = abs(
+            float(signal.get("change") or 0)
+        )
+    except (TypeError, ValueError):
+        change = 0
+
+    if change >= 10:
+        score += 20
+        reasons.append("Цена показывает очень сильное движение")
+
+    elif change >= 7:
+        score += 17
+        reasons.append("Цена показывает сильное движение")
+
+    elif change >= 5:
+        score += 14
+        reasons.append("Цена уверенно движется")
+
+    elif change >= 3:
+        score += 10
+        reasons.append("Минимальный импульс подтверждён")
+
+    # =====================================
+    # 2. OPEN INTEREST
+    # =====================================
+
+    oi_change = signal.get("oi_change")
+
+    if oi_change is not None:
+
+        try:
+            oi_change = float(oi_change)
+        except (TypeError, ValueError):
+            oi_change = None
+
+    if oi_change is not None:
+
+        abs_oi = abs(oi_change)
+
+        if abs_oi >= 10:
+            oi_points = 25
+
+        elif abs_oi >= 7:
+            oi_points = 21
+
+        elif abs_oi >= 5:
+            oi_points = 18
+
+        elif abs_oi >= 3:
+            oi_points = 14
+
+        elif abs_oi >= 1:
+            oi_points = 7
+
+        else:
+            oi_points = 2
+
+        # Рост OI подтверждает и PUMP, и DUMP:
+        # при PUMP открываются новые позиции вверх;
+        # при DUMP могут открываться новые шорты.
+        if oi_change >= 3:
+
+            score += oi_points
+
+            if move_type == "PUMP":
+                reasons.append(
+                    "Рост поддерживается увеличением OI"
+                )
+
+            elif move_type == "DUMP":
+                reasons.append(
+                    "Падение поддерживается увеличением OI"
+                )
+
+        # Снижение OI не подтверждает качество движения.
+        elif oi_change <= -3:
+
+            score += max(
+                0,
+                oi_points // 3
+            )
+
+            reasons.append(
+                "OI снижается — часть движения идёт через закрытие позиций"
+            )
+
+        else:
+
+            score += oi_points
+
+    # =====================================
+    # 3. ДАВЛЕНИЕ
+    # =====================================
+
+    money = signal.get("money") or {}
+
+    pressure = str(
+        money.get("pressure")
+        or ""
+    ).upper()
+
+    if move_type == "PUMP":
+
+        if pressure == "STRONG_BUY_PRESSURE":
+            score += 20
+            reasons.append(
+                "Покупатели полностью контролируют давление"
+            )
+
+        elif pressure == "BUY_PRESSURE":
+            score += 14
+            reasons.append(
+                "Покупатели сохраняют преимущество"
+            )
+
+        elif pressure == "SELL_PRESSURE":
+            score += 4
+            reasons.append(
+                "Продавцы мешают продолжению роста"
+            )
+
+        elif pressure == "STRONG_SELL_PRESSURE":
+            reasons.append(
+                "Сильное давление продавцов против роста"
+            )
+
+    elif move_type == "DUMP":
+
+        if pressure == "STRONG_SELL_PRESSURE":
+            score += 20
+            reasons.append(
+                "Продавцы полностью контролируют давление"
+            )
+
+        elif pressure == "SELL_PRESSURE":
+            score += 14
+            reasons.append(
+                "Продавцы сохраняют преимущество"
+            )
+
+        elif pressure == "BUY_PRESSURE":
+            score += 4
+            reasons.append(
+                "Покупатели мешают продолжению падения"
+            )
+
+        elif pressure == "STRONG_BUY_PRESSURE":
+            reasons.append(
+                "Сильное давление покупателей против падения"
+            )
+
+    # =====================================
+    # 4. СИЛА ТРЕНДА
+    # =====================================
+
+    trend = signal.get("trend_strength") or {}
+
+    try:
+        trend_score = float(
+            trend.get("score")
+            or 0
+        )
+    except (TypeError, ValueError):
+        trend_score = 0
+
+    if trend_score >= 6:
+        score += 15
+        reasons.append(
+            "Тренд подтверждает направление"
+        )
+
+    elif trend_score >= 3:
+        score += 10
+        reasons.append(
+            "Тренд умеренно поддерживает движение"
+        )
+
+    elif trend_score > 0:
+        score += 5
+
+    # =====================================
+    # 5. ДЕНЕЖНЫЙ СЦЕНАРИЙ
+    # =====================================
+
+    scenario = signal.get("money_scenario") or {}
+
+    scenario_name = str(
+        scenario.get("name")
+        or ""
+    ).upper()
+
+    continuation_scenarios = {
+        "HEALTHY_PUMP",
+        "HEALTHY_DUMP",
+        "SPOT_SUPPORTED_RISE",
+        "SPOT_SUPPORTED_FALL",
+        "NEW_LONGS",
+        "NEW_SHORTS",
+    }
+
+    exhaustion_scenarios = {
+        "OVERHEATED_PUMP",
+        "OVERHEATED_DUMP",
+        "WEAK_MONEY_FLOW",
+        "MIXED_MONEY_FLOW",
+    }
+
+    if scenario_name in continuation_scenarios:
+        score += 12
+        reasons.append(
+            "Денежный сценарий поддерживает движение"
+        )
+
+    elif scenario_name in exhaustion_scenarios:
+        score += 3
+        reasons.append(
+            "Денежный сценарий даёт слабое подтверждение"
+        )
+
+    # =====================================
+    # 6. ФИНАЛЬНАЯ ОЦЕНКА
+    # =====================================
+
+    score = max(
+        0,
+        min(100, round(score))
+    )
+
+    if score >= 85:
+        level = "🔥 Очень сильное движение"
+
+    elif score >= 70:
+        level = "🟢 Сильное движение"
+
+    elif score >= 55:
+        level = "🟡 Умеренно подтверждённое движение"
+
+    elif score >= 40:
+        level = "🟠 Слабое подтверждение"
+
+    else:
+        level = "🔴 Движение плохо подтверждено"
+
+    return {
+        "score": score,
+        "level": level,
+        "reasons": reasons[:3],
+    }
 
 def chief_trader(signal):
 
