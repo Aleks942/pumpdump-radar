@@ -1899,7 +1899,7 @@ def chief_trader(signal):
     # QUALITY ENGINE
     # =====================================
 
-    quality = analyze_quality(signal)
+    quality_engine = analyze_quality(signal)
 
     print(
         "[QUALITY]",
