@@ -69,29 +69,29 @@ TIME_WINDOWS = {
     "5m": {
         "bar": "1m",
         "candles": 5,
-        "pump": float(os.getenv("PUMP_THRESHOLD_5M", 0.5)),
-        "dump": -float(os.getenv("DUMP_THRESHOLD_5M", 0.5)),
+        "pump": float(os.getenv("PUMP_THRESHOLD_5M", 5)),
+        "dump": -float(os.getenv("DUMP_THRESHOLD_5M", 5)),
     },
 
     "10m": {
         "bar": "1m",
         "candles": 10,
-        "pump": float(os.getenv("PUMP_THRESHOLD_10M", 0.7)),
-        "dump": -float(os.getenv("DUMP_THRESHOLD_10M", 0.7)),
+        "pump": float(os.getenv("PUMP_THRESHOLD_10M", 6)),
+        "dump": -float(os.getenv("DUMP_THRESHOLD_10M", 6)),
     },
 
     "20m": {
         "bar": "1m",
         "candles": 20,
-        "pump": float(os.getenv("PUMP_THRESHOLD_20M", 1.0)),
-        "dump": -float(os.getenv("DUMP_THRESHOLD_20M", 1.0)),
+        "pump": float(os.getenv("PUMP_THRESHOLD_20M", 7)),
+        "dump": -float(os.getenv("DUMP_THRESHOLD_20M", 7)),
     },
 
     "30m": {
         "bar": "1m",
         "candles": 30,
-        "pump": float(os.getenv("PUMP_THRESHOLD_30M", 1.5)),
-        "dump": -float(os.getenv("PUMP_THRESHOLD_30M", 1.5)),
+        "pump": float(os.getenv("PUMP_THRESHOLD_30M", 8)),
+        "dump": -float(os.getenv("DUMP_THRESHOLD_30M", 8)),
     }
 
 }
