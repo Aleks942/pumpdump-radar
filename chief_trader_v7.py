@@ -1762,4 +1762,439 @@ def calculate_entry_risk(signal, context):
 
     return context
 
+# ============================================
+# DECISION MATRIX V7
+# Единственное место,
+# где хранится торговая стратегия
+# ============================================
+
+DECISION_MATRIX = {
+
+    # ===============================
+    # Ранний импульс
+    # ===============================
+
+    "START": {
+
+        "ENTRY": {
+
+            "entry_score": 80,
+            "movement_power": 70,
+            "consensus": 70,
+            "market_health": 65,
+        },
+
+        "SETUP": {
+
+            "entry_score": 65,
+            "movement_power": 60,
+            "consensus": 60,
+            "market_health": 55,
+        },
+
+        "WATCH": {}
+
+    },
+
+# ============================================================
+# DECISION ENGINE V7
+# Единственное место,
+# где принимается торговое решение
+# ============================================================
+
+def make_trade_decision(context):
+
+    decision = TradeDecision()
+
+    stage = context.get(
+        "market_stage",
+        "UNCERTAIN"
+    )
+
+    matrix = DECISION_MATRIX.get(
+        stage,
+        DECISION_MATRIX["UNCERTAIN"]
+    )
+
+    entry_score = context.get(
+        "entry_score",
+        0
+    )
+
+    movement_power = max(
+
+        context.get(
+            "buyers_power",
+            50
+        ),
+
+        context.get(
+            "sellers_power",
+            50
+        )
+
+    )
+
+    consensus = context.get(
+        "consensus",
+        0
+    )
+
+    market_health = context.get(
+        "market_health",
+        0
+    )
+
+    # =====================================
+    # ENTRY
+    # =====================================
+
+    entry = matrix.get("ENTRY")
+
+    if entry:
+
+        if (
+
+            entry_score >= entry.get(
+                "entry_score",
+                100
+            )
+
+            and
+
+            movement_power >= entry.get(
+                "movement_power",
+                100
+            )
+
+            and
+
+            consensus >= entry.get(
+                "consensus",
+                100
+            )
+
+            and
+
+            market_health >= entry.get(
+                "market_health",
+                100
+            )
+
+        ):
+
+            decision.trade_state = "ENTRY"
+
+    # =====================================
+    # SETUP
+    # =====================================
+
+    if decision.trade_state == "IGNORE":
+
+        setup = matrix.get("SETUP")
+
+        if setup:
+
+            if (
+
+                entry_score >= setup.get(
+                    "entry_score",
+                    100
+                )
+
+                and
+
+                consensus >= setup.get(
+                    "consensus",
+                    100
+                )
+
+            ):
+
+                decision.trade_state = "SETUP"
+
+    # =====================================
+    # WATCH
+    # =====================================
+
+    if decision.trade_state == "IGNORE":
+
+        if "WATCH" in matrix:
+
+            decision.trade_state = "WATCH"
+
+    # =====================================
+    # Основные поля
+    # =====================================
+
+    decision.stage = stage
+
+    decision.confidence = entry_score
+
+    decision.buyers_power = context.get(
+        "buyers_power",
+        50
+    )
+
+    decision.sellers_power = context.get(
+        "sellers_power",
+        50
+    )
+
+    decision.move_energy = context.get(
+        "move_energy",
+        0
+    )
+
+    decision.quality_score = context.get(
+        "market_health",
+        0
+    )
+
+    decision.can_trade = (
+
+        decision.trade_state
+
+        in
+
+        (
+
+            "ENTRY",
+
+            "SETUP",
+
+        )
+
+    )
+
+    # =====================================
+    # Направление
+    # =====================================
+
+    move = context.get(
+        "move_type",
+        ""
+    )
+
+    if move == "PUMP":
+
+        if stage in (
+
+            "START",
+
+            "EXPANSION",
+
+        ):
+
+            decision.direction = "LONG"
+
+        elif stage in (
+
+            "WEAKENING",
+
+            "REVERSAL",
+
+        ):
+
+            decision.direction = "SHORT"
+
+    elif move == "DUMP":
+
+        if stage in (
+
+            "START",
+
+            "EXPANSION",
+
+        ):
+
+            decision.direction = "SHORT"
+
+        elif stage in (
+
+            "WEAKENING",
+
+            "REVERSAL",
+
+        ):
+
+            decision.direction = "LONG"
+
+    # =====================================
+    # Тексты
+    # =====================================
+
+    decision.market_summary = context.get(
+        "stage_reason",
+        ""
+    )
+
+    decision.action_summary = context.get(
+        "entry_trigger",
+        ""
+    )
+
+    decision.next_move_summary = context.get(
+        "entry_reason",
+        ""
+    )
+
+    decision.context = context
+
+    return decision.to_dict()  
+    # ===============================
+    # Развитие движения
+    # ===============================
+
+    "EXPANSION": {
+
+        "ENTRY": {
+
+            "entry_score": 78,
+            "movement_power": 68,
+            "consensus": 65,
+            "market_health": 60,
+        },
+
+        "SETUP": {
+
+            "entry_score": 60,
+            "movement_power": 58,
+            "consensus": 55,
+            "market_health": 55,
+        },
+
+        "WATCH": {}
+
+    },
+
+    # ===============================
+    # Перегрев
+    # ===============================
+
+    "CLIMAX": {
+
+        "WATCH": {},
+
+        "IGNORE": {}
+
+    },
+
+    # ===============================
+    # Ослабление
+    # ===============================
+
+    "WEAKENING": {
+
+        "WATCH": {},
+
+        "SETUP": {
+
+            "entry_score": 60,
+            "consensus": 60,
+        }
+
+    },
+
+    # ===============================
+    # Разворот
+    # ===============================
+
+    "REVERSAL": {
+
+        "ENTRY": {
+
+            "entry_score": 75,
+            "movement_power": 70,
+            "consensus": 70,
+            "market_health": 60,
+        },
+
+        "SETUP": {
+
+            "entry_score": 60,
+            "consensus": 60,
+        },
+
+        "WATCH": {}
+
+    },
+
+    # ===============================
+
+    "UNCERTAIN": {
+
+        "IGNORE": {}
+
+    }
+
+}
+
+# ============================================================
+# CHIEF TRADER V7
+# Главный мозг системы
+# ============================================================
+
+def chief_trader_v7(signal):
+
+    """
+    Полный цикл принятия решения.
+
+    Никакой аналитики здесь нет.
+
+    Только последовательный вызов модулей.
+    """
+
+    # ============================================
+    # 1. Голоса экспертов
+    # ============================================
+
+    votes = collect_votes(signal)
+
+    # ============================================
+    # 2. Контекст рынка
+    # ============================================
+
+    context = build_market_context(
+        signal,
+        votes
+    )
+
+    # ============================================
+    # 3. Здоровье рынка
+    # ============================================
+
+    context = calculate_market_health(
+        signal,
+        context
+    )
+
+    # ============================================
+    # 4. Стадия движения
+    # ============================================
+
+    context = classify_market_stage(
+        signal,
+        context
+    )
+
+    # ============================================
+    # 5. Риск входа
+    # ============================================
+
+    context = calculate_entry_risk(
+        signal,
+        context
+    )
+
+    # ============================================
+    # 6. Итоговое решение
+    # ============================================
+
+    decision = make_trade_decision(
+        context
+    )
+
+    return decision
+
 
