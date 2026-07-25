@@ -1768,280 +1768,1670 @@ def calculate_entry_risk(signal, context):
 # где хранится торговая стратегия
 # ============================================
 
-DECISION_MATRIX = {
-
-    # ===============================
-    # Ранний импульс
-    # ===============================
-
-    "START": {
-
-        "ENTRY": {
-
-            "entry_score": 80,
-            "movement_power": 70,
-            "consensus": 70,
-            "market_health": 65,
-        },
-
-        "SETUP": {
-
-            "entry_score": 65,
-            "movement_power": 60,
-            "consensus": 60,
-            "market_health": 55,
-        },
-
-        "WATCH": {}
-
-    },
-
 # ============================================================
-# DECISION ENGINE V7
-# Единственное место,
-# где принимается торговое решение
+# RULEBOOK V7
+# Универсальная книга торговых правил
 # ============================================================
 
-def make_trade_decision(context):
+RULEBOOK = {
+
+    # ========================================================
+    # РАННЯЯ СТАДИЯ ДВИЖЕНИЯ
+    # ========================================================
+
+    "START": [
+
+        {
+            "name": "START_ENTRY",
+
+            "trade_state": "ENTRY",
+
+            # Направление будет определено автоматически:
+            # PUMP -> LONG
+            # DUMP -> SHORT
+            "direction_mode": "CONTINUATION",
+
+            "priority": 100,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 80,
+                },
+
+                {
+                    "field": "movement_power",
+                    "op": ">=",
+                    "value": 70,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 70,
+                },
+
+                {
+                    "field": "market_health",
+                    "op": ">=",
+                    "value": 65,
+                },
+
+                {
+                    "field": "data_quality",
+                    "op": ">=",
+                    "value": 55,
+                },
+
+                {
+                    "field": "late_entry",
+                    "op": "==",
+                    "value": False,
+                },
+
+                {
+                    "field": "entry_ready",
+                    "op": "==",
+                    "value": True,
+                },
+
+            ],
+
+            "market_summary": (
+                "Движение находится на ранней стадии "
+                "и имеет сильную поддержку"
+            ),
+
+            "action_summary": (
+                "Искать вход только после небольшого отката "
+                "или подтверждённого ретеста"
+            ),
+
+            "next_move_summary": (
+                "Текущее движение сохраняет потенциал продолжения"
+            ),
+
+        },
+
+        {
+            "name": "START_SETUP",
+
+            "trade_state": "SETUP",
+
+            "direction_mode": "CONTINUATION",
+
+            "priority": 80,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 65,
+                },
+
+                {
+                    "field": "movement_power",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "market_health",
+                    "op": ">=",
+                    "value": 55,
+                },
+
+                {
+                    "field": "late_entry",
+                    "op": "==",
+                    "value": False,
+                },
+
+            ],
+
+            "market_summary": (
+                "Ранний импульс формируется, "
+                "но точка входа ещё не подтверждена"
+            ),
+
+            "action_summary": (
+                "Наблюдать и ждать безопасный откат или ретест"
+            ),
+
+            "next_move_summary": (
+                "Сценарий интересный, но пока требует подтверждения"
+            ),
+
+        },
+
+        {
+            "name": "START_WATCH",
+
+            "trade_state": "WATCH",
+
+            "direction_mode": "NONE",
+
+            "priority": 40,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Движение раннее, но подтверждений пока недостаточно"
+            ),
+
+            "action_summary": (
+                "Не входить. Продолжать наблюдение"
+            ),
+
+            "next_move_summary": (
+                "Нужно дождаться усиления рыночных данных"
+            ),
+
+        },
+
+    ],
+
+    # ========================================================
+    # РАЗВИТИЕ ИМПУЛЬСА
+    # ========================================================
+
+    "EXPANSION": [
+
+        {
+            "name": "EXPANSION_ENTRY",
+
+            "trade_state": "ENTRY",
+
+            "direction_mode": "CONTINUATION",
+
+            "priority": 100,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 78,
+                },
+
+                {
+                    "field": "movement_power",
+                    "op": ">=",
+                    "value": 68,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 65,
+                },
+
+                {
+                    "field": "market_health",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "late_entry",
+                    "op": "==",
+                    "value": False,
+                },
+
+                {
+                    "field": "entry_ready",
+                    "op": "==",
+                    "value": True,
+                },
+
+            ],
+
+            "market_summary": (
+                "Импульс развивается и сохраняет поддержку"
+            ),
+
+            "action_summary": (
+                "Искать вход только после локального отката "
+                "или ретеста"
+            ),
+
+            "next_move_summary": (
+                "Продолжение движения остаётся рабочим сценарием"
+            ),
+
+        },
+
+        {
+            "name": "EXPANSION_SETUP",
+
+            "trade_state": "SETUP",
+
+            "direction_mode": "CONTINUATION",
+
+            "priority": 80,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "movement_power",
+                    "op": ">=",
+                    "value": 58,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 55,
+                },
+
+                {
+                    "field": "market_health",
+                    "op": ">=",
+                    "value": 55,
+                },
+
+                {
+                    "field": "late_entry",
+                    "op": "==",
+                    "value": False,
+                },
+
+            ],
+
+            "market_summary": (
+                "Направление сохраняется, "
+                "но текущая точка входа неидеальна"
+            ),
+
+            "action_summary": (
+                "Не догонять цену. Ждать откат или ретест"
+            ),
+
+            "next_move_summary": (
+                "Сценарий продолжения остаётся под наблюдением"
+            ),
+
+        },
+
+        {
+            "name": "EXPANSION_WATCH",
+
+            "trade_state": "WATCH",
+
+            "direction_mode": "NONE",
+
+            "priority": 40,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Импульс развивается, но вход сейчас рискованный"
+            ),
+
+            "action_summary": (
+                "Не догонять движение"
+            ),
+
+            "next_move_summary": (
+                "Ждать более выгодную точку"
+            ),
+
+        },
+
+    ],
+
+    # ========================================================
+    # ПЕРЕГРЕВ
+    # ========================================================
+
+    "CLIMAX": [
+
+        {
+            "name": "CLIMAX_WATCH",
+
+            "trade_state": "WATCH",
+
+            "direction_mode": "NONE",
+
+            "priority": 100,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Движение сильное, но цена уже перегрета"
+            ),
+
+            "action_summary": (
+                "Не входить по направлению импульса. "
+                "Ждать охлаждение или новый сетап"
+            ),
+
+            "next_move_summary": (
+                "Вероятность резкого отката повышена"
+            ),
+
+        },
+
+    ],
+
+    # ========================================================
+    # ОСЛАБЛЕНИЕ ТЕКУЩЕГО ДВИЖЕНИЯ
+    # ========================================================
+
+    "WEAKENING": [
+
+        {
+            "name": "WEAKENING_SETUP",
+
+            "trade_state": "SETUP",
+
+            # Для пампа — SHORT.
+            # Для дампа — LONG.
+            "direction_mode": "REVERSAL",
+
+            "priority": 90,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "opposite_power",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "data_quality",
+                    "op": ">=",
+                    "value": 45,
+                },
+
+            ],
+
+            "market_summary": (
+                "Текущее движение теряет энергию"
+            ),
+
+            "action_summary": (
+                "Готовить разворотный сценарий, "
+                "но входить только после слома структуры"
+            ),
+
+            "next_move_summary": (
+                "Разворот ещё не подтверждён окончательно"
+            ),
+
+        },
+
+        {
+            "name": "WEAKENING_WATCH",
+
+            "trade_state": "WATCH",
+
+            "direction_mode": "NONE",
+
+            "priority": 40,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Движение ослабевает, "
+                "но разворот пока не готов"
+            ),
+
+            "action_summary": (
+                "Не входить. Ждать подтверждение смены направления"
+            ),
+
+            "next_move_summary": (
+                "Рынок находится в переходной фазе"
+            ),
+
+        },
+
+    ],
+
+    # ========================================================
+    # ПОДТВЕРЖДЁННЫЙ РАЗВОРОТ
+    # ========================================================
+
+    "REVERSAL": [
+
+        {
+            "name": "REVERSAL_ENTRY",
+
+            "trade_state": "ENTRY",
+
+            "direction_mode": "REVERSAL",
+
+            "priority": 100,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 75,
+                },
+
+                {
+                    "field": "opposite_power",
+                    "op": ">=",
+                    "value": 70,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 70,
+                },
+
+                {
+                    "field": "market_health",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "entry_ready",
+                    "op": "==",
+                    "value": True,
+                },
+
+            ],
+
+            "market_summary": (
+                "Противоположная сторона получила "
+                "подтверждённое преимущество"
+            ),
+
+            "action_summary": (
+                "Искать вход после ретеста сломанного уровня"
+            ),
+
+            "next_move_summary": (
+                "Разворотный сценарий подтверждён рыночными данными"
+            ),
+
+        },
+
+        {
+            "name": "REVERSAL_SETUP",
+
+            "trade_state": "SETUP",
+
+            "direction_mode": "REVERSAL",
+
+            "priority": 80,
+
+            "logic": "ALL",
+
+            "conditions": [
+
+                {
+                    "field": "entry_score",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+                {
+                    "field": "opposite_power",
+                    "op": ">=",
+                    "value": 65,
+                },
+
+                {
+                    "field": "consensus",
+                    "op": ">=",
+                    "value": 60,
+                },
+
+            ],
+
+            "market_summary": (
+                "Разворотный сценарий формируется"
+            ),
+
+            "action_summary": (
+                "Ждать подтверждение цены и ретест уровня"
+            ),
+
+            "next_move_summary": (
+                "Направление разворота пока требует подтверждения"
+            ),
+
+        },
+
+        {
+            "name": "REVERSAL_WATCH",
+
+            "trade_state": "WATCH",
+
+            "direction_mode": "NONE",
+
+            "priority": 40,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Есть признаки разворота, "
+                "но качественного входа пока нет"
+            ),
+
+            "action_summary": (
+                "Продолжать наблюдение"
+            ),
+
+            "next_move_summary": (
+                "Вход без подтверждения остаётся рискованным"
+            ),
+
+        },
+
+    ],
+
+    # ========================================================
+    # НЕОПРЕДЕЛЁННЫЙ РЫНОК
+    # ========================================================
+
+    "UNCERTAIN": [
+
+        {
+            "name": "UNCERTAIN_IGNORE",
+
+            "trade_state": "IGNORE",
+
+            "direction_mode": "NONE",
+
+            "priority": 100,
+
+            "logic": "ALWAYS",
+
+            "conditions": [],
+
+            "market_summary": (
+                "Рыночные данные не дают ясного сценария"
+            ),
+
+            "action_summary": (
+                "Пропустить сигнал"
+            ),
+
+            "next_move_summary": (
+                "Ждать новой структуры и более согласованных данных"
+            ),
+
+        },
+
+    ],
+
+}
+
+# ============================================================
+# UNIVERSAL RULE ENGINE V7
+# Проверяет RULEBOOK и формирует TradeDecision
+# ============================================================
+
+def get_context_value(context, field, default=None):
+    """
+    Безопасно получает значение из context.
+
+    Поддерживает обычные поля:
+        entry_score
+
+    И вложенные пути:
+        metrics.entry_score
+    """
+
+    if not field:
+        return default
+
+    current = context
+
+    for part in str(field).split("."):
+
+        if not isinstance(current, dict):
+            return default
+
+        if part not in current:
+            return default
+
+        current = current[part]
+
+    return current
+
+
+def compare_rule_values(actual, operator, expected):
+    """
+    Универсальное сравнение значений.
+
+    Поддерживает:
+        ==
+        !=
+        >
+        >=
+        <
+        <=
+        IN
+        NOT_IN
+        BETWEEN
+        EXISTS
+        NOT_EXISTS
+        CONTAINS
+        NOT_CONTAINS
+    """
+
+    operator = str(
+        operator
+        or "=="
+    ).upper()
+
+    # ========================================
+    # EXISTS / NOT_EXISTS
+    # ========================================
+
+    if operator == "EXISTS":
+
+        return (
+            actual is not None
+            and actual != ""
+        )
+
+    if operator == "NOT_EXISTS":
+
+        return (
+            actual is None
+            or actual == ""
+        )
+
+    # ========================================
+    # IN / NOT_IN
+    # ========================================
+
+    if operator == "IN":
+
+        if not isinstance(
+            expected,
+            (list, tuple, set)
+        ):
+            expected = [expected]
+
+        return actual in expected
+
+    if operator == "NOT_IN":
+
+        if not isinstance(
+            expected,
+            (list, tuple, set)
+        ):
+            expected = [expected]
+
+        return actual not in expected
+
+    # ========================================
+    # BETWEEN
+    # ========================================
+
+    if operator == "BETWEEN":
+
+        if not isinstance(
+            expected,
+            (list, tuple)
+        ):
+
+            return False
+
+        if len(expected) != 2:
+
+            return False
+
+        try:
+
+            actual_number = float(actual)
+
+            lower = float(expected[0])
+
+            upper = float(expected[1])
+
+            return (
+                lower
+                <= actual_number
+                <= upper
+            )
+
+        except (TypeError, ValueError):
+
+            return False
+
+    # ========================================
+    # CONTAINS / NOT_CONTAINS
+    # ========================================
+
+    if operator == "CONTAINS":
+
+        try:
+            return expected in actual
+
+        except TypeError:
+            return False
+
+    if operator == "NOT_CONTAINS":
+
+        try:
+            return expected not in actual
+
+        except TypeError:
+            return True
+
+    # ========================================
+    # РАВЕНСТВО
+    # ========================================
+
+    if operator == "==":
+
+        return actual == expected
+
+    if operator == "!=":
+
+        return actual != expected
+
+    # ========================================
+    # ЧИСЛОВЫЕ СРАВНЕНИЯ
+    # ========================================
+
+    try:
+
+        actual_number = float(actual)
+
+        expected_number = float(expected)
+
+    except (TypeError, ValueError):
+
+        return False
+
+    if operator == ">":
+
+        return (
+            actual_number
+            > expected_number
+        )
+
+    if operator == ">=":
+
+        return (
+            actual_number
+            >= expected_number
+        )
+
+    if operator == "<":
+
+        return (
+            actual_number
+            < expected_number
+        )
+
+    if operator == "<=":
+
+        return (
+            actual_number
+            <= expected_number
+        )
+
+    return False
+
+
+def check_rule_condition(context, condition):
+    """
+    Проверяет одно условие RULEBOOK.
+
+    Пример:
+
+    {
+        "field": "entry_score",
+        "op": ">=",
+        "value": 80
+    }
+    """
+
+    if not isinstance(condition, dict):
+
+        return {
+            "passed": False,
+            "field": "",
+            "actual": None,
+            "operator": "",
+            "expected": None,
+            "error": "Condition is not dict",
+        }
+
+    field = condition.get("field")
+
+    operator = condition.get(
+        "op",
+        condition.get(
+            "operator",
+            "=="
+        )
+    )
+
+    expected = condition.get("value")
+
+    actual = get_context_value(
+        context,
+        field,
+        None
+    )
+
+    passed = compare_rule_values(
+        actual,
+        operator,
+        expected
+    )
+
+    return {
+        "passed": passed,
+        "field": field,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "error": None,
+    }
+
+
+def validate_rule(context, rule):
+    """
+    Проверяет всё правило.
+
+    Поддерживаемая логика:
+
+        ALWAYS
+        ALL
+        ANY
+        2_OF_3
+        3_OF_5
+        N_OF_M
+    """
+
+    if not isinstance(rule, dict):
+
+        return {
+            "passed": False,
+            "logic": "INVALID",
+            "passed_count": 0,
+            "total_count": 0,
+            "condition_results": [],
+        }
+
+    logic = str(
+        rule.get("logic")
+        or "ALL"
+    ).upper()
+
+    conditions = (
+        rule.get("conditions")
+        or []
+    )
+
+    # Правило-заглушка подходит всегда.
+    if logic == "ALWAYS":
+
+        return {
+            "passed": True,
+            "logic": logic,
+            "passed_count": 0,
+            "total_count": 0,
+            "condition_results": [],
+        }
+
+    condition_results = [
+        check_rule_condition(
+            context,
+            condition
+        )
+        for condition in conditions
+    ]
+
+    total_count = len(
+        condition_results
+    )
+
+    passed_count = sum(
+        1
+        for result in condition_results
+        if result["passed"]
+    )
+
+    # Пустое ALL-правило не должно
+    # случайно давать положительное решение.
+    if total_count == 0:
+
+        return {
+            "passed": False,
+            "logic": logic,
+            "passed_count": 0,
+            "total_count": 0,
+            "condition_results": [],
+        }
+
+    if logic == "ALL":
+
+        passed = (
+            passed_count
+            == total_count
+        )
+
+    elif logic == "ANY":
+
+        passed = (
+            passed_count
+            >= 1
+        )
+
+    elif "_OF_" in logic:
+
+        try:
+
+            required_text, total_text = (
+                logic.split(
+                    "_OF_",
+                    1
+                )
+            )
+
+            required_count = int(
+                required_text
+            )
+
+            declared_total = int(
+                total_text
+            )
+
+            # Если в названии написано 3_OF_5,
+            # а условий фактически не 5,
+            # используем реальное количество условий.
+            if declared_total != total_count:
+
+                declared_total = total_count
+
+            passed = (
+                passed_count
+                >= required_count
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            passed = False
+
+    else:
+
+        passed = False
+
+    return {
+        "passed": passed,
+        "logic": logic,
+        "passed_count": passed_count,
+        "total_count": total_count,
+        "condition_results": condition_results,
+    }
+
+
+def resolve_trade_direction(
+    context,
+    direction_mode
+):
+    """
+    Определяет направление сделки.
+
+    CONTINUATION:
+        PUMP -> LONG
+        DUMP -> SHORT
+
+    REVERSAL:
+        PUMP -> SHORT
+        DUMP -> LONG
+
+    LONG / SHORT:
+        фиксированное направление
+
+    NONE:
+        направления нет
+    """
+
+    direction_mode = str(
+        direction_mode
+        or "NONE"
+    ).upper()
+
+    move_type = str(
+        context.get("move_type")
+        or ""
+    ).upper()
+
+    if direction_mode == "CONTINUATION":
+
+        if move_type == "PUMP":
+            return "LONG"
+
+        if move_type == "DUMP":
+            return "SHORT"
+
+    elif direction_mode == "REVERSAL":
+
+        if move_type == "PUMP":
+            return "SHORT"
+
+        if move_type == "DUMP":
+            return "LONG"
+
+    elif direction_mode in {
+        "LONG",
+        "SHORT",
+    }:
+
+        return direction_mode
+
+    return "NONE"
+
+
+def build_rule_explanation(
+    context,
+    validation
+):
+    """
+    Строит понятные подтверждения и препятствия
+    на основе реально проверенных условий.
+    """
+
+    confirmations = []
+
+    obstacles = []
+
+    for result in validation.get(
+        "condition_results",
+        []
+    ):
+
+        field = result.get("field")
+
+        actual = result.get("actual")
+
+        operator = result.get(
+            "operator"
+        )
+
+        expected = result.get(
+            "expected"
+        )
+
+        if result.get("passed"):
+
+            confirmations.append(
+                f"{field}: {actual} "
+                f"{operator} {expected}"
+            )
+
+        else:
+
+            obstacles.append(
+                f"{field}: {actual}, "
+                f"нужно {operator} {expected}"
+            )
+
+    # Добавляем понятные факторы Entry Engine.
+    for text in context.get(
+        "entry_positive_factors",
+        []
+    ):
+
+        if (
+            text
+            and text not in confirmations
+        ):
+
+            confirmations.append(text)
+
+    for text in context.get(
+        "entry_risk_factors",
+        []
+    ):
+
+        if (
+            text
+            and text not in obstacles
+        ):
+
+            obstacles.append(text)
+
+    return (
+        confirmations[:5],
+        obstacles[:5]
+    )
+
+
+def create_default_decision(
+    context,
+    reason
+):
+    """
+    Безопасное решение на случай,
+    если стадия отсутствует в RULEBOOK
+    или ни одно правило не подошло.
+    """
 
     decision = TradeDecision()
 
-    stage = context.get(
-        "market_stage",
-        "UNCERTAIN"
-    )
+    decision.trade_state = "IGNORE"
 
-    matrix = DECISION_MATRIX.get(
-        stage,
-        DECISION_MATRIX["UNCERTAIN"]
-    )
+    decision.direction = "NONE"
 
-    entry_score = context.get(
-        "entry_score",
+    decision.stage = str(
+        context.get("market_stage")
+        or "UNCERTAIN"
+    ).upper()
+
+    decision.confidence = safe_int(
+        context.get("entry_score"),
         0
     )
 
-    movement_power = max(
-
-        context.get(
-            "buyers_power",
-            50
-        ),
-
-        context.get(
-            "sellers_power",
-            50
-        )
-
-    )
-
-    consensus = context.get(
-        "consensus",
-        0
-    )
-
-    market_health = context.get(
-        "market_health",
-        0
-    )
-
-    # =====================================
-    # ENTRY
-    # =====================================
-
-    entry = matrix.get("ENTRY")
-
-    if entry:
-
-        if (
-
-            entry_score >= entry.get(
-                "entry_score",
-                100
-            )
-
-            and
-
-            movement_power >= entry.get(
-                "movement_power",
-                100
-            )
-
-            and
-
-            consensus >= entry.get(
-                "consensus",
-                100
-            )
-
-            and
-
-            market_health >= entry.get(
-                "market_health",
-                100
-            )
-
-        ):
-
-            decision.trade_state = "ENTRY"
-
-    # =====================================
-    # SETUP
-    # =====================================
-
-    if decision.trade_state == "IGNORE":
-
-        setup = matrix.get("SETUP")
-
-        if setup:
-
-            if (
-
-                entry_score >= setup.get(
-                    "entry_score",
-                    100
-                )
-
-                and
-
-                consensus >= setup.get(
-                    "consensus",
-                    100
-                )
-
-            ):
-
-                decision.trade_state = "SETUP"
-
-    # =====================================
-    # WATCH
-    # =====================================
-
-    if decision.trade_state == "IGNORE":
-
-        if "WATCH" in matrix:
-
-            decision.trade_state = "WATCH"
-
-    # =====================================
-    # Основные поля
-    # =====================================
-
-    decision.stage = stage
-
-    decision.confidence = entry_score
-
-    decision.buyers_power = context.get(
-        "buyers_power",
+    decision.buyers_power = safe_int(
+        context.get("buyers_power"),
         50
     )
 
-    decision.sellers_power = context.get(
-        "sellers_power",
+    decision.sellers_power = safe_int(
+        context.get("sellers_power"),
         50
     )
 
-    decision.move_energy = context.get(
-        "move_energy",
+    decision.move_energy = safe_int(
+        context.get("move_energy"),
         0
     )
 
-    decision.quality_score = context.get(
-        "market_health",
+    decision.quality_score = safe_int(
+        context.get("market_health"),
         0
     )
 
-    decision.can_trade = (
+    decision.consensus = safe_int(
+        context.get("consensus"),
+        0
+    )
 
-        decision.trade_state
+    decision.data_quality = safe_int(
+        context.get("data_quality"),
+        0
+    )
 
-        in
+    decision.market_health = safe_int(
+        context.get("market_health"),
+        0
+    )
 
-        (
+    decision.risk = str(
+        context.get("entry_risk")
+        or "EXTREME"
+    ).upper()
 
-            "ENTRY",
+    decision.can_trade = False
 
-            "SETUP",
+    decision.market_summary = reason
 
+    decision.control_summary = (
+        "Явного торгового преимущества нет"
+    )
+
+    decision.action_summary = (
+        "Пропустить сигнал"
+    )
+
+    decision.next_move_summary = (
+        "Ждать более ясной рыночной структуры"
+    )
+
+    decision.confirmations = []
+
+    decision.obstacles = list(
+        context.get(
+            "entry_risk_factors",
+            []
+        )
+    )[:5]
+
+    decision.data_problems = []
+
+    if not context.get("has_oi"):
+
+        decision.data_problems.append(
+            "Нет данных Open Interest"
         )
 
-    )
+    if not context.get(
+        "has_spot_cvd"
+    ):
 
-    # =====================================
-    # Направление
-    # =====================================
+        decision.data_problems.append(
+            "Нет данных Spot CVD"
+        )
 
-    move = context.get(
-        "move_type",
-        ""
-    )
+    if not context.get(
+        "has_pressure"
+    ):
 
-    if move == "PUMP":
+        decision.data_problems.append(
+            "Нет данных о рыночном давлении"
+        )
 
-        if stage in (
-
-            "START",
-
-            "EXPANSION",
-
-        ):
-
-            decision.direction = "LONG"
-
-        elif stage in (
-
-            "WEAKENING",
-
-            "REVERSAL",
-
-        ):
-
-            decision.direction = "SHORT"
-
-    elif move == "DUMP":
-
-        if stage in (
-
-            "START",
-
-            "EXPANSION",
-
-        ):
-
-            decision.direction = "SHORT"
-
-        elif stage in (
-
-            "WEAKENING",
-
-            "REVERSAL",
-
-        ):
-
-            decision.direction = "LONG"
-
-    # =====================================
-    # Тексты
-    # =====================================
-
-    decision.market_summary = context.get(
-        "stage_reason",
-        ""
-    )
-
-    decision.action_summary = context.get(
-        "entry_trigger",
-        ""
-    )
-
-    decision.next_move_summary = context.get(
-        "entry_reason",
-        ""
+    decision.votes = list(
+        context.get(
+            "votes",
+            []
+        )
     )
 
     decision.context = context
 
-    return decision.to_dict()  
+    result = decision.to_dict()
+
+    result["matched_rule"] = None
+
+    result["rule_validation"] = None
+
+    return result
+
+
+def apply_rule_to_decision(
+    context,
+    rule,
+    validation
+):
+    """
+    Создаёт TradeDecision из правила,
+    которое успешно прошло проверку.
+    """
+
+    decision = TradeDecision()
+
+    stage = str(
+        context.get("market_stage")
+        or "UNCERTAIN"
+    ).upper()
+
+    trade_state = str(
+        rule.get("trade_state")
+        or "IGNORE"
+    ).upper()
+
+    direction = resolve_trade_direction(
+        context,
+        rule.get("direction_mode")
+    )
+
+    confirmations, obstacles = (
+        build_rule_explanation(
+            context,
+            validation
+        )
+    )
+
+    decision.trade_state = trade_state
+
+    decision.direction = direction
+
+    decision.stage = stage
+
+    decision.confidence = safe_int(
+        context.get("entry_score"),
+        0
+    )
+
+    decision.buyers_power = safe_int(
+        context.get("buyers_power"),
+        50
+    )
+
+    decision.sellers_power = safe_int(
+        context.get("sellers_power"),
+        50
+    )
+
+    decision.move_energy = safe_int(
+        context.get("move_energy"),
+        0
+    )
+
+    decision.quality_score = safe_int(
+        context.get("market_health"),
+        0
+    )
+
+    decision.consensus = safe_int(
+        context.get("consensus"),
+        0
+    )
+
+    decision.data_quality = safe_int(
+        context.get("data_quality"),
+        0
+    )
+
+    decision.market_health = safe_int(
+        context.get("market_health"),
+        0
+    )
+
+    decision.risk = str(
+        context.get("entry_risk")
+        or "HIGH"
+    ).upper()
+
+    decision.can_trade = (
+        trade_state
+        in {
+            "ENTRY",
+            "SETUP",
+        }
+    )
+
+    decision.market_summary = str(
+        rule.get("market_summary")
+        or context.get("stage_reason")
+        or "Состояние рынка не определено"
+    )
+
+    if direction == "LONG":
+
+        decision.control_summary = (
+            "Приоритет покупателей"
+        )
+
+    elif direction == "SHORT":
+
+        decision.control_summary = (
+            "Приоритет продавцов"
+        )
+
+    else:
+
+        movement_power = safe_int(
+            context.get("movement_power"),
+            50
+        )
+
+        opposite_power = safe_int(
+            context.get("opposite_power"),
+            50
+        )
+
+        if movement_power > opposite_power:
+
+            decision.control_summary = (
+                "Сторона текущего движения "
+                "сохраняет преимущество"
+            )
+
+        elif opposite_power > movement_power:
+
+            decision.control_summary = (
+                "Противоположная сторона усиливается"
+            )
+
+        else:
+
+            decision.control_summary = (
+                "Явного преимущества нет"
+            )
+
+    decision.action_summary = str(
+        rule.get("action_summary")
+        or context.get("entry_trigger")
+        or "Ждать подтверждения"
+    )
+
+    decision.next_move_summary = str(
+        rule.get("next_move_summary")
+        or context.get("entry_reason")
+        or "Сценарий пока не определён"
+    )
+
+    decision.confirmations = confirmations
+
+    decision.obstacles = obstacles
+
+    decision.data_problems = []
+
+    if not context.get("has_oi"):
+
+        decision.data_problems.append(
+            "Нет данных Open Interest"
+        )
+
+    if not context.get(
+        "has_spot_cvd"
+    ):
+
+        decision.data_problems.append(
+            "Нет данных Spot CVD"
+        )
+
+    if not context.get(
+        "has_pressure"
+    ):
+
+        decision.data_problems.append(
+            "Нет данных о рыночном давлении"
+        )
+
+    decision.votes = list(
+        context.get(
+            "votes",
+            []
+        )
+    )
+
+    decision.context = context
+
+    result = decision.to_dict()
+
+    result["matched_rule"] = (
+        rule.get("name")
+    )
+
+    result["rule_priority"] = safe_int(
+        rule.get("priority"),
+        0
+    )
+
+    result["rule_validation"] = validation
+
+    return result
+
+
+def make_trade_decision(context):
+    """
+    Главная функция универсального Rule Engine.
+
+    1. Определяет текущую стадию.
+    2. Берёт правила этой стадии из RULEBOOK.
+    3. Сортирует правила по priority.
+    4. Проверяет каждое правило.
+    5. Возвращает первое подходящее решение.
+    """
+
+    if not isinstance(context, dict):
+
+        return create_default_decision(
+            {},
+            "Chief получил некорректный контекст"
+        )
+
+    stage = str(
+        context.get("market_stage")
+        or "UNCERTAIN"
+    ).upper()
+
+    rules = RULEBOOK.get(stage)
+
+    if not rules:
+
+        rules = RULEBOOK.get(
+            "UNCERTAIN",
+            []
+        )
+
+    if not rules:
+
+        return create_default_decision(
+            context,
+            (
+                f"Для стадии {stage} "
+                "не найдено торговых правил"
+            )
+        )
+
+    sorted_rules = sorted(
+        rules,
+        key=lambda rule: safe_int(
+            rule.get("priority"),
+            0
+        ),
+        reverse=True
+    )
+
+    checked_rules = []
+
+    for rule in sorted_rules:
+
+        validation = validate_rule(
+            context,
+            rule
+        )
+
+        checked_rules.append({
+            "name": rule.get("name"),
+            "trade_state": rule.get(
+                "trade_state"
+            ),
+            "priority": rule.get(
+                "priority",
+                0
+            ),
+            "passed": validation.get(
+                "passed",
+                False
+            ),
+            "passed_count": validation.get(
+                "passed_count",
+                0
+            ),
+            "total_count": validation.get(
+                "total_count",
+                0
+            ),
+        })
+
+        if validation["passed"]:
+
+            result = apply_rule_to_decision(
+                context,
+                rule,
+                validation
+            )
+
+            result["checked_rules"] = (
+                checked_rules
+            )
+
+            print(
+                "[RULE_ENGINE_V7]",
+                context.get("symbol"),
+                f"stage={stage}",
+                f"rule={rule.get('name')}",
+                f"trade={result.get('trade_state')}",
+                f"direction={result.get('direction')}",
+                f"entry={context.get('entry_score')}",
+                f"risk={context.get('entry_risk')}",
+                f"energy={context.get('move_energy')}",
+                f"health={context.get('market_health')}",
+                f"consensus={context.get('consensus')}",
+                flush=True
+            )
+
+            return result
+
+    result = create_default_decision(
+        context,
+        (
+            f"Ни одно правило стадии "
+            f"{stage} не выполнилось"
+        )
+    )
+
+    result["checked_rules"] = checked_rules
+
+    print(
+        "[RULE_ENGINE_V7_NO_MATCH]",
+        context.get("symbol"),
+        f"stage={stage}",
+        checked_rules,
+        flush=True
+    )
+
+    return result
+
+ 
     # ===============================
     # Развитие движения
     # ===============================
