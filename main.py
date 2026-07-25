@@ -991,31 +991,68 @@ def analyze(ticker):
         )
         
         # ====================================
-        # CHIEF TRADER
+        # CHIEF TRADER V7
         # ====================================
-
-        decision = chief_trader(temp_signal)
-
-        temp_signal["decision"] = decision
-
-        # ====================================
-        # SMART SCORE ENGINE
-        # ====================================
-
-        smart_score = calculate_smart_score(
+        
+        decision = chief_trader_v7(
             temp_signal
         )
-
-        temp_signal["smart_score"] = smart_score
-
+        
+        # ------------------------------------
+        # Совместимость со старым кодом
+        # ------------------------------------
+        
+        decision["quality"] = decision.get(
+            "quality_score",
+            0
+        )
+        
+        decision["action"] = decision.get(
+            "trade_state",
+            "IGNORE"
+        )
+        
+        decision["continue_score"] = decision.get(
+            "buyers_power",
+            50
+        )
+        
+        decision["exhaustion_score"] = decision.get(
+            "sellers_power",
+            50
+        )
+        
+        decision["market_text"] = decision.get(
+            "market_summary",
+            ""
+        )
+        
+        decision["control_text"] = decision.get(
+            "control_summary",
+            ""
+        )
+        
+        decision["action_text"] = decision.get(
+            "action_summary",
+            ""
+        )
+        
+        decision["forecast_text"] = decision.get(
+            "next_move_summary",
+            ""
+        )
+        
+        temp_signal["decision"] = decision
+        
         print(
-            "[SMART_SCORE]",
+            "[CHIEF_V7]",
             symbol,
-            smart_score["score"],
-            smart_score["rating"],
+            decision["trade_state"],
+            decision["stage"],
+            decision["quality"],
             flush=True
         )
-
+        
         # ====================================
         # SIGNAL QUALITY FILTER
         # ====================================
