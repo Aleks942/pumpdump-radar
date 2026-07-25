@@ -2005,35 +2005,32 @@ def chief_trader(signal):
         f"{consensus_percent}%",
         flush=True
     )
-
+    
     # =====================================
-    # CONSENSUS ENGINE
-    # Согласие экспертов
+    # STRENGTH ENGINE
     # =====================================
-
-    active_votes = continue_votes + exhaustion_votes
-
-    if active_votes == 0:
-
-        consensus = 0
-
-    else:
-
-        consensus = round(
-            max(
-                continue_votes,
-                exhaustion_votes
-            )
-            / active_votes
-            * 100
-        )
-
+    
+    continue_strength = (
+        continue_score
+        + continue_votes * 2
+    )
+    
+    exhaustion_strength = (
+        exhaustion_score
+        + exhaustion_votes * 2
+    )
+    
+    strength_difference = (
+        continue_strength
+        - exhaustion_strength
+    )
+    
     print(
-        "[CONSENSUS]",
-        f"continue={continue_votes}",
-        f"exhaustion={exhaustion_votes}",
-        f"neutral={neutral_votes}",
-        f"agreement={consensus}%",
+        "[STRENGTH]",
+        signal.get("symbol"),
+        f"C={continue_strength}",
+        f"E={exhaustion_strength}",
+        f"D={strength_difference}",
         flush=True
     )
 
