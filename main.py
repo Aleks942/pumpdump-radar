@@ -1895,434 +1895,432 @@ def analyze_quality(signal):
 
 def chief_trader(signal):
 
+    """
+    Chief Trader V5.
+
+    Все аналитические модули независимо голосуют:
+
+    CONTINUE   — текущее движение, вероятно, продолжится.
+    EXHAUSTION — текущее движение ослабевает.
+    NEUTRAL    — модуль не видит преимущества.
+    UNKNOWN    — данных недостаточно.
+
+    Chief объединяет:
+    1. количество независимых голосов;
+    2. силу этих голосов;
+    3. согласие между модулями;
+    4. доступность данных.
+
+    Важно:
+    CONTINUE означает продолжение найденного движения:
+    - PUMP → продолжение роста;
+    - DUMP → продолжение падения.
+
+    EXHAUSTION означает ослабление найденного движения:
+    - PUMP → вероятность отката вниз;
+    - DUMP → вероятность отскока вверх.
+    """
+
+    symbol = signal.get("symbol", "UNKNOWN")
+
+    move_type = str(
+        signal.get("type")
+        or ""
+    ).upper()
+
     # =====================================
-    # QUALITY ENGINE
+    # 1. QUALITY ENGINE
+    # Независимая оценка качества движения
     # =====================================
 
-    quality_engine = analyze_quality(signal)
+    try:
+        quality_engine = analyze_quality(signal)
+
+        if not isinstance(quality_engine, dict):
+            quality_engine = {
+                "score": 0,
+                "level": "⚪ Нет данных",
+                "reasons": [],
+            }
+
+    except Exception as error:
+
+        print(
+            "[QUALITY_ENGINE_ERROR]",
+            symbol,
+            error,
+            flush=True
+        )
+
+        quality_engine = {
+            "score": 0,
+            "level": "⚪ Нет данных",
+            "reasons": [],
+        }
 
     print(
-        "[QUALITY]",
-        signal.get("symbol"),
-        quality["score"],
-        quality["level"],
+        "[QUALITY_ENGINE]",
+        symbol,
+        quality_engine.get("score", 0),
+        quality_engine.get("level", "⚪ Нет данных"),
         flush=True
     )
 
     # =====================================
-    # 1. СОБИРАЕМ НЕЗАВИСИМЫЕ ГОЛОСА
+    # 2. СОБИРАЕМ ГОЛОСА ЭКСПЕРТОВ
     # =====================================
 
-    votes = [
-
-        oi_vote(signal),
-    
-        trend_vote(signal),
-    
-        money_vote(signal),
-    
-        pressure_vote(signal),
-    
-        liquidation_vote(signal),
-    
-        spot_vote(signal),
-    
-        scenario_vote(signal),
-    
+    vote_functions = [
+        ("OI", oi_vote),
+        ("TREND", trend_vote),
+        ("MONEY", money_vote),
+        ("PRESSURE", pressure_vote),
+        ("LIQUIDATIONS", liquidation_vote),
+        ("SPOT", spot_vote),
+        ("SCENARIO", scenario_vote),
     ]
 
-    continue_base_score = 0
-    exhaustion_base_score = 0
-    
+    votes = []
+
+    for module_name, vote_function in vote_functions:
+
+        try:
+
+            vote_data = vote_function(signal)
+
+            if not isinstance(vote_data, dict):
+                raise TypeError(
+                    f"{module_name} returned non-dict result"
+                )
+
+        except Exception as error:
+
+            print(
+                "[VOTE_ERROR]",
+                symbol,
+                module_name,
+                error,
+                flush=True
+            )
+
+            vote_data = {
+                "vote": "UNKNOWN",
+                "weight": 0,
+                "reason": f"{module_name}_ERROR",
+                "text": f"{module_name}: ошибка получения данных",
+            }
+
+        vote = str(
+            vote_data.get("vote")
+            or "UNKNOWN"
+        ).upper()
+
+        if vote not in {
+            "CONTINUE",
+            "EXHAUSTION",
+            "NEUTRAL",
+            "UNKNOWN",
+        }:
+            vote = "UNKNOWN"
+
+        try:
+            weight = float(
+                vote_data.get("weight")
+                or 0
+            )
+        except (TypeError, ValueError):
+            weight = 0.0
+
+        weight = max(
+            0.0,
+            min(10.0, weight)
+        )
+
+        votes.append({
+            "module": module_name,
+            "vote": vote,
+            "weight": weight,
+            "reason": vote_data.get(
+                "reason",
+                f"{module_name}_UNKNOWN"
+            ),
+            "text": str(
+                vote_data.get("text")
+                or ""
+            ).strip(),
+        })
+
     # =====================================
-    # Consensus Engine
+    # 3. СЧИТАЕМ ГОЛОСА И ИХ СИЛУ
     # =====================================
-    
+
     continue_votes = 0
     exhaustion_votes = 0
     neutral_votes = 0
     unknown_votes = 0
 
-    reasons = []
+    continue_weight = 0.0
+    exhaustion_weight = 0.0
 
     for vote_data in votes:
 
-        vote = vote_data.get("vote", "UNKNOWN")
-        weight = vote_data.get("weight", 0)
-        reason = vote_data.get("reason", "UNKNOWN")
-        text = vote_data.get("text", "")
-
-        reasons.append({
-            "vote": vote,
-            "weight": weight,
-            "reason": reason,
-            "text": text,
-        })
+        vote = vote_data["vote"]
+        weight = vote_data["weight"]
 
         if vote == "CONTINUE":
 
             continue_votes += 1
-            continue_base_score += weight
-        
+            continue_weight += weight
+
         elif vote == "EXHAUSTION":
-        
+
             exhaustion_votes += 1
-            exhaustion_base_score += weight
-        
+            exhaustion_weight += weight
+
         elif vote == "NEUTRAL":
-        
+
             neutral_votes += 1
-        
+
         else:
-        
+
             unknown_votes += 1
 
+    total_modules = len(votes)
+
+    active_votes = (
+        continue_votes
+        + exhaustion_votes
+    )
+
+    active_weight = (
+        continue_weight
+        + exhaustion_weight
+    )
+
     # =====================================
-    # CONSENSUS ENGINE
+    # 4. КОНСЕНСУС ПО КОЛИЧЕСТВУ ГОЛОСОВ
     # =====================================
-    
-    active_votes = continue_votes + exhaustion_votes
-    
-    if active_votes == 0:
-    
-        consensus = 0.0
-    
-    else:
-    
-        consensus = max(
-            continue_votes,
+
+    if active_votes > 0:
+
+        continue_vote_share = (
+            continue_votes
+            / active_votes
+        )
+
+        exhaustion_vote_share = (
             exhaustion_votes
-        ) / active_votes
-    
-    consensus_percent = round(
-        consensus * 100
-    )
-    
-    print(
-        "[CONSENSUS]",
-        signal.get("symbol"),
-        f"{continue_votes}/{exhaustion_votes}",
-        f"{consensus_percent}%",
-        flush=True
-    )
-    
-    # =====================================
-    # STRENGTH ENGINE
-    # =====================================
-    
-    continue_strength = (
-        continue_score
-        + continue_votes * 2
-    )
-    
-    exhaustion_strength = (
-        exhaustion_score
-        + exhaustion_votes * 2
-    )
-    
-    strength_difference = (
-        continue_strength
-        - exhaustion_strength
-    )
-    
-    print(
-        "[STRENGTH]",
-        signal.get("symbol"),
-        f"C={continue_strength}",
-        f"E={exhaustion_strength}",
-        f"D={strength_difference}",
-        flush=True
-    )
+            / active_votes
+        )
 
-    # =====================================
-    # 2. СОРТИРУЕМ ПРИЧИНЫ ПО ВАЖНОСТИ
-    # =====================================
-
-    reasons = sorted(
-        reasons,
-        key=lambda item: item.get("weight", 0),
-        reverse=True
-    )
-
-    explanation = []
-
-    for reason_data in reasons:
-
-        text = reason_data.get("text", "")
-        vote = reason_data.get("vote")
-
-        if not text:
-            continue
-
-        if vote == "UNKNOWN":
-            continue
-
-        explanation.append(f"• {text}")
-
-        if len(explanation) >= 3:
-            break
-
-    if not explanation:
-        explanation = ["• Нет сильных подтверждений"]
-
-    # =====================================
-    # 3. БЫСТРЫЙ ДОСТУП К ГОЛОСАМ
-    # =====================================
-
-    votes_map = {
-        vote_data.get("reason"): vote_data
-        for vote_data in votes
-        if vote_data.get("reason")
-    }
-
-    # =====================================
-    # 4. БОНУСЫ ПРАВИЛ
-    # Правила больше не делают return
-    # =====================================
-
-    continue_bonus = 0
-    exhaustion_bonus = 0
-
-    applied_rules = []
-
-    # =====================================
-    # RULE 1
-    # Сильная цена + рост OI
-    # Движение поддерживается новыми позициями
-    # =====================================
-
-    trend_supports_move = (
-        votes_map.get("TREND_STRONG", {}).get("vote") == "CONTINUE"
-        or
-        votes_map.get("TREND_GOOD", {}).get("vote") == "CONTINUE"
-    )
-
-    oi_supports_move = (
-        votes_map.get("OI_UP_NEW_MONEY", {}).get("vote")
-        == "CONTINUE"
-    )
-
-    if trend_supports_move and oi_supports_move:
-
-        continue_bonus += 3
-
-        applied_rules.append({
-            "rule": "STRONG_TREND_WITH_NEW_MONEY",
-            "side": "CONTINUE",
-            "bonus": 3,
-        })
-
-    # =====================================
-    # RULE 2
-    # Падение OI + капитуляция лонгов
-    # Актуально после сильного DUMP
-    # =====================================
-
-    oi_exit = (
-        votes_map.get("OI_DOWN_EXIT", {}).get("vote")
-        == "EXHAUSTION"
-    )
-
-    long_capitulation = (
-        votes_map.get("LONG_CAPITULATION", {}).get("vote")
-        == "EXHAUSTION"
-    )
-
-    if oi_exit and long_capitulation:
-
-        exhaustion_bonus += 4
-
-        applied_rules.append({
-            "rule": "OI_EXIT_WITH_LONG_CAPITULATION",
-            "side": "EXHAUSTION",
-            "bonus": 4,
-        })
-
-    # =====================================
-    # RULE 3
-    # Падение OI + массовый вынос шортов
-    # Актуально после сильного PUMP
-    # =====================================
-
-    short_squeeze = (
-        votes_map.get("SHORT_SQUEEZE", {}).get("vote")
-        == "EXHAUSTION"
-    )
-
-    if oi_exit and short_squeeze:
-
-        exhaustion_bonus += 4
-
-        applied_rules.append({
-            "rule": "OI_EXIT_WITH_SHORT_SQUEEZE",
-            "side": "EXHAUSTION",
-            "bonus": 4,
-        })
-
-    # =====================================
-    # RULE 4
-    # Несколько независимых модулей слабеют
-    # =====================================
-
-    weak_modules = 0
-
-    if (
-        votes_map.get("TREND_WEAK", {}).get("vote")
-        == "EXHAUSTION"
-    ):
-        weak_modules += 1
-
-    if (
-        votes_map.get("WEAK_MONEY_FLOW", {}).get("vote")
-        == "EXHAUSTION"
-    ):
-        weak_modules += 1
-
-    if (
-        votes_map.get("PRESSURE_EXHAUSTION", {}).get("vote")
-        == "EXHAUSTION"
-    ):
-        weak_modules += 1
-
-    if weak_modules >= 2:
-
-        exhaustion_bonus += 2
-
-        applied_rules.append({
-            "rule": "MULTIPLE_MODULES_WEAKENING",
-            "side": "EXHAUSTION",
-            "bonus": 2,
-        })
-
-    # =====================================
-    # 5. ФИНАЛЬНЫЕ БАЛЛЫ
-    # =====================================
-
-    continue_score = (
-        continue_base_score
-        + continue_bonus
-    )
-
-    exhaustion_score = (
-        exhaustion_base_score
-        + exhaustion_bonus
-    )
-
-    score = (
-        continue_score
-        - exhaustion_score
-    )
-
-   
-
-    # =====================================
-    # Понятная рекомендация
-    # =====================================
-
-    if action == "IGNORE_REVERSAL":
-
-        if signal.get("type") == "PUMP":
-            decision_text = "⛔ Не открывать шорт"
-
-        else:
-            decision_text = "⛔ Пока не покупать"
-
-    elif action == "WATCH":
-
-        decision_text = "👀 Наблюдать"
-
-    elif action == "LOOK_REVERSAL":
-
-        if signal.get("type") == "PUMP":
-            decision_text = "🎯 Искать шорт после подтверждения"
-
-        else:
-            decision_text = "🎯 Искать лонг после подтверждения"
-
-    elif action == "WAIT":
-
-        decision_text = "🟡 Подождать"
+        consensus_percent = round(
+            max(
+                continue_vote_share,
+                exhaustion_vote_share
+            )
+            * 100
+        )
 
     else:
 
-        decision_text = "🟡 Подождать"
+        continue_vote_share = 0.5
+        exhaustion_vote_share = 0.5
+        consensus_percent = 0
 
     # =====================================
-    # MARKET PHASE
+    # 5. РАСПРЕДЕЛЕНИЕ СИЛЫ
     # =====================================
 
-    market_phase = "⚪ Рынок пока нейтральный"
+    if active_weight > 0:
 
-    if signal.get("oi_slope"):
+        continue_weight_share = (
+            continue_weight
+            / active_weight
+        )
 
-        total = signal["oi_slope"].get("total_change", 0)
-        accel = signal["oi_slope"].get("acceleration", 0)
+        exhaustion_weight_share = (
+            exhaustion_weight
+            / active_weight
+        )
 
-        if total >= 8 and accel > 0:
+    else:
 
-            market_phase = "🟢 Идёт активное накопление"
-
-        elif total >= 3:
-
-            market_phase = "🟡 Начинается движение"
-
-        elif total > 0:
-
-            market_phase = "🚀 Импульс развивается"
-
-        elif total <= -5:
-
-            market_phase = "🔴 Деньги выходят"
-
-        elif accel < -1:
-
-            market_phase = "🟠 Импульс ослабевает"
-
+        continue_weight_share = 0.5
+        exhaustion_weight_share = 0.5
 
     # =====================================
-    # Понятное описание стадии
+    # 6. ОБЪЕДИНЁННЫЕ ВЕРОЯТНОСТИ
+    #
+    # 60% — сила голосов.
+    # 40% — количество независимых модулей.
     # =====================================
 
-    stage_map = {
+    continuation_probability = round(
+        (
+            continue_weight_share * 0.60
+            + continue_vote_share * 0.40
+        )
+        * 100
+    )
 
-        "EARLY": "🟢 Отличный момент",
+    exhaustion_probability = (
+        100 - continuation_probability
+    )
 
-        "BUILDING": "🟡 Сигнал формируется",
+    # Не показываем искусственные 0% и 100%.
+    continuation_probability = max(
+        5,
+        min(95, continuation_probability)
+    )
 
-        "LATE": "🟠 Движение уже прошло",
-
-        "EXHAUSTION": "🔴 Высокая вероятность разворота",
-
-    }
-
-    move_status = stage_map.get(
-        stage,
-        "⚪ Недостаточно данных"
+    exhaustion_probability = (
+        100 - continuation_probability
     )
 
     # =====================================
-    # 7. ЕДИНЫЙ CONFIDENCE
+    # 7. ПОКРЫТИЕ ДАННЫХ
     # =====================================
 
-    score_difference = abs(score)
-
-    confidence = (
-        55
-        + score_difference * 5
+    data_coverage = round(
+        (
+            active_votes
+            + neutral_votes * 0.5
+        )
+        / max(1, total_modules)
+        * 100
     )
 
-    # Если сработало профессиональное правило,
-    # немного повышаем уверенность
-    if applied_rules:
-        confidence += 5
+    # =====================================
+    # 8. ОПРЕДЕЛЯЕМ ПОБЕДИВШУЮ СТОРОНУ
+    # =====================================
 
-    # Если эксперты голосуют почти поровну,
-    # высокая уверенность недопустима
-    if abs(continue_score - exhaustion_score) <= 2:
+    if continuation_probability > exhaustion_probability:
+
+        dominant_side = "CONTINUE"
+        dominant_probability = continuation_probability
+        dominant_votes = continue_votes
+        dominant_weight = continue_weight
+
+    elif exhaustion_probability > continuation_probability:
+
+        dominant_side = "EXHAUSTION"
+        dominant_probability = exhaustion_probability
+        dominant_votes = exhaustion_votes
+        dominant_weight = exhaustion_weight
+
+    else:
+
+        dominant_side = "UNCERTAIN"
+        dominant_probability = 50
+        dominant_votes = 0
+        dominant_weight = 0.0
+
+    probability_difference = abs(
+        continuation_probability
+        - exhaustion_probability
+    )
+
+    weight_difference = (
+        continue_weight
+        - exhaustion_weight
+    )
+
+    # =====================================
+    # 9. FINAL STATE
+    #
+    # Для сильного вывода нужны:
+    # - минимум два независимых голоса;
+    # - достаточная вероятность;
+    # - нормальное покрытие данных.
+    # =====================================
+
+    insufficient_data = (
+        active_votes < 2
+        or data_coverage < 35
+    )
+
+    if insufficient_data:
+
+        final_state = "UNCERTAIN"
+
+    elif dominant_side == "CONTINUE":
+
+        if (
+            dominant_probability >= 78
+            and dominant_votes >= 3
+            and data_coverage >= 55
+        ):
+
+            final_state = "MOVEMENT_STRONG"
+
+        elif (
+            dominant_probability >= 62
+            and dominant_votes >= 2
+        ):
+
+            final_state = "MOVEMENT_SUPPORTED"
+
+        else:
+
+            final_state = "UNCERTAIN"
+
+    elif dominant_side == "EXHAUSTION":
+
+        if (
+            dominant_probability >= 78
+            and dominant_votes >= 3
+            and data_coverage >= 55
+        ):
+
+            final_state = "REVERSAL_READY"
+
+        elif (
+            dominant_probability >= 62
+            and dominant_votes >= 2
+        ):
+
+            final_state = "WEAKENING"
+
+        else:
+
+            final_state = "UNCERTAIN"
+
+    else:
+
+        final_state = "UNCERTAIN"
+
+    # =====================================
+    # 10. НАДЁЖНОСТЬ АНАЛИЗА
+    #
+    # Это не вероятность движения.
+    # Это качество и согласованность данных.
+    # =====================================
+
+    if active_votes == 0:
+
+        confidence = 50
+
+    else:
+
+        confidence = round(
+            40
+            + consensus_percent * 0.35
+            + data_coverage * 0.25
+        )
+
+    # Спорный рынок не может иметь 90–95%
+    # надёжности анализа.
+    if probability_difference < 15:
         confidence = min(confidence, 65)
 
-    # Без OI решение менее надёжно
+    elif probability_difference < 25:
+        confidence = min(confidence, 75)
+
+    # Недостаток OI снижает надёжность.
     if signal.get("oi_change") is None:
+        confidence = min(confidence, 65)
+
+    if insufficient_data:
         confidence = min(confidence, 60)
 
     confidence = max(
@@ -2331,88 +2329,15 @@ def chief_trader(signal):
     )
 
     # =====================================
-    # 8. QUALITY
-    # Используется выбором лучшего окна
-    # =====================================
-
-    quality = max(
-        continue_score,
-        exhaustion_score
-    )
-
-    # =====================================
-    # 8.5 ЕДИНОЕ ФИНАЛЬНОЕ РЕШЕНИЕ
-    # =====================================
-
-    move_type = str(
-        signal.get("type")
-        or ""
-    ).upper()
-
-    # Разница голосов уже рассчитана:
-    # score > 0  = сильнее продолжение
-    # score < 0  = сильнее ослабление
-    # score около 0 = нет ясного преимущества
-
-    if score >= 6:
-        final_state = "MOVEMENT_STRONG"
-
-    elif score >= 3:
-        final_state = "MOVEMENT_SUPPORTED"
-
-    elif score > -3:
-        final_state = "UNCERTAIN"
-
-    elif score > -6:
-        final_state = "WEAKENING"
-
-    else:
-        final_state = "REVERSAL_READY"
-
-    # =====================================
-    # Вероятности двух сценариев
-    # =====================================
-
-    total_strength = (
-        continue_score
-        + exhaustion_score
-    )
-
-    if total_strength > 0:
-
-        continuation_probability = round(
-            continue_score
-            / total_strength
-            * 100
-        )
-
-        reversal_probability = (
-            100 - continuation_probability
-        )
-
-    else:
-
-        continuation_probability = 50
-        reversal_probability = 50
-
-    # Не показываем искусственные 0% и 100%.
-    continuation_probability = max(
-        10,
-        min(90, continuation_probability)
-    )
-
-    reversal_probability = max(
-        10,
-        min(90, reversal_probability)
-    )
-
-    # =====================================
-    # Единый текст для PUMP
+    # 11. ТОРГОВЫЕ ТЕКСТЫ — PUMP
     # =====================================
 
     if move_type == "PUMP":
 
         if final_state == "MOVEMENT_STRONG":
+
+            stage = "EXPANSION"
+            action = "IGNORE_REVERSAL"
 
             market_summary = (
                 "🟢 Памп сохраняет силу"
@@ -2427,17 +2352,17 @@ def chief_trader(signal):
             )
 
             next_move_summary = (
-                "🟢 Вероятнее продолжение роста"
+                "🟢 Продолжение роста значительно вероятнее"
             )
-
-            action = "IGNORE_REVERSAL"
-            stage = "EARLY"
 
             scenario_probability = (
                 continuation_probability
             )
 
         elif final_state == "MOVEMENT_SUPPORTED":
+
+            stage = "BUILDING"
+            action = "WAIT"
 
             market_summary = (
                 "🟢 Рост пока поддерживается"
@@ -2448,104 +2373,105 @@ def chief_trader(signal):
             )
 
             action_summary = (
-                "⛔ Шорт пока рано. Ждать явного ослабления"
+                "⛔ Шорт пока рано. "
+                "Ждать явного ослабления"
             )
 
             next_move_summary = (
-                "🟢 Продолжение роста пока немного вероятнее"
+                "🟢 Продолжение роста пока вероятнее"
             )
-
-            action = "WAIT"
-            stage = "BUILDING"
 
             scenario_probability = (
                 continuation_probability
             )
 
-        elif final_state == "UNCERTAIN":
-
-            market_summary = (
-                "⚪ Памп потерял ясное преимущество"
-            )
-
-            stronger_summary = (
-                "⚪ Покупатели и продавцы близки по силе"
-            )
-
-            action_summary = (
-                "👀 Не входить. Ждать подтверждения одной стороны"
-            )
-
-            next_move_summary = (
-                "⚪ Продолжение и откат примерно равновероятны"
-            )
-
-            action = "WATCH"
-            stage = "LATE"
-
-            scenario_probability = max(
-                continuation_probability,
-                reversal_probability,
-            )
-
         elif final_state == "WEAKENING":
+
+            stage = "WEAKENING"
+            action = "WATCH"
 
             market_summary = (
                 "🟠 Памп начинает ослабевать"
             )
 
             stronger_summary = (
-                "🟠 Продавцы усиливаются против роста"
+                "🟠 Продавцы перехватывают часть инициативы"
             )
 
             action_summary = (
                 "👀 Готовиться к откату, "
-                "но шорт открывать только после подтверждения"
+                "но не входить без подтверждения"
             )
 
             next_move_summary = (
                 "🟠 Откат вниз становится вероятнее"
             )
 
-            action = "WATCH"
-            stage = "LATE"
-
             scenario_probability = (
-                reversal_probability
+                exhaustion_probability
             )
 
-        else:
+        elif final_state == "REVERSAL_READY":
+
+            stage = "EXHAUSTION"
+            action = "LOOK_REVERSAL"
 
             market_summary = (
                 "🔴 Памп теряет поддержку"
             )
 
             stronger_summary = (
-                "🔴 Продавцы получили явное преимущество"
+                "🔴 Продавцы получили подтверждённое преимущество"
             )
 
             action_summary = (
-                "🎯 Искать подтверждённый вход в шорт"
+                "🎯 Искать вход в шорт только после "
+                "подтверждения разворота цены"
             )
 
             next_move_summary = (
-                "🔴 Вероятен откат или разворот вниз"
+                "🔴 Откат или разворот вниз значительно вероятнее"
             )
 
-            action = "LOOK_REVERSAL"
-            stage = "EXHAUSTION"
+            scenario_probability = (
+                exhaustion_probability
+            )
+
+        else:
+
+            stage = "UNCERTAIN"
+            action = "WAIT"
+
+            market_summary = (
+                "⚪ По пампу нет согласованного сценария"
+            )
+
+            stronger_summary = (
+                "⚪ Эксперты дают противоречивые сигналы"
+            )
+
+            action_summary = (
+                "👀 Пропустить вход и ждать нового подтверждения"
+            )
+
+            next_move_summary = (
+                "⚪ Продолжение и откат близки по вероятности"
+            )
 
             scenario_probability = (
-                reversal_probability
+                dominant_probability
             )
 
     # =====================================
-    # Единый текст для DUMP
+    # 12. ТОРГОВЫЕ ТЕКСТЫ — DUMP
     # =====================================
 
     elif move_type == "DUMP":
 
         if final_state == "MOVEMENT_STRONG":
+
+            stage = "EXPANSION"
+            action = "IGNORE_REVERSAL"
 
             market_summary = (
                 "🔴 Дамп сохраняет силу"
@@ -2560,17 +2486,17 @@ def chief_trader(signal):
             )
 
             next_move_summary = (
-                "🔴 Вероятнее продолжение падения"
+                "🔴 Продолжение падения значительно вероятнее"
             )
-
-            action = "IGNORE_REVERSAL"
-            stage = "EARLY"
 
             scenario_probability = (
                 continuation_probability
             )
 
         elif final_state == "MOVEMENT_SUPPORTED":
+
+            stage = "BUILDING"
+            action = "WAIT"
 
             market_summary = (
                 "🔴 Падение пока поддерживается"
@@ -2581,107 +2507,107 @@ def chief_trader(signal):
             )
 
             action_summary = (
-                "⛔ Лонг пока рано. Ждать явного ослабления"
+                "⛔ Лонг пока рано. "
+                "Ждать явного ослабления"
             )
 
             next_move_summary = (
-                "🔴 Продолжение падения пока немного вероятнее"
+                "🔴 Продолжение падения пока вероятнее"
             )
-
-            action = "WAIT"
-            stage = "BUILDING"
 
             scenario_probability = (
                 continuation_probability
             )
 
-        elif final_state == "UNCERTAIN":
-
-            market_summary = (
-                "⚪ Дамп потерял ясное преимущество"
-            )
-
-            stronger_summary = (
-                "⚪ Покупатели и продавцы близки по силе"
-            )
-
-            action_summary = (
-                "👀 Не входить. Ждать подтверждения одной стороны"
-            )
-
-            next_move_summary = (
-                "⚪ Продолжение и отскок примерно равновероятны"
-            )
-
-            action = "WATCH"
-            stage = "LATE"
-
-            scenario_probability = max(
-                continuation_probability,
-                reversal_probability,
-            )
-
         elif final_state == "WEAKENING":
+
+            stage = "WEAKENING"
+            action = "WATCH"
 
             market_summary = (
                 "🟠 Дамп начинает ослабевать"
             )
 
             stronger_summary = (
-                "🟠 Покупатели усиливаются против падения"
+                "🟠 Покупатели перехватывают часть инициативы"
             )
 
             action_summary = (
                 "👀 Готовиться к отскоку, "
-                "но лонг открывать только после подтверждения"
+                "но не входить без подтверждения"
             )
 
             next_move_summary = (
                 "🟠 Отскок вверх становится вероятнее"
             )
 
-            action = "WATCH"
-            stage = "LATE"
-
             scenario_probability = (
-                reversal_probability
+                exhaustion_probability
             )
 
-        else:
+        elif final_state == "REVERSAL_READY":
+
+            stage = "EXHAUSTION"
+            action = "LOOK_REVERSAL"
 
             market_summary = (
                 "🟢 Дамп теряет поддержку"
             )
 
             stronger_summary = (
-                "🟢 Покупатели получили явное преимущество"
+                "🟢 Покупатели получили подтверждённое преимущество"
             )
 
             action_summary = (
-                "🎯 Искать подтверждённый вход в лонг"
+                "🎯 Искать вход в лонг только после "
+                "подтверждения разворота цены"
             )
 
             next_move_summary = (
-                "🟢 Вероятен отскок или разворот вверх"
+                "🟢 Отскок или разворот вверх значительно вероятнее"
             )
 
-            action = "LOOK_REVERSAL"
-            stage = "EXHAUSTION"
+            scenario_probability = (
+                exhaustion_probability
+            )
+
+        else:
+
+            stage = "UNCERTAIN"
+            action = "WAIT"
+
+            market_summary = (
+                "⚪ По дампу нет согласованного сценария"
+            )
+
+            stronger_summary = (
+                "⚪ Эксперты дают противоречивые сигналы"
+            )
+
+            action_summary = (
+                "👀 Пропустить вход и ждать нового подтверждения"
+            )
+
+            next_move_summary = (
+                "⚪ Продолжение и отскок близки по вероятности"
+            )
 
             scenario_probability = (
-                reversal_probability
+                dominant_probability
             )
 
     else:
 
         final_state = "UNKNOWN"
+        stage = "UNKNOWN"
+        action = "WAIT"
 
         market_summary = (
             "⚪ Тип движения не определён"
         )
 
         stronger_summary = (
-            "⚪ Явного преимущества нет"
+            "⚪ Преимущество сторон не определено"
         )
 
         action_summary = (
@@ -2689,133 +2615,318 @@ def chief_trader(signal):
         )
 
         next_move_summary = (
-            "⚪ Направление не подтверждено"
+            "⚪ Сценарий не рассчитан"
         )
 
         scenario_probability = 50
-        action = "WAIT"
-        stage = "UNKNOWN"
+        confidence = 50
 
     # =====================================
-    # Обновляем понятные поля
+    # 13. ОБЪЯСНЕНИЕ
+    #
+    # Показываем причины победившего сценария,
+    # а не случайную смесь противоположных мнений.
     # =====================================
 
-    reversal_score = int(
-        reversal_probability
+    if final_state in {
+        "MOVEMENT_STRONG",
+        "MOVEMENT_SUPPORTED",
+    }:
+
+        explanation_side = "CONTINUE"
+
+    elif final_state in {
+        "WEAKENING",
+        "REVERSAL_READY",
+    }:
+
+        explanation_side = "EXHAUSTION"
+
+    else:
+
+        explanation_side = None
+
+    sorted_votes = sorted(
+        votes,
+        key=lambda item: item.get("weight", 0),
+        reverse=True
+    )
+
+    explanation = []
+
+    if explanation_side:
+
+        for vote_data in sorted_votes:
+
+            if vote_data["vote"] != explanation_side:
+                continue
+
+            text = vote_data.get("text", "")
+
+            if not text:
+                continue
+
+            explanation.append(
+                text.replace("• ", "").strip()
+            )
+
+            if len(explanation) >= 3:
+                break
+
+    else:
+
+        # При неопределённости показываем
+        # лучшие аргументы обеих сторон.
+        used_sides = set()
+
+        for vote_data in sorted_votes:
+
+            vote = vote_data["vote"]
+
+            if vote not in {
+                "CONTINUE",
+                "EXHAUSTION",
+            }:
+                continue
+
+            if vote in used_sides:
+                continue
+
+            text = vote_data.get("text", "")
+
+            if not text:
+                continue
+
+            explanation.append(
+                text.replace("• ", "").strip()
+            )
+
+            used_sides.add(vote)
+
+            if len(explanation) >= 2:
+                break
+
+    if not explanation:
+
+        explanation = [
+            "Недостаточно согласованных подтверждений"
+        ]
+
+    # =====================================
+    # 14. MARKET PHASE
+    # =====================================
+
+    market_phase = (
+        "⚪ Динамика OI пока не определена"
+    )
+
+    oi_slope = (
+        signal.get("oi_slope")
+        or {}
+    )
+
+    try:
+        oi_total = float(
+            oi_slope.get("total_change")
+            or 0
+        )
+    except (TypeError, ValueError):
+        oi_total = 0.0
+
+    try:
+        oi_acceleration = float(
+            oi_slope.get("acceleration")
+            or 0
+        )
+    except (TypeError, ValueError):
+        oi_acceleration = 0.0
+
+    if oi_total >= 8 and oi_acceleration > 0:
+
+        market_phase = (
+            "🟢 OI активно накапливается"
+        )
+
+    elif oi_total >= 3:
+
+        market_phase = (
+            "🟡 OI постепенно растёт"
+        )
+
+    elif oi_total <= -5:
+
+        market_phase = (
+            "🔴 Из позиций активно выходят"
+        )
+
+    elif oi_acceleration < -1:
+
+        market_phase = (
+            "🟠 Динамика OI ослабевает"
+        )
+
+    # =====================================
+    # 15. СОВМЕСТИМОСТЬ СО СТАРЫМ КОДОМ
+    # =====================================
+
+    score = round(
+        continue_weight
+        - exhaustion_weight,
+        2
+    )
+
+    # Старый quality используется выбором
+    # лучшего временного окна.
+    quality = round(
+        max(
+            continue_weight,
+            exhaustion_weight
+        ),
+        2
+    )
+
+    reversal_score = (
+        exhaustion_probability
     )
 
     reversal_level = final_state
-
     reversal_text = next_move_summary
 
     move_status = market_summary
-
     decision_text = action_summary
+
+    decision_context = {
+        "continue_votes": continue_votes,
+        "exhaustion_votes": exhaustion_votes,
+        "neutral_votes": neutral_votes,
+        "unknown_votes": unknown_votes,
+
+        "continue_weight": round(
+            continue_weight,
+            2
+        ),
+
+        "exhaustion_weight": round(
+            exhaustion_weight,
+            2
+        ),
+
+        "continuation_probability":
+            continuation_probability,
+
+        "exhaustion_probability":
+            exhaustion_probability,
+
+        "dominant_side": dominant_side,
+
+        "consensus_percent":
+            consensus_percent,
+
+        "data_coverage":
+            data_coverage,
+
+        "probability_difference":
+            probability_difference,
+
+        "weight_difference": round(
+            weight_difference,
+            2
+        ),
+    }
+
+    decision = {
+        "final_state": final_state,
+        "stage": stage,
+        "action": action,
+
+        "confidence": confidence,
+        "scenario_probability":
+            scenario_probability,
+
+        "continuation_probability":
+            continuation_probability,
+
+        "exhaustion_probability":
+            exhaustion_probability,
+
+        "market_summary": market_summary,
+        "stronger_summary": stronger_summary,
+        "action_summary": action_summary,
+        "next_move_summary": next_move_summary,
+
+        "market_phase": market_phase,
+        "move_status": move_status,
+        "decision_text": decision_text,
+
+        "reversal_score": reversal_score,
+        "reversal_level": reversal_level,
+        "reversal_text": reversal_text,
+
+        # Оба названия оставлены для
+        # совместимости с build_message().
+        "reasons": explanation,
+        "explanation": explanation,
+
+        "decision_context": decision_context,
+        "quality_engine": quality_engine,
+    }
+
     # =====================================
-    # 9. ЛОГ CHIEF TRADER V2
+    # 16. ЛОГИ
     # =====================================
 
     print(
-        "[CHIEF_TRADER_V2]",
-        signal.get("symbol"),
-        "continue_base=",
-        continue_base_score,
-        "exhaustion_base=",
-        exhaustion_base_score,
-        "continue_bonus=",
-        continue_bonus,
-        "exhaustion_bonus=",
-        exhaustion_bonus,
-        "continue_final=",
-        continue_score,
-        "exhaustion_final=",
-        exhaustion_score,
-        "score=",
-        score,
-        "stage=",
-        stage,
-        "action=",
-        action,
-        "confidence=",
-        confidence,
-        "rules=",
-        [
-            rule_data.get("rule")
-            for rule_data in applied_rules
-        ],
+        "[CHIEF_V5]",
+        symbol,
+        f"type={move_type}",
+        f"C_votes={continue_votes}",
+        f"E_votes={exhaustion_votes}",
+        f"C_weight={continue_weight:.2f}",
+        f"E_weight={exhaustion_weight:.2f}",
+        f"C_prob={continuation_probability}%",
+        f"E_prob={exhaustion_probability}%",
+        f"consensus={consensus_percent}%",
+        f"coverage={data_coverage}%",
+        f"state={final_state}",
+        f"confidence={confidence}%",
         flush=True
     )
 
     # =====================================
-    # 10. ЕДИНСТВЕННЫЙ RETURN
+    # 17. ЕДИНСТВЕННЫЙ RETURN
     # =====================================
 
-
-
-    # =====================================
-    # RAW DECISION
-    # Главный результат работы Chief
-    # =====================================
-
-    decision = {
-
-        "stage": stage,
-        "action": action,
-        "confidence": confidence,
-        "quality": quality,
-
-        "continue_score": continue_score,
-        "exhaustion_score": exhaustion_score,
-
-        "reversal_score": reversal_score,
-        "reversal_level": reversal_level,
-        "reversal_text": reversal_text,
-
-        "market_phase": market_phase,
-        "move_status": move_status,
-        "decision_text": decision_text,
-
-        "market_summary": market_summary,
-        "stronger_summary": stronger_summary,
-        "action_summary": action_summary,
-        "next_move_summary": next_move_summary,
-
-        "reasons": explanation,
-
-    }
     return {
-
-        # ==========================
-        # Итоговое решение Chief
-        # ==========================
-
         "decision": decision,
+
+        "quality_engine": quality_engine,
+        "decision_context": decision_context,
+
         "final_state": final_state,
         "stage": stage,
-        "scenario_probability": scenario_probability,
         "action": action,
-        "confidence": confidence,
-        "quality": quality,
 
+        "confidence": confidence,
+        "scenario_probability":
+            scenario_probability,
+
+        "quality": quality,
         "score": score,
 
-        "continue_score": continue_score,
-        "exhaustion_score": exhaustion_score,
+        "continue_score": continue_weight,
+        "exhaustion_score": exhaustion_weight,
 
-        "continue_base_score": continue_base_score,
-        "exhaustion_base_score": exhaustion_base_score,
+        "continue_base_score": continue_weight,
+        "exhaustion_base_score": exhaustion_weight,
 
-        "continue_bonus": continue_bonus,
-        "exhaustion_bonus": exhaustion_bonus,
+        # Старые поля оставлены,
+        # чтобы другой код не упал.
+        "continue_bonus": 0,
+        "exhaustion_bonus": 0,
+        "applied_rules": [],
 
-        "reasons": reasons,
+        "reasons": explanation,
         "explanation": explanation,
-
-        "applied_rules": applied_rules,
-
-        # ==========================
-        # Данные для интерфейса
-        # ==========================
 
         "market_summary": market_summary,
         "stronger_summary": stronger_summary,
@@ -2824,6 +2935,12 @@ def chief_trader(signal):
 
         "market_phase": market_phase,
 
+        "continuation_probability":
+            continuation_probability,
+
+        "exhaustion_probability":
+            exhaustion_probability,
+
         "reversal_score": reversal_score,
         "reversal_level": reversal_level,
         "reversal_text": reversal_text,
@@ -2831,7 +2948,6 @@ def chief_trader(signal):
         "move_status": move_status,
         "decision_text": decision_text,
     }
-
    
 def analyze_trend_strength(signal):
     try:
