@@ -2216,29 +2216,7 @@ def chief_trader(signal):
         - exhaustion_score
     )
 
-    # =====================================
-    # 6. ЕДИНЫЙ КЛАССИФИКАТОР
-    # =====================================
-
-    if score >= 6:
-
-        stage = "EARLY"
-        action = "IGNORE_REVERSAL"
-
-    elif score >= 3:
-
-        stage = "BUILDING"
-        action = "WAIT"
-
-    elif score > -3:
-
-        stage = "LATE"
-        action = "WATCH"
-
-    else:
-
-        stage = "EXHAUSTION"
-        action = "LOOK_REVERSAL"
+   
 
     # =====================================
     # Понятная рекомендация
