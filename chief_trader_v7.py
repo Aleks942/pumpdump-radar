@@ -619,4 +619,211 @@ def build_market_context(signal, votes):
 
     return context
 
+# ============================================
+# MARKET HEALTH ENGINE
+# Рассчитывает реальную силу рынка
+# ============================================
+
+def calculate_market_health(signal, context):
+
+    buyers = 0
+    sellers = 0
+
+    # ========================================
+    # OI
+    # ========================================
+
+    oi = context["oi_change"]
+
+    move = context["move_type"]
+
+    if oi is not None:
+
+        if move == "PUMP":
+
+            if oi >= 8:
+                buyers += 25
+
+            elif oi >= 5:
+                buyers += 20
+
+            elif oi >= 3:
+                buyers += 15
+
+            elif oi <= -5:
+                sellers += 20
+
+            elif oi <= -3:
+                sellers += 15
+
+        elif move == "DUMP":
+
+            if oi >= 8:
+                sellers += 25
+
+            elif oi >= 5:
+                sellers += 20
+
+            elif oi >= 3:
+                sellers += 15
+
+            elif oi <= -5:
+                buyers += 20
+
+            elif oi <= -3:
+                buyers += 15
+
+    # ========================================
+    # PRESSURE
+    # ========================================
+
+    pressure = context["pressure"]
+
+    if pressure == "STRONG_BUY_PRESSURE":
+        buyers += 20
+
+    elif pressure == "BUY_PRESSURE":
+        buyers += 12
+
+    elif pressure == "STRONG_SELL_PRESSURE":
+        sellers += 20
+
+    elif pressure == "SELL_PRESSURE":
+        sellers += 12
+
+    # ========================================
+    # SPOT CVD
+    # ========================================
+
+    if context["spot_state"] == "BUY":
+        buyers += 18
+
+    elif context["spot_state"] == "SELL":
+        sellers += 18
+
+    # ========================================
+    # MONEY FLOW
+    # ========================================
+
+    money = context["money_state"]
+
+    if money == "STRONG_NEW_MONEY":
+        buyers += 15
+
+    elif money == "BUILDING_MONEY":
+        buyers += 10
+
+    elif money == "EXITING_MONEY":
+        sellers += 12
+
+    # ========================================
+    # TREND
+    # ========================================
+
+    trend = context["trend_score"]
+
+    if trend >= 8:
+
+        if move == "PUMP":
+            buyers += 12
+        else:
+            sellers += 12
+
+    elif trend >= 5:
+
+        if move == "PUMP":
+            buyers += 8
+        else:
+            sellers += 8
+
+    # ========================================
+    # LIQUIDATIONS
+    # ========================================
+
+    long_liq = context["long_liq"]
+    short_liq = context["short_liq"]
+
+    if short_liq > long_liq * 1.5:
+        buyers += 10
+
+    elif long_liq > short_liq * 1.5:
+        sellers += 10
+
+    # ========================================
+    # НОРМАЛИЗАЦИЯ
+    # ========================================
+
+    total = buyers + sellers
+
+    if total == 0:
+
+        buyers_power = 50
+        sellers_power = 50
+
+    else:
+
+        buyers_power = round(
+            buyers / total * 100
+        )
+
+        sellers_power = 100 - buyers_power
+
+    # ========================================
+    # ЭНЕРГИЯ ДВИЖЕНИЯ
+    # ========================================
+
+    energy = round(
+
+        (
+            context["consensus"]
+            * 0.4
+        )
+
+        +
+
+        (
+            context["data_quality"]
+            * 0.3
+        )
+
+        +
+
+        (
+            max(
+                buyers_power,
+                sellers_power
+            )
+            * 0.3
+        )
+
+    )
+
+    # ========================================
+    # MARKET HEALTH
+    # ========================================
+
+    health = round(
+
+        (
+            energy
+            * 0.6
+        )
+
+        +
+
+        (
+            context["data_quality"]
+            * 0.4
+        )
+
+    )
+
+    context["buyers_power"] = buyers_power
+    context["sellers_power"] = sellers_power
+
+    context["move_energy"] = energy
+    context["market_health"] = health
+
+    return context
+
 
