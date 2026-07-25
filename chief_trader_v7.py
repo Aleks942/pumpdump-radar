@@ -1139,4 +1139,627 @@ def classify_market_stage(signal, context):
 
     return context
 
+# ============================================
+# ENTRY RISK ENGINE
+# Оценивает риск входа и готовность сделки
+# ============================================
+
+def calculate_entry_risk(signal, context):
+
+    """
+    Оценивает не направление рынка,
+    а безопасность входа прямо сейчас.
+
+    Возвращает в context:
+
+    entry_score:
+        0–100 — качество потенциальной точки входа.
+
+    entry_risk:
+        LOW
+        MEDIUM
+        HIGH
+        EXTREME
+
+    entry_ready:
+        True — условия достаточно хорошие,
+        чтобы искать вход после подтверждения.
+
+    entry_trigger:
+        Что именно нужно дождаться.
+
+    entry_reason:
+        Понятное объяснение решения.
+    """
+
+    move_type = str(
+        context.get("move_type")
+        or signal.get("type")
+        or ""
+    ).upper()
+
+    window = str(
+        context.get("window")
+        or signal.get("window")
+        or ""
+    ).lower()
+
+    change = abs(
+        safe_float(
+            context.get(
+                "change",
+                signal.get("change")
+            ),
+            0.0
+        )
+    )
+
+    stage = str(
+        context.get("market_stage")
+        or "UNCERTAIN"
+    ).upper()
+
+    buyers_power = safe_int(
+        context.get("buyers_power"),
+        50
+    )
+
+    sellers_power = safe_int(
+        context.get("sellers_power"),
+        50
+    )
+
+    move_energy = safe_int(
+        context.get("move_energy"),
+        0
+    )
+
+    market_health = safe_int(
+        context.get("market_health"),
+        0
+    )
+
+    consensus = safe_int(
+        context.get("consensus"),
+        0
+    )
+
+    data_quality = safe_int(
+        context.get("data_quality"),
+        0
+    )
+
+    available_modules = safe_int(
+        context.get("available_modules"),
+        0
+    )
+
+    core_data_count = safe_int(
+        context.get("core_data_count"),
+        0
+    )
+
+    oi_change = context.get("oi_change")
+
+    pressure = str(
+        context.get("pressure")
+        or ""
+    ).upper()
+
+    # ========================================
+    # 1. СИЛА СТОРОНЫ ТЕКУЩЕГО ДВИЖЕНИЯ
+    # ========================================
+
+    if move_type == "PUMP":
+
+        movement_power = buyers_power
+        opposite_power = sellers_power
+
+        continuation_direction = "LONG"
+        reversal_direction = "SHORT"
+
+    elif move_type == "DUMP":
+
+        movement_power = sellers_power
+        opposite_power = buyers_power
+
+        continuation_direction = "SHORT"
+        reversal_direction = "LONG"
+
+    else:
+
+        context["entry_score"] = 0
+        context["entry_risk"] = "EXTREME"
+        context["entry_ready"] = False
+        context["entry_direction"] = "NONE"
+        context["entry_trigger"] = (
+            "Тип движения не определён"
+        )
+        context["entry_reason"] = (
+            "Невозможно оценить риск без типа движения"
+        )
+        context["late_entry"] = True
+
+        return context
+
+    # ========================================
+    # 2. БАЗОВАЯ ОЦЕНКА ВХОДА
+    # ========================================
+
+    entry_score = 50
+
+    positive_factors = []
+    risk_factors = []
+
+    # Качество данных.
+    if data_quality >= 80:
+
+        entry_score += 12
+
+        positive_factors.append(
+            "Высокое качество данных"
+        )
+
+    elif data_quality >= 60:
+
+        entry_score += 7
+
+        positive_factors.append(
+            "Данных достаточно для анализа"
+        )
+
+    elif data_quality < 40:
+
+        entry_score -= 20
+
+        risk_factors.append(
+            "Недостаточно рыночных данных"
+        )
+
+    else:
+
+        entry_score -= 8
+
+        risk_factors.append(
+            "Часть важных данных отсутствует"
+        )
+
+    # Согласие модулей.
+    if consensus >= 85:
+
+        entry_score += 12
+
+        positive_factors.append(
+            "Аналитические модули почти единогласны"
+        )
+
+    elif consensus >= 70:
+
+        entry_score += 7
+
+        positive_factors.append(
+            "Большинство модулей подтверждает сценарий"
+        )
+
+    elif consensus < 55:
+
+        entry_score -= 15
+
+        risk_factors.append(
+            "Модули дают противоречивые сигналы"
+        )
+
+    # Энергия движения.
+    if move_energy >= 80:
+
+        entry_score += 10
+
+        positive_factors.append(
+            "Энергия движения высокая"
+        )
+
+    elif move_energy >= 65:
+
+        entry_score += 6
+
+        positive_factors.append(
+            "Движение сохраняет энергию"
+        )
+
+    elif move_energy < 45:
+
+        entry_score -= 15
+
+        risk_factors.append(
+            "Движение теряет энергию"
+        )
+
+    # Здоровье движения.
+    if market_health >= 75:
+
+        entry_score += 10
+
+        positive_factors.append(
+            "Движение остаётся здоровым"
+        )
+
+    elif market_health >= 60:
+
+        entry_score += 5
+
+    elif market_health < 45:
+
+        entry_score -= 15
+
+        risk_factors.append(
+            "Структура движения слабая"
+        )
+
+    # ========================================
+    # 3. ШТРАФ ЗА ПОЗДНИЙ ВХОД
+    # ========================================
+
+    late_entry_limit = {
+        "5m": 5.5,
+        "10m": 6.5,
+        "20m": 7.5,
+        "30m": 8.5,
+    }.get(
+        window,
+        7.0
+    )
+
+    very_late_limit = {
+        "5m": 8.0,
+        "10m": 9.0,
+        "20m": 10.0,
+        "30m": 12.0,
+    }.get(
+        window,
+        10.0
+    )
+
+    late_entry = False
+
+    if change >= very_late_limit:
+
+        entry_score -= 35
+        late_entry = True
+
+        risk_factors.append(
+            "Цена уже прошла слишком большое расстояние"
+        )
+
+    elif change >= late_entry_limit:
+
+        entry_score -= 20
+        late_entry = True
+
+        risk_factors.append(
+            "Вход по текущей цене уже поздний"
+        )
+
+    elif change <= 4.5:
+
+        entry_score += 8
+
+        positive_factors.append(
+            "Цена ещё не слишком далеко от начала импульса"
+        )
+
+    # ========================================
+    # 4. ВЛИЯНИЕ СТАДИИ
+    # ========================================
+
+    if stage == "START":
+
+        entry_score += 18
+
+        positive_factors.append(
+            "Движение находится на ранней стадии"
+        )
+
+    elif stage == "EXPANSION":
+
+        entry_score += 8
+
+        positive_factors.append(
+            "Импульс продолжает развиваться"
+        )
+
+    elif stage == "CLIMAX":
+
+        entry_score -= 30
+        late_entry = True
+
+        risk_factors.append(
+            "Движение находится в фазе перегрева"
+        )
+
+    elif stage == "WEAKENING":
+
+        entry_score -= 18
+
+        risk_factors.append(
+            "Текущее движение начинает ослабевать"
+        )
+
+    elif stage == "REVERSAL":
+
+        entry_score -= 10
+
+        risk_factors.append(
+            "Разворот ещё требует подтверждения цены"
+        )
+
+    else:
+
+        entry_score -= 12
+
+        risk_factors.append(
+            "Стадия рынка пока не определена"
+        )
+
+    # ========================================
+    # 5. КЛЮЧЕВЫЕ ДАННЫЕ
+    # ========================================
+
+    if core_data_count >= 3:
+
+        entry_score += 10
+
+        positive_factors.append(
+            "OI, давление и Spot CVD доступны"
+        )
+
+    elif core_data_count == 2:
+
+        entry_score += 4
+
+    elif core_data_count == 1:
+
+        entry_score -= 10
+
+        risk_factors.append(
+            "Доступен только один ключевой источник"
+        )
+
+    else:
+
+        entry_score -= 25
+
+        risk_factors.append(
+            "Нет ключевых данных OI, давления и Spot CVD"
+        )
+
+    if oi_change is None:
+
+        entry_score -= 10
+
+        risk_factors.append(
+            "Нет данных Open Interest"
+        )
+
+    # ========================================
+    # 6. ПРОТИВОРЕЧИЕ ДАВЛЕНИЯ И ДВИЖЕНИЯ
+    # ========================================
+
+    pressure_against_move = False
+
+    if move_type == "PUMP" and pressure in {
+        "SELL_PRESSURE",
+        "STRONG_SELL_PRESSURE",
+    }:
+
+        pressure_against_move = True
+
+    elif move_type == "DUMP" and pressure in {
+        "BUY_PRESSURE",
+        "STRONG_BUY_PRESSURE",
+    }:
+
+        pressure_against_move = True
+
+    if pressure_against_move:
+
+        entry_score -= 15
+
+        risk_factors.append(
+            "Давление идёт против текущего движения"
+        )
+
+    # ========================================
+    # 7. НОРМАЛИЗАЦИЯ SCORE
+    # ========================================
+
+    entry_score = max(
+        0,
+        min(100, round(entry_score))
+    )
+
+    # ========================================
+    # 8. РИСК
+    # ========================================
+
+    if (
+        entry_score >= 80
+        and not late_entry
+        and data_quality >= 60
+        and core_data_count >= 2
+    ):
+
+        entry_risk = "LOW"
+
+    elif (
+        entry_score >= 65
+        and not late_entry
+    ):
+
+        entry_risk = "MEDIUM"
+
+    elif entry_score >= 40:
+
+        entry_risk = "HIGH"
+
+    else:
+
+        entry_risk = "EXTREME"
+
+    # ========================================
+    # 9. НАПРАВЛЕНИЕ И ГОТОВНОСТЬ ВХОДА
+    # ========================================
+
+    entry_ready = False
+    entry_direction = "NONE"
+
+    if stage in {
+        "START",
+        "EXPANSION",
+    }:
+
+        entry_direction = continuation_direction
+
+        if (
+            entry_score >= 75
+            and movement_power >= 65
+            and consensus >= 65
+            and data_quality >= 50
+            and available_modules >= 3
+            and not late_entry
+        ):
+
+            entry_ready = True
+
+    elif stage in {
+        "WEAKENING",
+        "REVERSAL",
+    }:
+
+        entry_direction = reversal_direction
+
+        # Разворотный вход всегда требует
+        # более строгих условий.
+        if (
+            stage == "REVERSAL"
+            and entry_score >= 65
+            and opposite_power >= 68
+            and consensus >= 65
+            and available_modules >= 3
+        ):
+
+            entry_ready = True
+
+    # ========================================
+    # 10. ЧТО НУЖНО ДОЖДАТЬСЯ
+    # ========================================
+
+    if stage == "START":
+
+        if entry_ready:
+
+            entry_trigger = (
+                "Ждать небольшой откат или ретест "
+                "и подтверждение продолжения"
+            )
+
+        else:
+
+            entry_trigger = (
+                "Ждать усиления подтверждений "
+                "и первого безопасного отката"
+            )
+
+    elif stage == "EXPANSION":
+
+        entry_trigger = (
+            "Не догонять цену. Ждать ретест "
+            "или локальный откат"
+        )
+
+    elif stage == "CLIMAX":
+
+        entry_trigger = (
+            "Не входить по движению. "
+            "Ждать охлаждение рынка"
+        )
+
+    elif stage == "WEAKENING":
+
+        entry_trigger = (
+            "Ждать слом локальной структуры "
+            "и подтверждение разворота"
+        )
+
+    elif stage == "REVERSAL":
+
+        entry_trigger = (
+            "Ждать ретест уровня после "
+            "подтверждённого разворота"
+        )
+
+    else:
+
+        entry_trigger = (
+            "Ждать более ясной структуры рынка"
+        )
+
+    # ========================================
+    # 11. ОБЪЯСНЕНИЕ
+    # ========================================
+
+    if entry_ready:
+
+        entry_reason = (
+            "Условия достаточно сильные, "
+            "чтобы искать подтверждённый вход"
+        )
+
+    elif late_entry:
+
+        entry_reason = (
+            "Направление может быть правильным, "
+            "но текущая цена уже не даёт безопасного входа"
+        )
+
+    elif entry_risk == "EXTREME":
+
+        entry_reason = (
+            "Риск слишком высокий, сделку лучше пропустить"
+        )
+
+    elif entry_risk == "HIGH":
+
+        entry_reason = (
+            "Подтверждений недостаточно для качественного входа"
+        )
+
+    else:
+
+        entry_reason = (
+            "Сценарий интересный, "
+            "но точка входа ещё не подтверждена"
+        )
+
+    # ========================================
+    # 12. СОХРАНЯЕМ В CONTEXT
+    # ========================================
+
+    context["entry_score"] = entry_score
+    context["entry_risk"] = entry_risk
+    context["entry_ready"] = entry_ready
+    context["entry_direction"] = entry_direction
+    context["entry_trigger"] = entry_trigger
+    context["entry_reason"] = entry_reason
+    context["late_entry"] = late_entry
+
+    context["entry_positive_factors"] = (
+        positive_factors[:4]
+    )
+
+    context["entry_risk_factors"] = (
+        risk_factors[:4]
+    )
+
+    return context
+
 
