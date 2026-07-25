@@ -4534,9 +4534,10 @@ def build_message(signal):
     
     {next_move_summary}
     
-    Вероятность сценария: <b>{decision.get("scenario_probability", 50)}%</b>
-    🤖 Надёжность анализа: <b>{confidence}%</b>
-    
+    🎯 Решение Chief: <b>{decision.get("trade_state", "WATCH")}</b>
+    📍 Стадия: <b>{decision.get("market_stage_v6", "UNCERTAIN")}</b>
+    🤖 Качество данных: <b>{confidence}%</b>
+        
     ━━━━━━━━━━━━━━
 
     ⭐ <b>SMART SCORE</b>
