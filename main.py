@@ -1979,6 +1979,35 @@ def chief_trader(signal):
 
     # =====================================
     # CONSENSUS ENGINE
+    # =====================================
+    
+    active_votes = continue_votes + exhaustion_votes
+    
+    if active_votes == 0:
+    
+        consensus = 0.0
+    
+    else:
+    
+        consensus = max(
+            continue_votes,
+            exhaustion_votes
+        ) / active_votes
+    
+    consensus_percent = round(
+        consensus * 100
+    )
+    
+    print(
+        "[CONSENSUS]",
+        signal.get("symbol"),
+        f"{continue_votes}/{exhaustion_votes}",
+        f"{consensus_percent}%",
+        flush=True
+    )
+
+    # =====================================
+    # CONSENSUS ENGINE
     # Согласие экспертов
     # =====================================
 
