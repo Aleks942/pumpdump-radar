@@ -826,4 +826,317 @@ def calculate_market_health(signal, context):
 
     return context
 
+# ============================================
+# MARKET STAGE ENGINE
+# Определяет стадию текущего пампа или дампа
+# ============================================
+
+def classify_market_stage(signal, context):
+
+    """
+    Определяет стадию уже найденного движения.
+
+    START:
+        движение раннее и поддерживается.
+
+    EXPANSION:
+        импульс развивается и остаётся здоровым.
+
+    CLIMAX:
+        цена уже прошла слишком много;
+        вход по направлению движения становится поздним.
+
+    WEAKENING:
+        движение теряет энергию и встречает сопротивление.
+
+    REVERSAL:
+        противоположная сторона получила сильное
+        и согласованное преимущество.
+
+    UNCERTAIN:
+        данных недостаточно или сигналы конфликтуют.
+    """
+
+    move_type = str(
+        context.get("move_type")
+        or signal.get("type")
+        or ""
+    ).upper()
+
+    window = str(
+        context.get("window")
+        or signal.get("window")
+        or ""
+    ).lower()
+
+    change = abs(
+        safe_float(
+            context.get(
+                "change",
+                signal.get("change")
+            ),
+            0.0
+        )
+    )
+
+    buyers_power = safe_int(
+        context.get("buyers_power"),
+        50
+    )
+
+    sellers_power = safe_int(
+        context.get("sellers_power"),
+        50
+    )
+
+    move_energy = safe_int(
+        context.get("move_energy"),
+        0
+    )
+
+    market_health = safe_int(
+        context.get("market_health"),
+        0
+    )
+
+    consensus = safe_int(
+        context.get("consensus"),
+        0
+    )
+
+    data_quality = safe_int(
+        context.get("data_quality"),
+        0
+    )
+
+    oi_change = context.get("oi_change")
+
+    oi_acceleration = safe_float(
+        context.get("oi_acceleration"),
+        0.0
+    )
+
+    # ========================================
+    # 1. КТО ПОДДЕРЖИВАЕТ ТЕКУЩЕЕ ДВИЖЕНИЕ
+    # ========================================
+
+    if move_type == "PUMP":
+
+        movement_power = buyers_power
+        opposite_power = sellers_power
+
+    elif move_type == "DUMP":
+
+        movement_power = sellers_power
+        opposite_power = buyers_power
+
+    else:
+
+        context["market_stage"] = "UNCERTAIN"
+        context["stage_reason"] = (
+            "Тип движения не определён"
+        )
+
+        return context
+
+    power_difference = (
+        movement_power
+        - opposite_power
+    )
+
+    context["movement_power"] = movement_power
+    context["opposite_power"] = opposite_power
+    context["power_difference"] = power_difference
+
+    # ========================================
+    # 2. ПРОВЕРКА ДОСТАТОЧНОСТИ ДАННЫХ
+    # ========================================
+
+    if (
+        data_quality < 35
+        or context.get("available_modules", 0) < 3
+    ):
+
+        context["market_stage"] = "UNCERTAIN"
+
+        context["stage_reason"] = (
+            "Недостаточно данных для определения стадии"
+        )
+
+        return context
+
+    # ========================================
+    # 3. REVERSAL
+    #
+    # Противоположная сторона явно сильнее,
+    # энергия движения низкая,
+    # аналитики достаточно согласны.
+    # ========================================
+
+    if (
+        opposite_power >= 72
+        and power_difference <= -44
+        and move_energy <= 48
+        and consensus >= 65
+    ):
+
+        context["market_stage"] = "REVERSAL"
+
+        context["stage_reason"] = (
+            "Противоположная сторона получила "
+            "сильное подтверждённое преимущество"
+        )
+
+        return context
+
+    # ========================================
+    # 4. WEAKENING
+    #
+    # Движение ещё не развернулось,
+    # но уже теряет здоровье и энергию.
+    # ========================================
+
+    weakening_conditions = 0
+
+    if opposite_power >= 58:
+        weakening_conditions += 1
+
+    if move_energy < 55:
+        weakening_conditions += 1
+
+    if market_health < 58:
+        weakening_conditions += 1
+
+    if power_difference < 15:
+        weakening_conditions += 1
+
+    if (
+        oi_change is not None
+        and safe_float(oi_change, 0) < -2
+    ):
+        weakening_conditions += 1
+
+    if oi_acceleration < -1:
+        weakening_conditions += 1
+
+    if weakening_conditions >= 3:
+
+        context["market_stage"] = "WEAKENING"
+
+        context["stage_reason"] = (
+            "Движение теряет энергию "
+            "и встречает усиливающееся сопротивление"
+        )
+
+        return context
+
+    # ========================================
+    # 5. CLIMAX
+    #
+    # Движение сильное, но уже слишком растянуто.
+    # Это не разворот, но вход по движению поздний.
+    # ========================================
+
+    climax_by_change = False
+
+    if window == "5m" and change >= 7:
+        climax_by_change = True
+
+    elif window == "10m" and change >= 8:
+        climax_by_change = True
+
+    elif window == "20m" and change >= 9:
+        climax_by_change = True
+
+    elif window == "30m" and change >= 10:
+        climax_by_change = True
+
+    if (
+        climax_by_change
+        and movement_power >= 60
+    ):
+
+        context["market_stage"] = "CLIMAX"
+
+        context["stage_reason"] = (
+            "Импульс остаётся сильным, "
+            "но цена уже прошла слишком большое расстояние"
+        )
+
+        return context
+
+    # ========================================
+    # 6. START
+    #
+    # Раннее движение:
+    # цена ещё не ушла далеко,
+    # сторона движения сильнее,
+    # энергия и здоровье хорошие.
+    # ========================================
+
+    early_change_limit = {
+        "5m": 4.5,
+        "10m": 5.0,
+        "20m": 5.5,
+        "30m": 6.0,
+    }.get(
+        window,
+        5.0
+    )
+
+    if (
+        change <= early_change_limit
+        and movement_power >= 68
+        and power_difference >= 36
+        and move_energy >= 65
+        and market_health >= 62
+        and consensus >= 60
+    ):
+
+        context["market_stage"] = "START"
+
+        context["stage_reason"] = (
+            "Движение ещё раннее и подтверждено "
+            "несколькими рыночными факторами"
+        )
+
+        return context
+
+    # ========================================
+    # 7. EXPANSION
+    #
+    # Движение развивается:
+    # энергия сохраняется,
+    # доминирующая сторона удерживает контроль.
+    # ========================================
+
+    if (
+        movement_power >= 60
+        and power_difference >= 20
+        and move_energy >= 58
+        and market_health >= 58
+    ):
+
+        context["market_stage"] = "EXPANSION"
+
+        context["stage_reason"] = (
+            "Импульс развивается, "
+            "доминирующая сторона сохраняет контроль"
+        )
+
+        return context
+
+    # ========================================
+    # 8. UNCERTAIN
+    # ========================================
+
+    context["market_stage"] = "UNCERTAIN"
+
+    context["stage_reason"] = (
+        "Рыночные показатели пока не формируют "
+        "ясную стадию движения"
+    )
+
+    return context
+
 
