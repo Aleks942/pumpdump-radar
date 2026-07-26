@@ -2100,7 +2100,7 @@ def build_message(signal):
     # Единственный источник решения
     # =========================
     
-    decision = chief["decision"]
+    decision = chief
     
     smart = signal.get("smart_score", {})
     
