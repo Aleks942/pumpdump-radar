@@ -821,6 +821,16 @@ def analyze(ticker):
         else:
             continue
 
+        print(
+            "[FILTERED]",
+            symbol,
+            window_name,
+            "change=", round(change, 2),
+            "need pump=", cfg["pump"],
+            "need dump=", cfg["dump"],
+            flush=True
+        )
+
         
         print(
             "[MOVE FOUND]",
