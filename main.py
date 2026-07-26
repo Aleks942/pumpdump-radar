@@ -2230,7 +2230,10 @@ def build_message(signal):
     
 
     market_summary = decision["market_summary"]
-    stronger_summary = decision["stronger_summary"]
+    stronger_summary = decision.get(
+        "control_summary",
+        ""
+    )
     action_summary = decision["action_summary"]
     next_move_summary = decision["next_move_summary"]
         
