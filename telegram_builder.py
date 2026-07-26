@@ -126,14 +126,14 @@ def build_power_block(decision):
     )
 
 # ============================================
-# REASONS
+# CHIEF VERDICT
 # ============================================
 
-def build_reason_block(decision):
+def build_reason_block(signal, decision):
 
-    reasons = decision.get(
-        "confirmations",
-        []
+    reasons = build_verdict(
+        signal,
+        decision
     )
 
     if not reasons:
@@ -141,16 +141,10 @@ def build_reason_block(decision):
 
     txt = "\n━━━━━━━━━━━━\n"
 
-    for r in reasons[:3]:
+    txt += "\n🎯 Вердикт Chief\n"
 
-        txt += f"\n✔ {r}"
+    for r in reasons:
+
+        txt += f"\n\n✔ {r}"
 
     return txt
-
-# ============================================
-# FOOTER
-# ============================================
-
-def build_footer():
-
-    return "\n\n🤖 Chief Trader V7"
