@@ -973,23 +973,7 @@ def analyze(ticker):
         
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
 
-        print(
-            "[TEST CHIEF]",
-            symbol,
-            window_name,
-            round(change, 2),
-            flush=True
-        )
         
-        test = chief_trader_v7(temp_signal)
-        
-        print(
-            "[TEST RESULT]",
-            test.get("trade_state"),
-            test.get("stage"),
-            test.get("quality_score"),
-            flush=True
-        )
 
         money_scenario = detect_money_scenario(temp_signal)
         
