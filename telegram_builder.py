@@ -30,7 +30,10 @@ def build_short_message(signal):
     )
 
     parts.append(
-        build_reason_block(decision)
+        build_reason_block(
+            signal,
+            decision
+        )
     )
 
     parts.append(
