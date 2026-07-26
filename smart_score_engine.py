@@ -10,201 +10,170 @@ SMART SCORE ENGINE V1
 
 def calculate_smart_score(signal):
 
-    score = 0
+    decision = signal.get("decision", {})
+    context = decision.get("context", {})
 
+    score = 0
     reasons = []
 
-    # =========================
-    # OI
-    # =========================
+    # =====================================
+    # MARKET HEALTH (0-25)
+    # =====================================
 
-    oi = signal.get("oi_change")
+    health = context.get("market_health", 0)
 
-    if oi is not None:
+    score += round(health * 0.25)
 
-        if oi >= 10:
+    if health >= 80:
+        reasons.append("Рынок находится в здоровом состоянии")
 
-            score += 20
-            reasons.append("Очень сильный рост OI")
+    elif health >= 60:
+        reasons.append("Рынок остаётся стабильным")
 
-        elif oi >= 5:
+    # =====================================
+    # ENTRY SCORE (0-25)
+    # =====================================
 
-            score += 15
-            reasons.append("Растёт OI")
+    entry = context.get("entry_score", 0)
 
-        elif oi >= 2:
+    score += round(entry * 0.25)
 
-            score += 8
-            reasons.append("OI усиливается")
+    if entry >= 90:
+        reasons.append("Очень сильная точка входа")
 
-        elif oi <= -10:
+    elif entry >= 70:
+        reasons.append("Есть хорошие условия для сделки")
 
-            score += 20
-            reasons.append("Сильный выход денег")
+    # =====================================
+    # CONSENSUS (0-20)
+    # =====================================
 
-        elif oi <= -5:
+    consensus = context.get("consensus", 0)
 
-            score += 15
-            reasons.append("Деньги выходят")
+    score += round(consensus * 0.20)
 
-    # =========================
-    # Давление
-    # =========================
+    if consensus >= 80:
+        reasons.append("Большинство аналитиков согласны")
 
-    pressure = signal.get("pressure_state", "")
+    elif consensus >= 60:
+        reasons.append("Аналитики в основном поддерживают сценарий")
 
-    if "BUY+++" in pressure:
+    # =====================================
+    # MOVE ENERGY (0-15)
+    # =====================================
 
-        score += 15
-        reasons.append("Сильное давление покупателей")
+    energy = context.get("move_energy", 0)
 
-    elif "SELL+++" in pressure:
+    score += round(energy * 0.15)
 
-        score += 15
-        reasons.append("Сильное давление продавцов")
+    if energy >= 80:
+        reasons.append("Импульс сохраняет высокую энергию")
 
-    elif "BUY" in pressure:
+    elif energy >= 60:
+        reasons.append("Движение ещё не ослабло")
 
-        score += 8
-        reasons.append("Покупатели сильнее")
+    # =====================================
+    # DATA QUALITY (0-15)
+    # =====================================
 
-    elif "SELL" in pressure:
+    quality = context.get("data_quality", 0)
 
-        score += 8
-        reasons.append("Продавцы сильнее")
+    score += round(quality * 0.15)
 
-    # =========================
-    # Spot
-    # =========================
+    if quality >= 90:
+        reasons.append("Все ключевые данные доступны")
 
-    spot = signal.get("spot_cvd") or {}
+    elif quality >= 70:
+        reasons.append("Данных достаточно для анализа")
 
-    if spot.get("available"):
+    # =====================================
+    # Бонусы Rule Engine
+    # =====================================
 
-        cvd = abs(
-            spot.get("cvd_percent", 0)
-        )
+    trade = decision.get("trade_state", "IGNORE")
 
-        if cvd >= 15:
-
-            score += 15
-            reasons.append("Сильный Spot CVD")
-
-        elif cvd >= 5:
-
-            score += 8
-            reasons.append("Spot поддерживает движение")
-
-    # =========================
-    # Ликвидации
-    # =========================
-
-    liq = signal.get("liquidations") or {}
-
-    total_liq = (
-        liq.get("long_liq", 0)
-        +
-        liq.get("short_liq", 0)
-    )
-
-    if total_liq >= 500000:
-
-        score += 15
-        reasons.append("Большая ликвидация")
-
-    elif total_liq >= 100000:
-
-        score += 8
-        reasons.append("Есть ликвидации")
-
-    # =========================
-    # Размер движения
-    # =========================
-
-    move = abs(
-        signal.get("change", 0)
-    )
-
-    if 5 <= move <= 8:
-
+    if trade == "ENTRY":
         score += 10
-        reasons.append("Импульс только начинается")
+        reasons.append("Rule Engine разрешает вход")
 
-    elif move > 12:
+    elif trade == "SETUP":
+        score += 5
+        reasons.append("Формируется качественная возможность")
 
-        score -= 10
-        reasons.append("Импульс уже далеко")
+    elif trade == "WATCH":
+        score -= 5
+
+    elif trade == "IGNORE":
+        score -= 15
+
+    # =====================================
+    # Штраф за риск
+    # =====================================
+
+    risk = context.get("entry_risk", "HIGH")
+
+    if risk == "LOW":
+        pass
+
+    elif risk == "MEDIUM":
+        score -= 5
+
+    elif risk == "HIGH":
+        score -= 15
 
     # =====================================
     # Ограничение
     # =====================================
-    
-    score = max(
-        0,
-        min(score, 100)
-    )
-    
+
+    score = max(0, min(score, 100))
+
     # =====================================
-    # Оценка сигнала
+    # Рейтинг
     # =====================================
-    
+
     if score >= 90:
-    
+
         rating = "🟢 Отличный сигнал"
         stars = "⭐⭐⭐⭐⭐"
         quality = "Очень сильный"
-        risk = "Низкий"
         advice = "Можно искать вход"
-    
+
     elif score >= 75:
-    
+
         rating = "🟢 Сильный сигнал"
         stars = "⭐⭐⭐⭐"
         quality = "Сильный"
-        risk = "Низкий"
-        advice = "Стоит внимательно следить"
-    
+        advice = "Сделка выглядит качественно"
+
     elif score >= 60:
-    
+
         rating = "🟡 Хороший сигнал"
         stars = "⭐⭐⭐"
         quality = "Хороший"
-        risk = "Средний"
         advice = "Желательно дождаться подтверждения"
-    
+
     elif score >= 40:
-    
+
         rating = "🟠 Слабый сигнал"
         stars = "⭐⭐"
         quality = "Слабый"
-        risk = "Высокий"
         advice = "Лучше не торопиться"
-    
+
     else:
-    
+
         rating = "🔴 Очень слабый"
         stars = "⭐"
         quality = "Очень слабый"
-        risk = "Очень высокий"
         advice = "Лучше пропустить"
-    # =====================================
-    # RETURN
-    # =====================================
-    
+
     return {
 
         "score": score,
-    
         "rating": rating,
-    
         "stars": stars,
-    
         "quality": quality,
-    
         "risk": risk,
-    
         "advice": advice,
-    
-        "reasons": reasons,
-    
+        "reasons": reasons[:5],
+
     }
