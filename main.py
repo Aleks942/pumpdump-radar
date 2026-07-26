@@ -1047,6 +1047,24 @@ def analyze(ticker):
         )
         
         temp_signal["decision"] = decision
+
+        # ====================================
+        # SMART SCORE ENGINE
+        # ====================================
+        
+        smart_score = calculate_smart_score(
+            temp_signal
+        )
+        
+        temp_signal["smart_score"] = smart_score
+        
+        print(
+            "[SMART_SCORE]",
+            symbol,
+            smart_score.get("score"),
+            smart_score.get("rating"),
+            flush=True
+        )
         
         print(
             "[CHIEF_V7]",
