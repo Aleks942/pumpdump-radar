@@ -151,3 +151,11 @@ def build_reason_block(signal, decision):
         txt += f"\n\n✔ {r}"
 
     return txt
+
+# ============================================
+# FOOTER
+# ============================================
+
+def build_footer():
+
+    return "\n\n🤖 Chief Trader V7"
