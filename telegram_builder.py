@@ -3,6 +3,8 @@
 # ============================================
 
 from datetime import datetime
+from chief_explainer import build_verdict
+
 
 
 def build_short_message(signal):
