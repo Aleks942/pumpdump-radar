@@ -1872,7 +1872,7 @@ def _chief_build_explanation(
     }
 
 
-def chief_trader(signal):
+def chief_trader_v7(signal):
 
     """
     Chief Trader V6.
