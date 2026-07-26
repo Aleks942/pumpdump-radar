@@ -2585,7 +2585,7 @@ while True:
             )
             continue
     
-        send_telegram(build_message(signal))
+        send_telegram(build_short_message(signal))
         register_signal(signal)
     
         try:
