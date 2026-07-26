@@ -1055,6 +1055,36 @@ def analyze(ticker):
             "next_move_summary",
             ""
         )
+
+        decision["stronger_summary"] = decision.get(
+            "control_summary",
+            ""
+        )
+        
+        decision["decision_text"] = decision.get(
+            "action_summary",
+            ""
+        )
+        
+        decision["move_status"] = decision.get(
+            "market_summary",
+            ""
+        )
+        
+        decision["market_phase"] = decision.get(
+            "stage",
+            ""
+        )
+        
+        decision["reasons"] = decision.get(
+            "confirmations",
+            []
+        )
+        
+        decision["explanation"] = decision.get(
+            "confirmations",
+            []
+        )
         
         temp_signal["decision"] = decision
 
