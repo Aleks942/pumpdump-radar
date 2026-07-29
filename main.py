@@ -641,12 +641,7 @@ def analyze(ticker):
             flush=True
         )
 
-        print(
-            "[OI_LEN]",
-            symbol,
-            len(OI_HISTORY[symbol])
-        )
-
+        
         if symbol == "DOGEUSDT":
             print(
                 "[DOGE_HISTORY]",
@@ -661,13 +656,6 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) >= 2:
 
             old_oi = OI_HISTORY[symbol][0]
-
-            print(
-                "[OLD_OI]",
-                symbol,
-                old_oi,
-                oi
-            )
 
             if old_oi > 0:
 
