@@ -791,26 +791,7 @@ def analyze(ticker):
                 round(change, 2)
             )
 
-        print(
-            "[WINDOW]",
-            symbol,
-            window_name,
-            "change=", round(change, 2),
-            "pump=", cfg["pump"],
-            "dump=", cfg["dump"],
-            flush=True
-        )
-        print(
-            "[CHECK]",
-            symbol,
-            window_name,
-            "change=", change,
-            "pump=", cfg["pump"],
-            "dump=", cfg["dump"],
-            "pump_ok=", change >= cfg["pump"],
-            "dump_ok=", change <= cfg["dump"],
-            flush=True
-        )
+       
         move_type = None
 
         if change >= cfg["pump"]:
