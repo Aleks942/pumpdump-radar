@@ -663,18 +663,9 @@ def analyze(ticker):
                     (oi - old_oi) / old_oi
                 ) * 100
 
-                print(
-                    "[OI_DEBUG]",
-                    symbol,
-                    len(OI_HISTORY[symbol]),
-                    round(oi_change, 2)
-                )
+                
 
-                print(
-                    "[OI_CHANGE]",
-                    symbol,
-                    round(oi_change, 4)
-                )
+                
 
                 if oi_change >= 5:
                     print(
@@ -695,11 +686,7 @@ def analyze(ticker):
         oi_change
     )
     
-    print(
-        "[OI_CHANGE_HISTORY]",
-        symbol,
-        [round(x, 2) for x in oi_change_history]
-    )
+   
 
     oi_slope = get_oi_slope(symbol)
 
