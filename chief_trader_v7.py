@@ -945,13 +945,7 @@ def _chief_collect_votes(signal):
 
         except Exception as error:
 
-            print(
-                "[CHIEF_V6_VOTE_ERROR]",
-                signal.get("symbol"),
-                module_name,
-                error,
-                flush=True
-            )
+           
 
             result = {
 
