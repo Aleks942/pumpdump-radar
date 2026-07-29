@@ -1902,20 +1902,7 @@ def collect_votes(signal):
 
         except Exception as e:
 
-            print(
-
-                "[VOTE ERROR]",
-
-                name,
-
-                signal.get("symbol"),
-
-                e,
-
-                flush=True
-
-            )
-
+           
             result = {
 
                 "vote": "UNKNOWN",
