@@ -92,3 +92,55 @@ def get_weight(
             DEFAULT_WEIGHTS.get(module_name, 1.0),
         )
     )
+def update_module_statistics(votes, result):
+    """
+    Обновляет статистику модулей.
+
+    votes - список голосов Chief Trader
+    result - WIN / LOSS / FLAT
+    """
+
+    if result == "FLAT":
+        return
+
+    weights = load_weights()
+
+    changed = False
+
+    for vote in votes:
+
+        module = vote.get("module")
+
+        if module not in weights:
+            continue
+
+        direction = vote.get("vote")
+
+        if result == "WIN":
+
+            if direction == "CONTINUE":
+                weights[module] += 0.01
+
+            elif direction == "EXHAUSTION":
+                weights[module] -= 0.01
+
+        elif result == "LOSS":
+
+            if direction == "CONTINUE":
+                weights[module] -= 0.01
+
+            elif direction == "EXHAUSTION":
+                weights[module] += 0.01
+
+        weights[module] = max(
+            0.5,
+            min(
+                2.0,
+                round(weights[module], 3)
+            )
+        )
+
+        changed = True
+
+    if changed:
+        save_weights(weights)
