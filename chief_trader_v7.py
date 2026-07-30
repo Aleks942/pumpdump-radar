@@ -986,7 +986,14 @@ def _chief_collect_votes(signal):
             result.get("weight"),
             0
         )
-
+        
+        adaptive = ADAPTIVE_WEIGHTS.get(
+            module_name,
+            1.0
+        )
+        
+        weight *= adaptive
+        
         weight = max(
             0.0,
             min(10.0, weight)
