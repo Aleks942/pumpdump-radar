@@ -191,6 +191,10 @@ def register_scenario_signal(signal):
             signal.get("money") or {}
         ).get("pressure"),
 
+        "votes": (
+            signal.get("decision") or {}
+        ).get("votes", []),
+
         "max_expected_profit_pct": 0.0,
         "max_expected_drawdown_pct": 0.0,
 
