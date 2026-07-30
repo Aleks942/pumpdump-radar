@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
+from adaptive_learning import load_weights
+
+ADAPTIVE_WEIGHTS = load_weights()
 
 # ============================================
 # CHIEF TRADER V7
