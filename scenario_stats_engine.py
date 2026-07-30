@@ -2,6 +2,7 @@ import json
 import os
 import time
 import threading
+from adaptive_learning import update_module_statistics
 
 
 STATS_FILE = os.getenv(
@@ -348,6 +349,11 @@ def update_scenario_results(price_map):
                 }
 
                 checks[checkpoint] = result
+
+                update_module_statistics(
+                    record.get("votes", []),
+                    result["result"]
+                )
                 updated = True
 
                 print(
