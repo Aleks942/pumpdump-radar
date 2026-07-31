@@ -373,11 +373,15 @@ def update_scenario_results(price_map):
                 for checkpoint in CHECKPOINTS
             ):
                 record["completed"] = True
-
-                update_module_statistics(
-                    record.get("votes", []),
-                    checks["60m"]["result"]
-                )
+            
+                last_result = checks.get("60m")
+            
+                if last_result:
+                    update_module_statistics(
+                        record.get("votes", []),
+                        last_result["result"]
+                    )
+            
                 updated = True
 
         if updated:
