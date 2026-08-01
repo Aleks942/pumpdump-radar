@@ -989,7 +989,7 @@ def _chief_collect_votes(signal):
             0
         )
         
-        adaptive = ADAPTIVE_WEIGHTS.get(
+        adaptive = adaptive_weights.get(
             module_name,
             1.0
         )
