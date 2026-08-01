@@ -144,3 +144,15 @@ def update_module_statistics(votes, result):
 
     if changed:
         save_weights(weights)
+
+        print(
+            "[ADAPTIVE_FILE]",
+            WEIGHTS_FILE,
+            flush=True
+        )
+
+        print(
+            "[ADAPTIVE_UPDATE]",
+            weights,
+            flush=True
+        )
