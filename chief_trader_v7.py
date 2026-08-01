@@ -934,6 +934,8 @@ def _chief_collect_votes(signal):
 
     votes = []
 
+    adaptive_weights = load_weights()
+
     for module_name, vote_function in vote_functions:
 
         try:
