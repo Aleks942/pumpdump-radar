@@ -5119,9 +5119,8 @@ def make_trade_decision(context):
                 validation
             )
 
-            result["checked_rules"] = (
-            result["votes"] = context.get("votes", [])   
-            )
+            result["checked_rules"] = checked_rules
+            result["votes"] = context.get("votes", [])
 
             print(
                 "[RULE_ENGINE_V7]",
