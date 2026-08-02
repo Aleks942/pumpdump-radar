@@ -376,6 +376,13 @@ def update_scenario_results(price_map):
             
                 last_result = checks.get("60m")
             
+                print(
+                    "[ADAPTIVE_CALL]",
+                    record["symbol"],
+                    last_result,
+                    flush=True
+                )
+            
                 if last_result:
                     update_module_statistics(
                         record.get("votes", []),
@@ -383,6 +390,3 @@ def update_scenario_results(price_map):
                     )
             
                 updated = True
-
-        if updated:
-            _save_records(records)
