@@ -615,6 +615,7 @@ def save_market_signal(signal):
 
                         applied_rules,
                         explanation
+                        votes
                     )
                     VALUES (
                         ?, ?, ?,
