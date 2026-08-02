@@ -756,6 +756,8 @@ def update_market_memory(current_prices: dict):
                         checked_30m_at,
                         checked_60m_at,
 
+                        votes,
+
                         completed
 
                     FROM market_signals
