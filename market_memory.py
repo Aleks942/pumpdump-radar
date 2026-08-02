@@ -99,6 +99,7 @@ def initialize_market_memory():
 
                         applied_rules TEXT,
                         explanation TEXT,
+                        votes TEXT,
 
                         price_15m REAL,
                         move_15m_pct REAL,
