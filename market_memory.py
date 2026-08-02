@@ -912,6 +912,34 @@ def update_market_memory(current_prices: dict):
                             f"[60M COMPLETE] {symbol} {move:.2f}%",
                             flush=True
                         )
+                        import json
+
+                        votes = []
+                        
+                        try:
+                            votes = json.loads(row["votes"] or "[]")
+                        except Exception:
+                            votes = []
+                        
+                        if move >= 0.25:
+                            result = "WIN"
+                        elif move <= -0.25:
+                            result = "LOSS"
+                        else:
+                            result = "FLAT"
+                        
+                        print(
+                            "[ADAPTIVE_CALL]",
+                            symbol,
+                            result,
+                            len(votes),
+                            flush=True
+                        )
+                        
+                        update_module_statistics(
+                            votes,
+                            result
+                        )
                     connection.commit()
 
         
