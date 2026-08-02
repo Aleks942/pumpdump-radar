@@ -540,6 +540,7 @@ def save_market_signal(signal):
 
     applied_rules = decision.get("applied_rules") or []
     explanation = decision.get("explanation") or []
+    votes = decision.get("votes") or []
 
     try:
         import json
