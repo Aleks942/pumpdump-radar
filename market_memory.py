@@ -554,7 +554,10 @@ def save_market_signal(signal):
             explanation,
             ensure_ascii=False
         )
-
+        votes_json = json.dumps(
+            votes,
+            ensure_ascii=False
+        )
     except Exception:
         applied_rules_json = "[]"
         explanation_json = "[]"
