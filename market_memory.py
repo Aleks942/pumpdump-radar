@@ -680,6 +680,7 @@ def save_market_signal(signal):
 
                         applied_rules_json,
                         explanation_json,
+                        votes_json,
                     )
                 )
 
