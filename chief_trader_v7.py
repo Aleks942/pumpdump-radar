@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 from adaptive_learning import load_weights
-from state_engine import STATE_MAP
+from state_engine import STATE_MAP, detect_market_state
 
 # ADAPTIVE_WEIGHTS = load_weights()
 
