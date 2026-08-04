@@ -5246,23 +5246,30 @@ def chief_trader_v7(signal):
         context
     )
 
+    print(
+        "[FINAL_STATE]",
+        context.get("market_state"),
+        flush=True
+    )
+
     # ============================================
     # DEBUG CONTEXT
     # ============================================
-    
+
     print("\n")
     print("=" * 70)
     print("[CHIEF V7 CONTEXT]")
     print("=" * 70)
-    
+
     for key in sorted(context.keys()):
-    
+
         print(
             f"{key:<25} : {context[key]}"
         )
-    
+
     print("=" * 70)
     print("\n")
+
     # ============================================
     # 6. Итоговое решение
     # ============================================
@@ -5271,12 +5278,5 @@ def chief_trader_v7(signal):
         context
     )
 
-    print(
-        "[FINAL_STATE]",
-        context.get("market_state"),
-        flush=True
-    )
-
     return decision
-
 
