@@ -5058,10 +5058,10 @@ def make_trade_decision(context):
         )
 
     # ============================================
-    # STATE ENGINE V8
+    # Пока Rule Engine работает через market_stage
     # ============================================
     
-   stage = str(
+    stage = str(
         context.get("market_stage")
         or "UNCERTAIN"
     ).upper()
