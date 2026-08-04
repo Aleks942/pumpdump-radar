@@ -5271,6 +5271,12 @@ def chief_trader_v7(signal):
         context
     )
 
+    print(
+        "[FINAL_STATE]",
+        context.get("market_state"),
+        flush=True
+    )
+
     return decision
 
 
