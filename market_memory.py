@@ -614,7 +614,7 @@ def save_market_signal(signal):
                         trend_score,
 
                         applied_rules,
-                        explanation
+                        explanation,
                         votes
                     )
                     VALUES (
@@ -629,7 +629,7 @@ def save_market_signal(signal):
                         ?, ?, ?,
                         ?, ?,
                         ?,
-                        ?, ?
+                        ?, ?, ?,
                     )
                     """,
                     (
