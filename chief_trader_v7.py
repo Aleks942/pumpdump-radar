@@ -1278,8 +1278,7 @@ def _chief_build_context(signal, votes):
         * 100
     )
 
-    return {
-
+    context = { 
         "votes": votes,
 
         "continue_votes": continue_votes,
@@ -1349,6 +1348,9 @@ def _chief_build_context(signal, votes):
         "short_liq": short_liq,
 
     }
+    context["market_state"] = detect_market_state(context)
+
+    return context
 
 
 def _chief_classify_stage(signal, context):
