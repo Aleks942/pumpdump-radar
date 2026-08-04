@@ -5213,6 +5213,12 @@ def chief_trader_v7(signal):
         votes
     )
 
+    print(
+        "[STATE_ENGINE]",
+        context.get("market_state"),
+        flush=True
+    )
+
     # ============================================
     # 3. Здоровье рынка
     # ============================================
