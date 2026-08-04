@@ -5041,11 +5041,23 @@ def make_trade_decision(context):
     """
 
     if not isinstance(context, dict):
-
+ 
         return create_default_decision(
             {},
             "Chief получил некорректный контекст"
         )
+
+    # ============================================
+    # STATE ENGINE V8
+    # ============================================
+    
+    state_name = str(
+        context.get("market_state")
+        or ""
+    ).upper()
+    
+    market_state = STATE_MAP.get(state_name)
+    
 
     stage = str(
         context.get("market_stage")
