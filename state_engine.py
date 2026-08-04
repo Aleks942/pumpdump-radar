@@ -107,3 +107,35 @@ STATE_MAP = {
     EXIT.name: EXIT,
 
 }
+
+def detect_market_state(context):
+    """
+    Определяет новое состояние рынка.
+    """
+
+    energy = context.get("move_energy", 0)
+    health = context.get("market_health", 0)
+    entry = context.get("entry_score", 0)
+
+    continue_power = context.get("buyers_power", 50)
+    exhaustion_power = context.get("sellers_power", 50)
+
+    if entry >= 95 and energy >= 80:
+        return ENTRY.name
+
+    if entry >= 85:
+        return READY.name
+
+    if energy >= 85 and health >= 80:
+        return EXPANSION.name
+
+    if exhaustion_power >= 75:
+        return EXHAUSTION.name
+
+    if continue_power >= 70:
+        return ACTIVE.name
+
+    if energy >= 60:
+        return PREMOVE.name
+
+    return ACCUMULATION.name
