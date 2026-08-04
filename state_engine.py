@@ -121,21 +121,21 @@ def detect_market_state(context):
     exhaustion_power = context.get("sellers_power", 50)
 
     if entry >= 95 and energy >= 80:
-        return ENTRY.name
+        return ENTRY
 
     if entry >= 85:
-        return READY.name
+        return READY
 
     if energy >= 85 and health >= 80:
-        return EXPANSION.name
+        return EXPANSION
 
     if exhaustion_power >= 75:
-        return EXHAUSTION.name
+        return EXHAUSTION
 
     if continue_power >= 70:
-        return ACTIVE.name
+        return ACTIVE
 
     if energy >= 60:
-        return PREMOVE.name
+        return PREMOVE
 
-    return ACCUMULATION.name
+    return ACCUMULATION
