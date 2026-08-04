@@ -561,6 +561,7 @@ def save_market_signal(signal):
     except Exception:
         applied_rules_json = "[]"
         explanation_json = "[]"
+        votes_json = "[]"
 
     with _db_lock:
 
