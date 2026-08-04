@@ -5059,10 +5059,16 @@ def make_trade_decision(context):
     market_state = STATE_MAP.get(state_name)
     
 
-    stage = str(
-        context.get("market_stage")
-        or "UNCERTAIN"
-    ).upper()
+    if market_state:
+
+        stage = market_state.stage
+    
+    else:
+    
+        stage = str(
+            context.get("market_stage")
+            or "UNCERTAIN"
+        ).upper()
 
     rules = RULEBOOK.get(stage)
 
