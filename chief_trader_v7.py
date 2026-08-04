@@ -5244,6 +5244,20 @@ def chief_trader_v7(signal):
         signal,
         context
     )
+    # ============================================
+    # NEW STATE ENGINE
+    # ============================================
+    
+    market_state = detect_market_state(context)
+    
+    context["market_state"] = market_state.name
+    context["market_priority"] = market_state.priority
+    context["market_description"] = market_state.description
+    
+    context["allow_entry"] = market_state.allow_entry
+    context["allow_hold"] = market_state.allow_hold
+    context["allow_exit"] = market_state.allow_exit
+
 
     # ============================================
     # 5. Риск входа
