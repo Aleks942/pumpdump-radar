@@ -429,7 +429,7 @@ def get_oi_change(symbol, minutes=5):
 
     # Не выдаём "5m change", если ближайшая точка
     # слишком далеко от настоящих 5 минут.
-    tolerance = max(30, minutes * 60 * 0.35)
+    tolerance = max(15, minutes * 60 * 0.10)
 
     actual_age = now_ts - older["ts"]
 
