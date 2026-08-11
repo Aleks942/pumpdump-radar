@@ -321,6 +321,9 @@ def on_message(ws, message):
 # ============================================================
 
 def on_open(ws):
+    mark_stream_connected("spot")
+    mark_stream_connected("swap")
+    
     print(
         "[V3_WS_OPEN]",
         flush=True,
@@ -367,6 +370,10 @@ def on_close(
     close_status_code,
     close_msg,
 ):
+
+    mark_stream_disconnected("spot")
+    mark_stream_disconnected("swap")
+    
     print(
         "[V3_WS_CLOSED]",
         close_status_code,
