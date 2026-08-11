@@ -19,7 +19,7 @@ import threading
 import requests
 import websocket
 
-from trade_flow_collector_v3 import save_trade
+from trade_flow_collector_v3 import save_trade, mark_stream_connected, mark_stream_activity, mark_stream_disconnected
 
 
 OKX_WS_URL = "wss://ws.okx.com:8443/ws/v5/public"
@@ -268,6 +268,10 @@ def handle_trade(
 
 
 def on_message(ws, message):
+
+    mark_stream_activity("spot")
+    mark_stream_activity("swap")
+    
     try:
         payload = json.loads(
             message
