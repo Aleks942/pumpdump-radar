@@ -1,37 +1,48 @@
 # market_data_v3.py
 # PumpDump Radar V3
 #
-# Задача этого модуля:
-# ТОЛЬКО получать и приводить к единому виду рыночные данные.
+# Единый слой рыночных данных V3.
+#
+# Задача:
+# - получить данные рынка
+# - привести их к единому формату
+# - собрать один MarketSnapshot
 #
 # Здесь НЕТ:
 # - LONG / SHORT
 # - Smart Money score
-# - торговых решений
 # - Chief
+# - торговых решений
 # - market stages
-#
-# market_data_v3 отвечает только на вопрос:
-# "Что сейчас происходит на рынке?"
 
 import time
 import requests
-from collections import defaultdict, deque
-from trade_flow_collector_v3 import get_spot_windows, get_futures_windows
 
+from collections import defaultdict, deque
+
+from trade_flow_collector_v3 import (
+    get_spot_windows,
+    get_futures_windows,
+)
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
 
 OKX_BASE = "https://www.okx.com"
 
 REQUEST_TIMEOUT = 12
 
-# Храним timestamped OI snapshots.
-# Это исправляет проблему V2, где OI сравнивался
-# с первым элементом массива без гарантированного временного окна.
-OI_HISTORY = defaultdict(lambda: deque(maxlen=300))
+# OI snapshots храним по timestamp.
+# maxlen здесь является только дополнительной защитой памяти.
+OI_HISTORY = defaultdict(
+    lambda: deque(maxlen=300)
+)
 
 
 # ============================================================
-# COMMON
+# OKX REST
 # ============================================================
 
 def okx_get(path, params=None):
@@ -69,23 +80,29 @@ def okx_get(path, params=None):
         print(
             "[V3_OKX_ERROR]",
             path,
-            exc,
+            repr(exc),
             flush=True,
         )
         return None
 
 
+# ============================================================
+# SYMBOLS
+# ============================================================
+
 def normalize_swap_symbol(symbol):
     """
-    BTCUSDT -> BTC-USDT-SWAP
-    BTC-USDT -> BTC-USDT-SWAP
-    BTC-USDT-SWAP -> BTC-USDT-SWAP
+    BTCUSDT
+    BTC-USDT
+    BTC-USDT-SWAP
+
+    -> BTC-USDT-SWAP
     """
 
     if not symbol:
         return None
 
-    symbol = symbol.upper().strip()
+    symbol = str(symbol).upper().strip()
 
     if symbol.endswith("-USDT-SWAP"):
         return symbol
@@ -107,12 +124,17 @@ def swap_to_spot_symbol(symbol):
     BTC-USDT-SWAP -> BTC-USDT
     """
 
-    swap_symbol = normalize_swap_symbol(symbol)
+    swap_symbol = normalize_swap_symbol(
+        symbol
+    )
 
     if not swap_symbol:
         return None
 
-    return swap_symbol.replace("-USDT-SWAP", "-USDT")
+    return swap_symbol.replace(
+        "-USDT-SWAP",
+        "-USDT",
+    )
 
 
 def public_symbol(symbol):
@@ -120,27 +142,36 @@ def public_symbol(symbol):
     BTC-USDT-SWAP -> BTCUSDT
     """
 
-    swap_symbol = normalize_swap_symbol(symbol)
+    swap_symbol = normalize_swap_symbol(
+        symbol
+    )
 
     if not swap_symbol:
         return None
 
-    return swap_symbol.replace("-USDT-SWAP", "USDT")
+    return swap_symbol.replace(
+        "-USDT-SWAP",
+        "USDT",
+    )
 
 
 # ============================================================
-# PRICE / CANDLES
+# TICKER
 # ============================================================
 
 def get_ticker(symbol):
-    inst_id = normalize_swap_symbol(symbol)
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
 
     data = okx_get(
         "/api/v5/market/ticker",
-        {"instId": inst_id},
+        {
+            "instId": inst_id,
+        },
     )
 
     if not data:
@@ -150,26 +181,52 @@ def get_ticker(symbol):
 
     try:
         return {
-            "symbol": public_symbol(inst_id),
+            "symbol": public_symbol(
+                inst_id
+            ),
             "inst_id": inst_id,
-            "price": float(row.get("last") or 0),
-            "bid": float(row.get("bidPx") or 0),
-            "ask": float(row.get("askPx") or 0),
+
+            "price": float(
+                row.get("last") or 0
+            ),
+
+            "bid": float(
+                row.get("bidPx") or 0
+            ),
+
+            "ask": float(
+                row.get("askPx") or 0
+            ),
+
             "volume_24h_contracts": float(
                 row.get("vol24h") or 0
             ),
+
             "volume_24h_currency": float(
                 row.get("volCcy24h") or 0
             ),
-            "ts": int(row.get("ts") or 0),
+
+            "ts": int(
+                row.get("ts") or 0
+            ),
         }
 
     except (TypeError, ValueError):
         return None
 
 
-def get_candles(symbol, bar="1m", limit=100):
-    inst_id = normalize_swap_symbol(symbol)
+# ============================================================
+# CANDLES
+# ============================================================
+
+def get_candles(
+    symbol,
+    bar="1m",
+    limit=100,
+):
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return []
@@ -197,16 +254,19 @@ def get_candles(symbol, bar="1m", limit=100):
                 "low": float(row[3]),
                 "close": float(row[4]),
                 "volume": float(row[5]),
+
                 "volume_currency": (
                     float(row[6])
                     if len(row) > 6
                     else None
                 ),
+
                 "volume_quote": (
                     float(row[7])
                     if len(row) > 7
                     else None
                 ),
+
                 "confirmed": (
                     row[8] == "1"
                     if len(row) > 8
@@ -214,25 +274,72 @@ def get_candles(symbol, bar="1m", limit=100):
                 ),
             })
 
-        except (TypeError, ValueError, IndexError):
+        except (
+            TypeError,
+            ValueError,
+            IndexError,
+        ):
             continue
 
-    # OKX возвращает новые свечи первыми.
-    # В V3 везде используем:
-    # oldest -> newest
+    # OKX -> newest first.
+    # V3 -> oldest first.
     result.reverse()
 
     return result
 
 
-def get_price_change(symbol, minutes=5):
-    """
-    Изменение цены за фиксированное временное окно.
+# ============================================================
+# PRICE CHANGE
+# ============================================================
 
-    Используем 1m candles, а не "N последних вызовов".
+def _price_change_from_candles(
+    candles,
+    minutes,
+):
+    """
+    Считает изменение цены из УЖЕ загруженных свечей.
+
+    Новый REST-запрос здесь не выполняется.
     """
 
-    minutes = max(1, int(minutes))
+    minutes = max(
+        1,
+        int(minutes),
+    )
+
+    if len(candles) < minutes + 1:
+        return None
+
+    start = candles[
+        -(minutes + 1)
+    ]["open"]
+
+    end = candles[-1]["close"]
+
+    if start <= 0:
+        return None
+
+    return (
+        (end - start)
+        / start
+    ) * 100.0
+
+
+def get_price_change(
+    symbol,
+    minutes=5,
+):
+    """
+    Совместимость для внешних вызовов.
+
+    Для MarketSnapshot эта функция
+    отдельно НЕ вызывается.
+    """
+
+    minutes = max(
+        1,
+        int(minutes),
+    )
 
     candles = get_candles(
         symbol,
@@ -240,18 +347,10 @@ def get_price_change(symbol, minutes=5):
         limit=minutes + 2,
     )
 
-    if len(candles) < minutes + 1:
-        return None
-
-    # Берём open свечи примерно N минут назад
-    # и последний доступный close.
-    start = candles[-(minutes + 1)]["open"]
-    end = candles[-1]["close"]
-
-    if start <= 0:
-        return None
-
-    return ((end - start) / start) * 100.0
+    return _price_change_from_candles(
+        candles,
+        minutes,
+    )
 
 
 # ============================================================
@@ -259,14 +358,18 @@ def get_price_change(symbol, minutes=5):
 # ============================================================
 
 def get_funding(symbol):
-    inst_id = normalize_swap_symbol(symbol)
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
 
     data = okx_get(
         "/api/v5/public/funding-rate",
-        {"instId": inst_id},
+        {
+            "instId": inst_id,
+        },
     )
 
     if not data:
@@ -275,16 +378,27 @@ def get_funding(symbol):
     row = data[0]
 
     try:
-        rate_raw = float(row.get("fundingRate") or 0)
+        rate_raw = float(
+            row.get("fundingRate") or 0
+        )
 
         return {
             "rate_raw": rate_raw,
-            "rate_pct": rate_raw * 100.0,
-            "funding_time": int(
-                row.get("fundingTime") or 0
+
+            "rate_pct": (
+                rate_raw * 100.0
             ),
+
+            "funding_time": int(
+                row.get(
+                    "fundingTime"
+                ) or 0
+            ),
+
             "next_funding_time": int(
-                row.get("nextFundingTime") or 0
+                row.get(
+                    "nextFundingTime"
+                ) or 0
             ),
         }
 
@@ -296,8 +410,13 @@ def get_funding(symbol):
 # OPEN INTEREST
 # ============================================================
 
-def get_open_interest(symbol, save_snapshot=True):
-    inst_id = normalize_swap_symbol(symbol)
+def get_open_interest(
+    symbol,
+    save_snapshot=True,
+):
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
@@ -316,32 +435,46 @@ def get_open_interest(symbol, save_snapshot=True):
     row = data[0]
 
     try:
-        oi = float(row.get("oi") or 0)
+        oi = float(
+            row.get("oi") or 0
+        )
 
-        # Некоторые ответы OKX также содержат
-        # oiCcy / oiUsd. Не предполагаем их наличие.
-        oi_ccy = row.get("oiCcy")
-        oi_usd = row.get("oiUsd")
+        oi_ccy = row.get(
+            "oiCcy"
+        )
+
+        oi_usd = row.get(
+            "oiUsd"
+        )
 
         result = {
             "oi": oi,
+
             "oi_ccy": (
                 float(oi_ccy)
-                if oi_ccy not in (None, "")
+                if oi_ccy
+                not in (None, "")
                 else None
             ),
+
             "oi_usd": (
                 float(oi_usd)
-                if oi_usd not in (None, "")
+                if oi_usd
+                not in (None, "")
                 else None
             ),
+
             "exchange_ts": int(
                 row.get("ts") or 0
             ),
+
             "local_ts": time.time(),
         }
 
-        if save_snapshot and oi > 0:
+        if (
+            save_snapshot
+            and oi > 0
+        ):
             save_oi_snapshot(
                 inst_id,
                 oi,
@@ -354,8 +487,14 @@ def get_open_interest(symbol, save_snapshot=True):
         return None
 
 
-def save_oi_snapshot(symbol, oi, ts=None):
-    inst_id = normalize_swap_symbol(symbol)
+def save_oi_snapshot(
+    symbol,
+    oi,
+    ts=None,
+):
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return
@@ -363,11 +502,14 @@ def save_oi_snapshot(symbol, oi, ts=None):
     if oi is None or oi <= 0:
         return
 
-    now = float(ts or time.time())
+    now = float(
+        ts or time.time()
+    )
 
-    history = OI_HISTORY[inst_id]
+    history = OI_HISTORY[
+        inst_id
+    ]
 
-    # Не сохраняем почти идентичные timestamps.
     if history:
         last_ts = history[-1]["ts"]
 
@@ -376,65 +518,92 @@ def save_oi_snapshot(symbol, oi, ts=None):
                 "ts": now,
                 "oi": float(oi),
             }
+
         else:
             history.append({
                 "ts": now,
                 "oi": float(oi),
             })
+
     else:
         history.append({
             "ts": now,
             "oi": float(oi),
         })
 
-    # Нам сейчас достаточно 60 минут истории.
     cutoff = now - 3600
 
-    while history and history[0]["ts"] < cutoff:
+    while (
+        history
+        and history[0]["ts"] < cutoff
+    ):
         history.popleft()
 
 
-def get_oi_change(symbol, minutes=5):
+def get_oi_change(
+    symbol,
+    minutes=5,
+):
     """
-    Рассчитывает изменение OI по реальному timestamp.
+    OI change по реальному timestamp.
 
-    ВАЖНО:
-    функция НЕ говорит LONG или SHORT.
-
-    Она сообщает только:
-        OI вырос / упал на X%.
+    Никакого LONG/SHORT здесь нет.
     """
 
-    inst_id = normalize_swap_symbol(symbol)
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
 
-    history = OI_HISTORY.get(inst_id)
+    history = OI_HISTORY.get(
+        inst_id
+    )
 
-    if not history or len(history) < 2:
+    if (
+        not history
+        or len(history) < 2
+    ):
         return None
 
     now_ts = history[-1]["ts"]
     current_oi = history[-1]["oi"]
 
-    target_ts = now_ts - (minutes * 60)
-
-    older = None
-
-    # Ищем snapshot, ближайший к нужному времени.
-    older = min(
-        history,
-        key=lambda x: abs(x["ts"] - target_ts),
+    minutes = max(
+        1,
+        int(minutes),
     )
 
-    # Не выдаём "5m change", если ближайшая точка
-    # слишком далеко от настоящих 5 минут.
-    tolerance = max(15, minutes * 60 * 0.10)
+    target_seconds = (
+        minutes * 60
+    )
 
-    actual_age = now_ts - older["ts"]
+    target_ts = (
+        now_ts - target_seconds
+    )
 
-    if abs(actual_age - minutes * 60) > tolerance:
+    older = min(
+        history,
+        key=lambda x: abs(
+            x["ts"] - target_ts
+        ),
+    )
+
+    # Максимум 10% отклонения окна.
+    # Минимальный tolerance = 15 sec.
+    tolerance = max(
+        15,
+        target_seconds * 0.10,
+    )
+
+    actual_age = (
+        now_ts - older["ts"]
+    )
+
+    if abs(
+        actual_age - target_seconds
+    ) > tolerance:
         return None
 
     old_oi = older["oi"]
@@ -449,280 +618,463 @@ def get_oi_change(symbol, minutes=5):
 
     return {
         "minutes": minutes,
+
         "current_oi": current_oi,
         "old_oi": old_oi,
+
         "change_pct": change_pct,
-        "actual_seconds": actual_age,
-    }
 
-
-# ============================================================
-# TRADE FLOW
-# ============================================================
-
-def get_trade_flow(symbol, market="swap", seconds=300, limit=500):
-    """
-    Получает текущий snapshot агрессивных сделок.
-
-    market:
-        "swap" -> futures/perpetual
-        "spot" -> spot
-
-    В отличие от V2:
-    - считаем quote volume (price * size)
-    - фильтруем сделки по timestamp
-    - возвращаем числовые факты
-    - НЕ присваиваем LONG / SHORT
-    """
-
-    if market == "spot":
-        inst_id = swap_to_spot_symbol(symbol)
-    else:
-        inst_id = normalize_swap_symbol(symbol)
-
-    if not inst_id:
-        return None
-
-    data = okx_get(
-        "/api/v5/market/trades",
-        {
-            "instId": inst_id,
-            "limit": str(min(int(limit), 500)),
-        },
-    )
-
-    if not data:
-        return None
-
-    now_ms = int(time.time() * 1000)
-    cutoff_ms = now_ms - (int(seconds) * 1000)
-
-    buy_quote = 0.0
-    sell_quote = 0.0
-
-    trade_count = 0
-    oldest_ts = None
-    newest_ts = None
-
-    for trade in data:
-        try:
-            ts = int(trade.get("ts") or 0)
-
-            if ts <= 0:
-                continue
-
-            if ts < cutoff_ms:
-                continue
-
-            price = float(trade.get("px") or 0)
-            size = float(trade.get("sz") or 0)
-
-            side = str(
-                trade.get("side") or ""
-            ).lower()
-
-            if price <= 0 or size <= 0:
-                continue
-
-            quote = price * size
-
-            if side == "buy":
-                buy_quote += quote
-
-            elif side == "sell":
-                sell_quote += quote
-
-            else:
-                continue
-
-            trade_count += 1
-
-            if oldest_ts is None or ts < oldest_ts:
-                oldest_ts = ts
-
-            if newest_ts is None or ts > newest_ts:
-                newest_ts = ts
-
-        except (TypeError, ValueError):
-            continue
-
-    total = buy_quote + sell_quote
-    delta = buy_quote - sell_quote
-
-    imbalance = (
-        delta / total
-        if total > 0
-        else 0.0
-    )
-
-    coverage_seconds = 0.0
-
-    if oldest_ts and newest_ts:
-        coverage_seconds = (
-            newest_ts - oldest_ts
-        ) / 1000.0
-
-    return {
-        "market": market,
-        "inst_id": inst_id,
-        "requested_seconds": int(seconds),
-
-        "trade_count": trade_count,
-
-        "buy_quote": buy_quote,
-        "sell_quote": sell_quote,
-        "total_quote": total,
-
-        "delta_quote": delta,
-
-        # -1.0 ... +1.0
-        "imbalance": imbalance,
-
-        # -100 ... +100
-        "imbalance_pct": imbalance * 100.0,
-
-        "coverage_seconds": coverage_seconds,
-
-        # Если API limit закончился раньше нужного окна,
-        # мы честно помечаем данные как неполные.
-        "possibly_truncated": (
-            len(data) >= min(int(limit), 500)
-            and oldest_ts is not None
-            and oldest_ts > cutoff_ms
+        "actual_seconds": (
+            actual_age
         ),
     }
-
-
-def get_spot_flow(symbol, seconds=300):
-    return get_trade_flow(
-        symbol,
-        market="spot",
-        seconds=seconds,
-    )
-
-
-def get_futures_flow(symbol, seconds=300):
-    return get_trade_flow(
-        symbol,
-        market="swap",
-        seconds=seconds,
-    )
 
 
 # ============================================================
 # VOLUME
 # ============================================================
 
-def get_volume_stats(symbol, lookback=20):
-    candles = get_candles(
-        symbol,
-        bar="1m",
-        limit=max(lookback + 1, 5),
-    )
+def _volume_stats_from_candles(
+    candles,
+    lookback=20,
+):
+    """
+    Volume stats из уже загруженных candles.
+
+    Новый REST-запрос НЕ выполняется.
+    """
 
     if len(candles) < 5:
         return None
 
+    lookback = max(
+        1,
+        int(lookback),
+    )
+
     latest = candles[-1]
 
     history = candles[
-        -min(len(candles), lookback + 1):-1
+        -min(
+            len(candles),
+            lookback + 1,
+        ):-1
     ]
 
-    volumes = [
-        x["volume_quote"]
-        if x["volume_quote"] is not None
-        else x["volume"]
-        for x in history
-    ]
+    volumes = []
+
+    for candle in history:
+        value = (
+            candle["volume_quote"]
+            if candle["volume_quote"]
+            is not None
+            else candle["volume"]
+        )
+
+        if value is not None:
+            volumes.append(value)
 
     latest_volume = (
         latest["volume_quote"]
-        if latest["volume_quote"] is not None
+        if latest["volume_quote"]
+        is not None
         else latest["volume"]
     )
 
-    if not volumes:
+    if (
+        not volumes
+        or latest_volume is None
+    ):
         return None
 
-    avg = sum(volumes) / len(volumes)
+    average = (
+        sum(volumes)
+        / len(volumes)
+    )
 
     ratio = (
-        latest_volume / avg
-        if avg > 0
+        latest_volume / average
+        if average > 0
         else None
     )
 
     return {
         "latest": latest_volume,
-        "average": avg,
+        "average": average,
         "ratio": ratio,
         "samples": len(volumes),
     }
 
 
+def get_volume_stats(
+    symbol,
+    lookback=20,
+):
+    """
+    Совместимость для внешних вызовов.
+
+    MarketSnapshot использует уже
+    загруженные candles.
+    """
+
+    candles = get_candles(
+        symbol,
+        bar="1m",
+        limit=max(
+            lookback + 1,
+            5,
+        ),
+    )
+
+    return _volume_stats_from_candles(
+        candles,
+        lookback,
+    )
+
+
 # ============================================================
-# COMPLETE RAW SNAPSHOT
+# DATA QUALITY
+# ============================================================
+
+def _flow_quality(flow):
+    """
+    Краткое качество одного Trade Flow блока.
+    """
+
+    if not flow:
+        return "INVALID"
+
+    states = []
+
+    for window in (
+        "1m",
+        "5m",
+        "15m",
+    ):
+        row = flow.get(window)
+
+        if not row:
+            states.append(
+                "INVALID"
+            )
+            continue
+
+        states.append(
+            row.get(
+                "quality",
+                "INVALID",
+            )
+        )
+
+    if "INVALID" in states:
+        return "INVALID"
+
+    if all(
+        state == "READY"
+        for state in states
+    ):
+        return "READY"
+
+    return "WARMING"
+
+
+def build_data_quality(
+    ticker,
+    candles,
+    funding,
+    oi,
+    spot_flow,
+    futures_flow,
+):
+    """
+    Только качество данных.
+
+    Это НЕ торговая оценка.
+    """
+
+    price_ok = bool(
+        ticker
+        and ticker.get("price", 0) > 0
+    )
+
+    candles_ok = (
+        len(candles) >= 16
+    )
+
+    funding_ok = (
+        funding is not None
+    )
+
+    oi_ok = bool(
+        oi
+        and oi.get("oi", 0) > 0
+    )
+
+    spot_quality = _flow_quality(
+        spot_flow
+    )
+
+    futures_quality = _flow_quality(
+        futures_flow
+    )
+
+    # Для базового snapshot не требуем,
+    # чтобы 15m Trade Flow уже прогрелся.
+    #
+    # critical_ready означает:
+    # REST-данные получены и 1m flow
+    # уже пригоден к использованию.
+
+    spot_1m_ready = bool(
+        spot_flow
+        and spot_flow.get("1m")
+        and spot_flow["1m"].get(
+            "window_ready"
+        )
+    )
+
+    futures_1m_ready = bool(
+        futures_flow
+        and futures_flow.get("1m")
+        and futures_flow["1m"].get(
+            "window_ready"
+        )
+    )
+
+    critical_ready = (
+        price_ok
+        and candles_ok
+        and funding_ok
+        and oi_ok
+        and spot_1m_ready
+        and futures_1m_ready
+    )
+
+    return {
+        "price": (
+            "READY"
+            if price_ok
+            else "INVALID"
+        ),
+
+        "candles": (
+            "READY"
+            if candles_ok
+            else "INVALID"
+        ),
+
+        "funding": (
+            "READY"
+            if funding_ok
+            else "INVALID"
+        ),
+
+        "open_interest": (
+            "READY"
+            if oi_ok
+            else "INVALID"
+        ),
+
+        "spot_flow": (
+            spot_quality
+        ),
+
+        "futures_flow": (
+            futures_quality
+        ),
+
+        "critical_ready": (
+            critical_ready
+        ),
+    }
+
+
+# ============================================================
+# COMPLETE MARKET SNAPSHOT
 # ============================================================
 
 def build_market_snapshot(symbol):
     """
-    Один стандартизированный объект для Smart Money Engine V3.
+    Единый MarketSnapshot V3.
 
-    Никаких торговых решений здесь нет.
+    Один цикл выполняет:
+
+        1 x ticker
+        1 x candles
+        1 x funding
+        1 x open interest
+
+    Trade Flow берётся из live WebSocket collector.
+
+    Здесь НЕТ торгового решения.
     """
 
-    inst_id = normalize_swap_symbol(symbol)
+    inst_id = normalize_swap_symbol(
+        symbol
+    )
 
     if not inst_id:
         return None
 
-    ticker = get_ticker(inst_id)
+    # --------------------------------------------------------
+    # 1. TICKER
+    # --------------------------------------------------------
+
+    ticker = get_ticker(
+        inst_id
+    )
 
     if ticker is None:
         return None
+
+    # --------------------------------------------------------
+    # 2. CANDLES
+    #
+    # Одного запроса достаточно одновременно для:
+    # - price change 1m
+    # - price change 5m
+    # - price change 15m
+    # - volume stats
+    # --------------------------------------------------------
+
+    candles = get_candles(
+        inst_id,
+        bar="1m",
+        limit=25,
+    )
+
+    # --------------------------------------------------------
+    # 3. FUNDING
+    # --------------------------------------------------------
+
+    funding = get_funding(
+        inst_id
+    )
+
+    # --------------------------------------------------------
+    # 4. OPEN INTEREST
+    # --------------------------------------------------------
 
     oi = get_open_interest(
         inst_id,
         save_snapshot=True,
     )
 
+    # --------------------------------------------------------
+    # LIVE TRADE FLOW
+    # --------------------------------------------------------
+
+    spot_flow = get_spot_windows(
+        inst_id
+    )
+
+    futures_flow = (
+        get_futures_windows(
+            inst_id
+        )
+    )
+
+    # --------------------------------------------------------
+    # CALCULATIONS FROM EXISTING DATA
+    # --------------------------------------------------------
+
+    price_change = {
+        "1m": (
+            _price_change_from_candles(
+                candles,
+                1,
+            )
+        ),
+
+        "5m": (
+            _price_change_from_candles(
+                candles,
+                5,
+            )
+        ),
+
+        "15m": (
+            _price_change_from_candles(
+                candles,
+                15,
+            )
+        ),
+    }
+
+    oi_change = {
+        "1m": get_oi_change(
+            inst_id,
+            1,
+        ),
+
+        "5m": get_oi_change(
+            inst_id,
+            5,
+        ),
+
+        "15m": get_oi_change(
+            inst_id,
+            15,
+        ),
+    }
+
+    volume = (
+        _volume_stats_from_candles(
+            candles,
+            lookback=20,
+        )
+    )
+
+    data_quality = build_data_quality(
+        ticker=ticker,
+        candles=candles,
+        funding=funding,
+        oi=oi,
+        spot_flow=spot_flow,
+        futures_flow=futures_flow,
+    )
+
+    # --------------------------------------------------------
+    # FINAL SNAPSHOT
+    # --------------------------------------------------------
+
     snapshot = {
-        "symbol": public_symbol(inst_id),
+        "symbol": public_symbol(
+            inst_id
+        ),
+
         "inst_id": inst_id,
+
         "timestamp": time.time(),
 
         "price": ticker["price"],
 
-        "price_change": {
-            "1m": get_price_change(inst_id, 1),
-            "5m": get_price_change(inst_id, 5),
-            "15m": get_price_change(inst_id, 15),
-        },
+        "ticker": ticker,
 
-        "funding": get_funding(inst_id),
+        "price_change": (
+            price_change
+        ),
+
+        "funding": funding,
 
         "open_interest": oi,
 
-        "oi_change": {
-            "1m": get_oi_change(inst_id, 1),
-            "5m": get_oi_change(inst_id, 5),
-            "15m": get_oi_change(inst_id, 15),
-        },
-
-        # Настоящий накопительный Trade Flow.
-        # Данные приходят из OKX WebSocket collector.
-        "spot_flow": get_spot_windows(
-            inst_id
+        "oi_change": (
+            oi_change
         ),
 
-        "futures_flow": get_futures_windows(
-            inst_id
+        "spot_flow": (
+            spot_flow
         ),
 
-        "volume": get_volume_stats(
-            inst_id,
-            lookback=20,
+        "futures_flow": (
+            futures_flow
+        ),
+
+        "volume": volume,
+
+        "data_quality": (
+            data_quality
         ),
     }
 
