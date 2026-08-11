@@ -710,15 +710,15 @@ def build_market_snapshot(symbol):
             "15m": get_oi_change(inst_id, 15),
         },
 
-        "spot_flow": {
-            "1m": get_spot_flow(inst_id, 60),
-            "5m": get_spot_flow(inst_id, 300),
-        },
+        # Настоящий накопительный Trade Flow.
+        # Данные приходят из OKX WebSocket collector.
+        "spot_flow": get_spot_windows(
+            inst_id
+        ),
 
-        "futures_flow": {
-            "1m": get_futures_flow(inst_id, 60),
-            "5m": get_futures_flow(inst_id, 300),
-        },
+        "futures_flow": get_futures_windows(
+            inst_id
+        ),
 
         "volume": get_volume_stats(
             inst_id,
