@@ -2,7 +2,9 @@ import time
 
 from market_data_v3 import build_market_snapshot
 from smart_money_engine_v3 import analyze_smart_money
-from okx_trade_stream_v3 import start_trade_stream
+import threading
+
+from okx_trade_stream_v3 import run_stream_forever
 
 
 SYMBOL = "BTCUSDT"
@@ -106,9 +108,12 @@ def main():
         flush=True,
     )
 
-    start_trade_stream(
-        SYMBOL
+    stream_thread = threading.Thread(
+         target=run_stream_forever,
+        daemon=True,
     )
+    
+    stream_thread.start()  
 
     started = time.time()
 
