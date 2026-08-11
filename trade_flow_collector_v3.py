@@ -1,13 +1,15 @@
 # trade_flow_collector_v3.py
 # PumpDump Radar V3
 #
-# Накопительный Trade Flow Collector.
+# Timestamped Trade Flow Collector.
 #
-# Задача:
-# - сохранять реальные сделки с timestamp
-# - отдельно хранить SPOT и SWAP
-# - считать настоящие окна 1m / 5m / 15m
-# - контролировать полноту временного окна
+# V3.2:
+# - реальные окна 1m / 5m / 15m
+# - SPOT и SWAP отдельно
+# - контроль непрерывности данных
+# - READY зависит от времени работы stream,
+#   а не от наличия сделки в начале окна
+# - data gap делает данные временно невалидными
 #
 # Здесь НЕТ:
 # - LONG / SHORT
@@ -20,16 +22,33 @@ import threading
 from collections import defaultdict, deque
 
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
 MAX_HISTORY_SECONDS = 15 * 60
 
-# Отдельная история Spot и Futures.
+# Если stream не подтверждал активность дольше этого времени,
+# считаем, что соединение/данные потенциально потеряны.
+STREAM_STALE_SECONDS = 30.0
+
 TRADE_HISTORY = {
     "spot": defaultdict(deque),
     "swap": defaultdict(deque),
+}
+
+# Состояние потока отдельно для SPOT / SWAP.
+STREAM_STATE = {
+    "spot": {
+        "connected": False,
+        "started_at": None,
+        "last_activity_at": None,
+        "last_trade_at": None,
+        "generation": 0,
+    },
+    "swap": {
+        "connected": False,
+        "started_at": None,
+        "last_activity_at": None,
+        "last_trade_at": None,
+        "generation": 0,
+    },
 }
 
 _LOCK = threading.RLock()
@@ -40,16 +59,6 @@ _LOCK = threading.RLock()
 # ============================================================
 
 def normalize_symbol(symbol):
-    """
-    Приводит:
-        BTC-USDT-SWAP
-        BTC-USDT
-        BTCUSDT
-
-    к:
-        BTCUSDT
-    """
-
     if not symbol:
         return None
 
@@ -66,10 +75,6 @@ def normalize_symbol(symbol):
 
 
 def _normalize_market(market):
-    """
-    Приводит разные названия futures/perpetual к swap.
-    """
-
     market = str(market or "").lower()
 
     if market in (
@@ -87,14 +92,136 @@ def _normalize_market(market):
 
 
 # ============================================================
+# STREAM STATE
+# ============================================================
+
+def mark_stream_connected(market):
+    """
+    Новый непрерывный период данных.
+
+    При reconnect started_at начинается заново.
+    Поэтому старое окно не сможет ошибочно получить READY.
+    """
+
+    market = _normalize_market(market)
+
+    if not market:
+        return False
+
+    now = time.time()
+
+    with _LOCK:
+        state = STREAM_STATE[market]
+
+        state["connected"] = True
+        state["started_at"] = now
+        state["last_activity_at"] = now
+        state["last_trade_at"] = None
+        state["generation"] += 1
+
+    return True
+
+
+def mark_stream_activity(market):
+    """
+    Подтверждает, что WebSocket продолжает получать сообщения.
+
+    Это важно: отсутствие сделок само по себе
+    не означает data gap.
+    """
+
+    market = _normalize_market(market)
+
+    if not market:
+        return False
+
+    now = time.time()
+
+    with _LOCK:
+        state = STREAM_STATE[market]
+
+        if not state["connected"]:
+            state["connected"] = True
+            state["started_at"] = now
+            state["generation"] += 1
+
+        state["last_activity_at"] = now
+
+    return True
+
+
+def mark_stream_disconnected(market):
+    """
+    После disconnect окна больше не считаются READY.
+    """
+
+    market = _normalize_market(market)
+
+    if not market:
+        return False
+
+    with _LOCK:
+        state = STREAM_STATE[market]
+
+        state["connected"] = False
+        state["started_at"] = None
+        state["last_activity_at"] = None
+        state["last_trade_at"] = None
+
+    return True
+
+
+def get_stream_state(market):
+    market = _normalize_market(market)
+
+    if not market:
+        return None
+
+    now = time.time()
+
+    with _LOCK:
+        state = dict(STREAM_STATE[market])
+
+    started_at = state.get("started_at")
+    last_activity = state.get("last_activity_at")
+
+    continuous_seconds = 0.0
+
+    if (
+        state.get("connected")
+        and started_at is not None
+    ):
+        continuous_seconds = max(
+            0.0,
+            now - started_at,
+        )
+
+    stale_seconds = None
+
+    if last_activity is not None:
+        stale_seconds = max(
+            0.0,
+            now - last_activity,
+        )
+
+    stream_healthy = (
+        state.get("connected") is True
+        and last_activity is not None
+        and stale_seconds <= STREAM_STALE_SECONDS
+    )
+
+    state["continuous_seconds"] = continuous_seconds
+    state["stale_seconds"] = stale_seconds
+    state["stream_healthy"] = stream_healthy
+
+    return state
+
+
+# ============================================================
 # CLEANUP
 # ============================================================
 
 def _cleanup(market, symbol, now=None):
-    """
-    Удаляет сделки старше 15 минут.
-    """
-
     now = float(now or time.time())
 
     cutoff = now - MAX_HISTORY_SECONDS
@@ -127,31 +254,6 @@ def save_trade(
     event_ts=None,
     quote_value=None,
 ):
-    """
-    Сохраняет ОДНУ реальную сделку.
-
-    side:
-        BUY
-        SELL
-
-    event_ts:
-        реальное время сделки.
-
-    quote_value:
-        готовый dollar/USDT notional сделки.
-
-    Если quote_value отсутствует:
-        временно используем price * size.
-
-    ВАЖНО:
-    для SWAP параметр size может означать
-    количество КОНТРАКТОВ, а не количество монет.
-
-    Поэтому при подключении OKX WebSocket
-    SWAP quote_value будем рассчитывать
-    с учётом ctVal конкретного инструмента.
-    """
-
     symbol = normalize_symbol(symbol)
     market = _normalize_market(market)
 
@@ -166,7 +268,6 @@ def save_trade(
     try:
         price = float(price)
         size = float(size)
-
     except (TypeError, ValueError):
         return False
 
@@ -177,7 +278,6 @@ def save_trade(
         event_ts or time.time()
     )
 
-    # Если timestamp пришёл в milliseconds.
     if ts > 10_000_000_000:
         ts /= 1000.0
 
@@ -188,7 +288,6 @@ def save_trade(
         quote_value = float(
             quote_value
         )
-
     except (TypeError, ValueError):
         return False
 
@@ -203,23 +302,36 @@ def save_trade(
         "quote": quote_value,
     }
 
-    with _LOCK:
+    now = time.time()
 
+    with _LOCK:
         TRADE_HISTORY[
             market
         ][symbol].append(row)
 
+        state = STREAM_STATE[market]
+
+        # Защита на случай использования collector
+        # без явного mark_stream_connected().
+        if not state["connected"]:
+            state["connected"] = True
+            state["started_at"] = now
+            state["generation"] += 1
+
+        state["last_activity_at"] = now
+        state["last_trade_at"] = ts
+
         _cleanup(
             market,
             symbol,
-            now=ts,
+            now=now,
         )
 
     return True
 
 
 # ============================================================
-# FLOW CALCULATION
+# FLOW
 # ============================================================
 
 def get_flow(
@@ -227,26 +339,6 @@ def get_flow(
     market,
     seconds,
 ):
-    """
-    Считает поток сделок строго внутри
-    указанного временного окна.
-
-    Например:
-
-        seconds=60
-        -> реальные последние 60 секунд
-
-        seconds=300
-        -> реальные последние 5 минут
-
-        seconds=900
-        -> реальные последние 15 минут
-
-    Возвращает ФАКТЫ.
-
-    Никаких LONG / SHORT решений здесь нет.
-    """
-
     symbol = normalize_symbol(symbol)
     market = _normalize_market(market)
 
@@ -259,11 +351,9 @@ def get_flow(
     )
 
     now = time.time()
-
     cutoff = now - seconds
 
     with _LOCK:
-
         _cleanup(
             market,
             symbol,
@@ -283,59 +373,29 @@ def get_flow(
             if row["ts"] >= cutoff
         ]
 
-    # --------------------------------------------------------
-    # BUY / SELL
-    # --------------------------------------------------------
-
     buy_quote = 0.0
     sell_quote = 0.0
 
     buy_count = 0
     sell_count = 0
 
-    oldest_ts = None
-    newest_ts = None
-
     for row in rows:
-
         quote = row["quote"]
 
         if row["side"] == "BUY":
-
             buy_quote += quote
             buy_count += 1
 
         elif row["side"] == "SELL":
-
             sell_quote += quote
             sell_count += 1
 
-        ts = row["ts"]
-
-        if (
-            oldest_ts is None
-            or ts < oldest_ts
-        ):
-            oldest_ts = ts
-
-        if (
-            newest_ts is None
-            or ts > newest_ts
-        ):
-            newest_ts = ts
-
-    # --------------------------------------------------------
-    # DELTA
-    # --------------------------------------------------------
-
     total_quote = (
-        buy_quote
-        + sell_quote
+        buy_quote + sell_quote
     )
 
     delta_quote = (
-        buy_quote
-        - sell_quote
+        buy_quote - sell_quote
     )
 
     imbalance = (
@@ -345,39 +405,58 @@ def get_flow(
     )
 
     # --------------------------------------------------------
-    # WINDOW COVERAGE
+    # DATA QUALITY
     # --------------------------------------------------------
 
-    coverage_seconds = 0.0
+    state = get_stream_state(
+        market
+    )
 
-    if oldest_ts is not None:
-
-        # Важно:
-        # смотрим возраст самой старой сделки.
-        #
-        # Это показывает, действительно ли
-        # collector накопил нужное окно.
-        coverage_seconds = max(
+    continuous_seconds = (
+        state.get(
+            "continuous_seconds",
             0.0,
-            now - oldest_ts,
         )
+        if state
+        else 0.0
+    )
 
+    stream_healthy = (
+        state.get(
+            "stream_healthy",
+            False,
+        )
+        if state
+        else False
+    )
+
+    # Теперь coverage означает:
+    # сколько времени collector непрерывно наблюдал рынок.
     coverage_ratio = min(
         1.0,
-        coverage_seconds / seconds,
+        continuous_seconds / seconds,
     )
 
-    # Будущий Smart Money Engine сможет
-    # использовать данные только после
-    # заполнения минимум 95% окна.
+    coverage_seconds = min(
+        continuous_seconds,
+        float(seconds),
+    )
+
     window_ready = (
-        coverage_ratio >= 0.95
-        and len(rows) > 0
+        stream_healthy
+        and continuous_seconds >= (
+            seconds * 0.95
+        )
     )
 
-    # --------------------------------------------------------
-    # RESULT
-    # --------------------------------------------------------
+    if not stream_healthy:
+        quality = "INVALID"
+
+    elif window_ready:
+        quality = "READY"
+
+    else:
+        quality = "WARMING"
 
     return {
         "symbol": symbol,
@@ -392,15 +471,11 @@ def get_flow(
 
         "buy_quote": buy_quote,
         "sell_quote": sell_quote,
-
         "total_quote": total_quote,
 
         "delta_quote": delta_quote,
 
-        # -1 ... +1
         "imbalance": imbalance,
-
-        # -100 ... +100
         "imbalance_pct": (
             imbalance * 100.0
         ),
@@ -416,6 +491,28 @@ def get_flow(
         "window_ready": (
             window_ready
         ),
+
+        "quality": quality,
+
+        "stream_healthy": (
+            stream_healthy
+        ),
+
+        "stream_continuous_seconds": (
+            continuous_seconds
+        ),
+
+        "stream_stale_seconds": (
+            state.get("stale_seconds")
+            if state
+            else None
+        ),
+
+        "stream_generation": (
+            state.get("generation")
+            if state
+            else None
+        ),
     }
 
 
@@ -427,12 +524,7 @@ def get_flow_windows(
     symbol,
     market,
 ):
-    """
-    Стандартные окна PumpDump Radar V3.
-    """
-
     return {
-
         "1m": get_flow(
             symbol,
             market,
@@ -454,10 +546,6 @@ def get_flow_windows(
 
 
 def get_spot_windows(symbol):
-    """
-    SPOT 1m / 5m / 15m.
-    """
-
     return get_flow_windows(
         symbol,
         "spot",
@@ -465,10 +553,6 @@ def get_spot_windows(symbol):
 
 
 def get_futures_windows(symbol):
-    """
-    FUTURES 1m / 5m / 15m.
-    """
-
     return get_flow_windows(
         symbol,
         "swap",
@@ -483,11 +567,6 @@ def get_history_size(
     symbol,
     market,
 ):
-    """
-    Сколько сделок сейчас находится
-    в памяти collector.
-    """
-
     symbol = normalize_symbol(symbol)
     market = _normalize_market(market)
 
@@ -495,7 +574,6 @@ def get_history_size(
         return 0
 
     with _LOCK:
-
         return len(
             TRADE_HISTORY[
                 market
