@@ -17,6 +17,7 @@
 import time
 import requests
 from collections import defaultdict, deque
+from trade_flow_collector_v3 import get_spot_windows, get_futures_windows
 
 
 OKX_BASE = "https://www.okx.com"
