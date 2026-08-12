@@ -431,32 +431,19 @@ def analyze_smart_money(snapshot):
         long_forbidden = True
         short_forbidden = True
 
-        reasons.append(
+        
+       reasons.append(
             "Spot and Futures flows conflict"
         )
-
-        return {
-            "ready": True,
-            "symbol": symbol,
-            "pattern": pattern,
-            "dominant_side": "NONE",
-
-            "price_5m": price_5m,
-            "price_1m": price_1m,
-
-            "spot_5m": spot_5m,
-            "spot_1m": spot_1m,
-
-            "futures_5m": futures_5m,
-            "futures_1m": futures_1m,
-
-            "oi_5m": oi_5m,
-
-            "long_forbidden": True,
-            "short_forbidden": True,
-
-            "reasons": reasons,
-        }
+        
+        return build_result(
+            ready=True,
+            pattern="CONFLICT",
+            dominant_side="NONE",
+            long_forbidden=True,
+            short_forbidden=True,
+            reasons=reasons,
+        )
 
     # ========================================================
     # PATTERN 2:
