@@ -28,43 +28,32 @@ def show(result):
         result.get("dominant_side"),
     )
 
-    print("\n--- 5 MINUTES ---")
-
-    print(
-        "PRICE   :",
-        result.get("price_5m"),
-    )
-
-    print(
-        "SPOT    :",
-        result.get("spot_5m"),
-    )
-
-    print(
-        "FUTURES :",
-        result.get("futures_5m"),
-    )
-
-    print(
-        "OI      :",
-        result.get("oi_5m"),
-    )
+    
 
     print("\n--- 1 MINUTE ---")
 
     print(
         "PRICE   :",
         result.get("price_1m"),
+        "|",
+        raw.get("price_1m_change"),
+        "%",
     )
-
+    
     print(
         "SPOT    :",
         result.get("spot_1m"),
+        "| IMB",
+        raw.get("spot_1m_imbalance"),
+        "%",
     )
-
+    
     print(
         "FUTURES :",
         result.get("futures_1m"),
+        "| IMB",
+        raw.get("futures_1m_imbalance"),
+        "%",
     )
 
     print("\n--- PROTECTION ---")
