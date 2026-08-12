@@ -432,7 +432,7 @@ def analyze_smart_money(snapshot):
         short_forbidden = True
 
         
-       reasons.append(
+        reasons.append(
             "Spot and Futures flows conflict"
         )
         
