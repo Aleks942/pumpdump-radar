@@ -650,30 +650,14 @@ def analyze_smart_money(snapshot):
                 "1m flow not reversed against SHORT",
             ])
 
-            return {
-                "ready": True,
-                "symbol": symbol,
-
-                "pattern": pattern,
-                "dominant_side": dominant_side,
-
-                "price_5m": price_5m,
-                "price_1m": price_1m,
-
-                "spot_5m": spot_5m,
-                "spot_1m": spot_1m,
-
-                "futures_5m": futures_5m,
-                "futures_1m": futures_1m,
-
-                "oi_5m": oi_5m,
-
-                "long_forbidden": True,
-                "short_forbidden": False,
-
-                "reasons": reasons,
-            }
-
+            return build_result(
+                ready=True,
+                pattern="LONG_BUILDUP",
+                dominant_side="BUYER",
+                long_forbidden=False,
+                short_forbidden=True,
+                reasons=reasons,
+            )
         reasons.append(
             "5m SHORT buildup exists but 1m flow turned against it"
         )
