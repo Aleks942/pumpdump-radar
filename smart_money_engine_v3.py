@@ -49,6 +49,27 @@ def _safe_float(value):
         return None
 
 
+def get_flow_imbalance(flow_row):
+    """
+    Возвращает реальный imbalance потока в %.
+
+    Например:
+        +46.7 = покупатели доминируют
+        -38.2 = продавцы доминируют
+
+    None = данных ещё нет / окно не готово
+    """
+
+    if not flow_row:
+        return None
+
+    if not flow_row.get("window_ready"):
+        return None
+
+    return _safe_float(
+        flow_row.get("imbalance_pct")
+    )
+
 def classify_flow(flow_row):
     """
     Классифицирует Spot/Futures flow.
@@ -108,6 +129,18 @@ def classify_oi(oi_row):
         return "FALLING"
 
     return "FLAT"
+
+def get_oi_change_value(oi_row):
+    """
+    Возвращает реальное изменение OI в %.
+    """
+
+    if not oi_row:
+        return None
+
+    return _safe_float(
+        oi_row.get("change_pct")
+    )
 
 
 def classify_price(price_change):
@@ -241,6 +274,28 @@ def analyze_smart_money(snapshot):
     )
 
     # --------------------------------------------------------
+    # RAW VALUES
+    # Сохраняем реальные значения, а не только состояния.
+    # Они понадобятся для absorption / weakening / acceleration.
+    # --------------------------------------------------------
+    
+    spot_5m_imbalance = get_flow_imbalance(
+        spot_5m_row
+    )
+    
+    futures_5m_imbalance = get_flow_imbalance(
+        futures_5m_row
+    )
+    
+    oi_5m_change = get_oi_change_value(
+        oi_5m_row
+    )
+    
+    price_5m_change = _safe_float(
+        price_5m_raw
+    )
+
+    # --------------------------------------------------------
     # 1m = что происходит прямо сейчас
     # --------------------------------------------------------
 
@@ -253,6 +308,18 @@ def analyze_smart_money(snapshot):
     )
 
     price_1m = classify_price(
+        price_change.get("1m")
+    )
+
+    spot_1m_imbalance = get_flow_imbalance(
+        spot_flow.get("1m")
+    )
+    
+    futures_1m_imbalance = get_flow_imbalance(
+        futures_flow.get("1m")
+    )
+    
+    price_1m_change = _safe_float(
         price_change.get("1m")
     )
 
