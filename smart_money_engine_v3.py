@@ -323,6 +323,19 @@ def analyze_smart_money(snapshot):
         price_change.get("1m")
     )
 
+
+    raw_values = {
+        "price_5m_change": price_5m_change,
+        "price_1m_change": price_1m_change,
+    
+        "spot_5m_imbalance": spot_5m_imbalance,
+        "spot_1m_imbalance": spot_1m_imbalance,
+    
+        "futures_5m_imbalance": futures_5m_imbalance,
+        "futures_1m_imbalance": futures_1m_imbalance,
+    
+        "oi_5m_change": oi_5m_change,
+    }
     # --------------------------------------------------------
     # READY CHECK
     # --------------------------------------------------------
