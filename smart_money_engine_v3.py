@@ -336,6 +336,48 @@ def analyze_smart_money(snapshot):
     
         "oi_5m_change": oi_5m_change,
     }
+def build_result(
+    ready,
+    pattern,
+    dominant_side,
+    long_forbidden,
+    short_forbidden,
+    reasons,
+):
+    """
+    Единый формат результата Smart Money V3.
+    Все паттерны получают одинаковый набор данных.
+    """
+
+    return {
+        "ready": ready,
+        "symbol": symbol,
+
+        "pattern": pattern,
+        "dominant_side": dominant_side,
+
+        # Состояния рынка
+        "price_5m": price_5m,
+        "price_1m": price_1m,
+
+        "spot_5m": spot_5m,
+        "spot_1m": spot_1m,
+
+        "futures_5m": futures_5m,
+        "futures_1m": futures_1m,
+
+        "oi_5m": oi_5m,
+
+        # Реальные значения
+        "raw": raw_values,
+
+        # Защита
+        "long_forbidden": long_forbidden,
+        "short_forbidden": short_forbidden,
+
+        "reasons": reasons,
+    }
+    
     # --------------------------------------------------------
     # READY CHECK
     # --------------------------------------------------------
