@@ -682,31 +682,11 @@ def analyze_smart_money(snapshot):
         "No complete V3 trading pattern"
     )
 
-    return {
-        "ready": True,
-        "symbol": symbol,
-
-        "pattern": "WAIT",
-        "dominant_side": dominant_side,
-
-        "price_5m": price_5m,
-        "price_1m": price_1m,
-
-        "spot_5m": spot_5m,
-        "spot_1m": spot_1m,
-
-        "futures_5m": futures_5m,
-        "futures_1m": futures_1m,
-
-        "oi_5m": oi_5m,
-
-        "long_forbidden": (
-            long_forbidden
-        ),
-
-        "short_forbidden": (
-            short_forbidden
-        ),
-
-        "reasons": reasons,
-    }
+    return build_result(
+        ready=True,
+        pattern="WAIT",
+        dominant_side=dominant_side,
+        long_forbidden=long_forbidden,
+        short_forbidden=short_forbidden,
+        reasons=reasons,
+    )
