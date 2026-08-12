@@ -14,21 +14,52 @@ INTERVAL = 30
 
 def show(result):
     print("\n" + "=" * 65)
-
     print("SMART MONEY V3")
     print("=" * 65)
 
     print("SYMBOL :", result.get("symbol"))
     print("READY  :", result.get("ready"))
-    print()
 
+    print()
     print("PATTERN :", result.get("pattern"))
+    print("DOMINANT:", result.get("dominant_side"))
+
+    # RAW-значения, которые пришли из Smart Money V3
+    raw = result.get("raw") or {}
+
+    print("\n--- 5 MINUTES ---")
+
     print(
-        "DOMINANT:",
-        result.get("dominant_side"),
+        "PRICE   :",
+        result.get("price_5m"),
+        "|",
+        raw.get("price_5m_change"),
+        "%",
     )
 
-    
+    print(
+        "SPOT    :",
+        result.get("spot_5m"),
+        "| IMB",
+        raw.get("spot_5m_imbalance"),
+        "%",
+    )
+
+    print(
+        "FUTURES :",
+        result.get("futures_5m"),
+        "| IMB",
+        raw.get("futures_5m_imbalance"),
+        "%",
+    )
+
+    print(
+        "OI      :",
+        result.get("oi_5m"),
+        "|",
+        raw.get("oi_5m_change"),
+        "%",
+    )
 
     print("\n--- 1 MINUTE ---")
 
@@ -39,7 +70,7 @@ def show(result):
         raw.get("price_1m_change"),
         "%",
     )
-    
+
     print(
         "SPOT    :",
         result.get("spot_1m"),
@@ -47,7 +78,7 @@ def show(result):
         raw.get("spot_1m_imbalance"),
         "%",
     )
-    
+
     print(
         "FUTURES :",
         result.get("futures_1m"),
@@ -77,8 +108,6 @@ def show(result):
         print("•", reason)
 
     print("=" * 65)
-
-
 def main():
 
     print(
