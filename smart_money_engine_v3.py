@@ -392,33 +392,16 @@ def analyze_smart_money(snapshot):
     )
 
     if "NOT_READY" in critical_states:
-        return {
-            "ready": False,
-
-            "symbol": symbol,
-
-            "pattern": "WAIT",
-
-            "dominant_side": "NONE",
-
-            "price_5m": price_5m,
-            "price_1m": price_1m,
-
-            "spot_5m": spot_5m,
-            "spot_1m": spot_1m,
-
-            "futures_5m": futures_5m,
-            "futures_1m": futures_1m,
-
-            "oi_5m": oi_5m,
-
-            "long_forbidden": True,
-            "short_forbidden": True,
-
-            "reasons": [
+        return build_result(
+            ready=False,
+            pattern="WAIT",
+            dominant_side="NONE",
+            long_forbidden=True,
+            short_forbidden=True,
+            reasons=[
                 "5m market data not fully ready"
             ],
-        }
+        )
 
     reasons = []
 
