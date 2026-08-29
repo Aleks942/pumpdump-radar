@@ -2041,6 +2041,8 @@ def collect_votes(signal):
 
         ("SPOT", spot_vote),
 
+        ("FUNDING", funding_vote),
+
         ("LIQUIDATIONS", liquidation_vote),
 
         ("SCENARIO", scenario_vote),
