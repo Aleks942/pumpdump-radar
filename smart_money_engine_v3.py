@@ -521,6 +521,14 @@ def analyze_smart_money(snapshot):
     if (
         spot_5m == "BUYING"
         and futures_5m == "BUYING"
+        and (
+            spot_5m_imbalance is not None
+            and futures_5m_imbalance is not None
+        )
+        and (
+            spot_5m_imbalance >= STRONG_FLOW_BUY
+            or futures_5m_imbalance >= STRONG_FLOW_BUY
+        )
         and price_5m in (
             "FLAT",
             "DOWN",
