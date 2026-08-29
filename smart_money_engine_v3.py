@@ -414,284 +414,190 @@ def analyze_smart_money(snapshot):
     dominant_side = "NONE"
     pattern = "WAIT"
 
-    # ========================================================
-    # PATTERN 1:
-    # CONFLICT
+   
+       # ========================================================
+    # SIMPLE V3 PATTERN MATCHER
     #
-    # Spot и Futures идут в противоположные стороны.
-    # Никакого входа.
+    # Логика:
+    # 1. BLOCK LONG
+    # 2. BLOCK SHORT
+    # 3. LONG
+    # 4. SHORT
+    # 5. WAIT
     # ========================================================
 
-    if (
-        spot_5m == "SELLING"
-        and futures_5m == "SELLING"
-        and (
-            spot_5m_imbalance is not None
-            and futures_5m_imbalance is not None
-        )
-        and (
-            spot_5m_imbalance <= STRONG_FLOW_SELL
-            or futures_5m_imbalance <= STRONG_FLOW_SELL
-        )
-        and price_5m in (
-            "FLAT",
-            "UP",
-        )
-    ):
-        pattern = "CONFLICT"
 
-        long_forbidden = True
-        short_forbidden = True
-
-        
-        reasons.append(
-            "Spot and Futures flows conflict"
-        )
-        
-        return build_result(
-            ready=True,
-            pattern="CONFLICT",
-            dominant_side="NONE",
-            long_forbidden=True,
-            short_forbidden=True,
-            reasons=reasons,
-        )
-
-    # ========================================================
-    # PATTERN 2:
-    # SELLER ABSORBED
+    # --------------------------------------------------------
+    # 1. BLOCK LONG
     #
-    # Продавцы агрессивно продают,
-    # но цена уже НЕ падает.
-    #
-    # Очень важно:
-    # SHORT здесь запрещаем.
-    # ========================================================
+    # Покупатели давят сильно,
+    # но цена НЕ растёт.
+    # Значит LONG опасен.
+    # --------------------------------------------------------
 
-    if (
-        spot_5m == "SELLING"
-        and futures_5m == "SELLING"
-        and price_5m in (
-            "FLAT",
-            "UP",
-        )
-    ):
-        pattern = "SELLER_ABSORBED"
-
-        dominant_side = "SELLER"
-
-        short_forbidden = True
-
-        reasons.append(
-            "Spot sellers active"
-        )
-
-        reasons.append(
-            "Futures sellers active"
-        )
-
-        reasons.append(
-            "Price does not respond downward"
-        )
-
-        if price_5m == "UP":
-            reasons.append(
-                "Price rises against sell pressure"
-            )
-
-        return build_result(
-            ready=True,
-            pattern="SELLER_ABSORBED",
-            dominant_side="SELLER",
-            long_forbidden=False,
-            short_forbidden=True,
-            reasons=reasons,
-        )
-
-    # ========================================================
-    # PATTERN 3:
-    # BUYER ABSORBED
-    #
-    # Покупатели агрессивно покупают,
-    # но цена уже НЕ растёт.
-    #
-    # LONG запрещён.
-    # ========================================================
-
-    if (
-        spot_5m == "BUYING"
-        and futures_5m == "BUYING"
-        and (
-            spot_5m_imbalance is not None
-            and futures_5m_imbalance is not None
-        )
+    block_long = (
+        spot_5m_imbalance is not None
+        and futures_5m_imbalance is not None
         and (
             spot_5m_imbalance >= STRONG_FLOW_BUY
             or futures_5m_imbalance >= STRONG_FLOW_BUY
         )
-        and price_5m in (
-            "FLAT",
-            "DOWN",
-        )
-    ):
-        pattern = "BUYER_ABSORBED"
+        and price_5m in ("FLAT", "DOWN")
+    )
 
-        dominant_side = "BUYER"
-
-        long_forbidden = True
-
+    if block_long:
         reasons.append(
-            "Spot buyers active"
+            "Strong buying exists, but price does not rise"
         )
-
-        reasons.append(
-            "Futures buyers active"
-        )
-
-        reasons.append(
-            "Price does not respond upward"
-        )
-
-        if price_5m == "DOWN":
-            reasons.append(
-                "Price falls against buy pressure"
-            )
 
         return build_result(
             ready=True,
-            pattern="BUYER_ABSORBED",
+            pattern="BLOCK_LONG",
             dominant_side="BUYER",
             long_forbidden=True,
             short_forbidden=False,
             reasons=reasons,
         )
 
-    # ========================================================
-    # PATTERN 4:
-    # LONG BUILDUP
+
+    # --------------------------------------------------------
+    # 2. BLOCK SHORT
+    #
+    # Продавцы давят сильно,
+    # но цена НЕ падает.
+    # Значит SHORT опасен.
+    # --------------------------------------------------------
+
+    block_short = (
+        spot_5m_imbalance is not None
+        and futures_5m_imbalance is not None
+        and (
+            spot_5m_imbalance <= STRONG_FLOW_SELL
+            or futures_5m_imbalance <= STRONG_FLOW_SELL
+        )
+        and price_5m in ("FLAT", "UP")
+    )
+
+    if block_short:
+        reasons.append(
+            "Strong selling exists, but price does not fall"
+        )
+
+        return build_result(
+            ready=True,
+            pattern="BLOCK_SHORT",
+            dominant_side="SELLER",
+            long_forbidden=False,
+            short_forbidden=True,
+            reasons=reasons,
+        )
+
+
+    # --------------------------------------------------------
+    # 3. LONG PATTERN
     #
     # Цена растёт
-    # Spot покупает
-    # Futures покупает
+    # Spot сильно покупает
+    # Futures сильно покупает
     # OI растёт
-    # Последняя минута НЕ развернулась в SELL.
-    # ========================================================
+    # 1m не развернулся против LONG
+    # --------------------------------------------------------
 
-    if (
+    long_pattern = (
         price_5m == "UP"
-        and spot_5m == "BUYING"
-        and futures_5m == "BUYING"
+        and spot_5m_imbalance is not None
+        and futures_5m_imbalance is not None
+        and spot_5m_imbalance >= STRONG_FLOW_BUY
+        and futures_5m_imbalance >= STRONG_FLOW_BUY
         and oi_5m == "RISING"
-    ):
-        if (
-            not flow_is_opposite(
-                spot_1m,
-                "BUYING",
-            )
-            and not flow_is_opposite(
-                futures_1m,
-                "BUYING",
-            )
-        ):
-            pattern = "LONG_BUILDUP"
-            dominant_side = "BUYER"
+        and not flow_is_opposite(
+            spot_1m,
+            "BUYING",
+        )
+        and not flow_is_opposite(
+            futures_1m,
+            "BUYING",
+        )
+    )
 
-            reasons.extend([
-                "Price rising",
-                "Spot buying",
-                "Futures buying",
-                "Open Interest rising",
-                "1m flow not reversed against LONG",
-            ])
+    if long_pattern:
+        reasons.extend([
+            "Price rising",
+            "Strong Spot buying",
+            "Strong Futures buying",
+            "Open Interest rising",
+            "1m flow not reversed against LONG",
+        ])
 
-            return build_result(
-                ready=True,
-                pattern="LONG_BUILDUP",
-                dominant_side="BUYER",
-                long_forbidden=False,
-                short_forbidden=True,
-                reasons=reasons,
-            )
-
-        reasons.append(
-            "5m LONG buildup exists but 1m flow turned against it"
+        return build_result(
+            ready=True,
+            pattern="LONG",
+            dominant_side="BUYER",
+            long_forbidden=False,
+            short_forbidden=True,
+            reasons=reasons,
         )
 
-    # ========================================================
-    # PATTERN 5:
-    # SHORT BUILDUP
+
+    # --------------------------------------------------------
+    # 4. SHORT PATTERN
     #
     # Цена падает
-    # Spot продаёт
-    # Futures продаёт
+    # Spot сильно продаёт
+    # Futures сильно продаёт
     # OI растёт
-    # Последняя минута НЕ развернулась в BUY.
-    # ========================================================
+    # 1m не развернулся против SHORT
+    # --------------------------------------------------------
 
-    if (
+    short_pattern = (
         price_5m == "DOWN"
-        and spot_5m == "SELLING"
-        and futures_5m == "SELLING"
+        and spot_5m_imbalance is not None
+        and futures_5m_imbalance is not None
+        and spot_5m_imbalance <= STRONG_FLOW_SELL
+        and futures_5m_imbalance <= STRONG_FLOW_SELL
         and oi_5m == "RISING"
-    ):
-        if (
-            not flow_is_opposite(
-                spot_1m,
-                "SELLING",
-            )
-            and not flow_is_opposite(
-                futures_1m,
-                "SELLING",
-            )
-        ):
-            pattern = "SHORT_BUILDUP"
-            dominant_side = "SELLER"
+        and not flow_is_opposite(
+            spot_1m,
+            "SELLING",
+        )
+        and not flow_is_opposite(
+            futures_1m,
+            "SELLING",
+        )
+    )
 
-            reasons.extend([
-                "Price falling",
-                "Spot selling",
-                "Futures selling",
-                "Open Interest rising",
-                "1m flow not reversed against SHORT",
-            ])
+    if short_pattern:
+        reasons.extend([
+            "Price falling",
+            "Strong Spot selling",
+            "Strong Futures selling",
+            "Open Interest rising",
+            "1m flow not reversed against SHORT",
+        ])
 
-            return build_result(
-                ready=True,
-                pattern="LONG_BUILDUP",
-                dominant_side="BUYER",
-                long_forbidden=False,
-                short_forbidden=True,
-                reasons=reasons,
-            )
-        reasons.append(
-            "5m SHORT buildup exists but 1m flow turned against it"
+        return build_result(
+            ready=True,
+            pattern="SHORT",
+            dominant_side="SELLER",
+            long_forbidden=True,
+            short_forbidden=False,
+            reasons=reasons,
         )
 
-    # ========================================================
-    # NO CLEAN PATTERN
-    # ========================================================
 
-    if (
-        spot_5m == "BUYING"
-        and futures_5m == "BUYING"
-    ):
-        dominant_side = "BUYER"
-
-    elif (
-        spot_5m == "SELLING"
-        and futures_5m == "SELLING"
-    ):
-        dominant_side = "SELLER"
+    # --------------------------------------------------------
+    # 5. WAIT
+    # --------------------------------------------------------
 
     reasons.append(
-        "No complete V3 trading pattern"
+        "No complete V3 pattern"
     )
 
     return build_result(
         ready=True,
         pattern="WAIT",
-        dominant_side=dominant_side,
-        long_forbidden=long_forbidden,
-        short_forbidden=short_forbidden,
+        dominant_side="NONE",
+        long_forbidden=False,
+        short_forbidden=False,
         reasons=reasons,
     )
