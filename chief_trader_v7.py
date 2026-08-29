@@ -619,6 +619,79 @@ def spot_vote(signal):
         "text": "Spot CVD не показывает явного преимущества"
     }
 
+def funding_vote(signal):
+
+    funding = signal.get("funding")
+
+    if funding is None:
+        return {
+            "vote": "UNKNOWN",
+            "weight": 0,
+            "reason": "FUNDING_NO_DATA",
+            "text": "Нет данных Funding"
+        }
+
+    funding = safe_float(funding, 0)
+
+    move_type = str(
+        signal.get("type") or ""
+    ).upper()
+
+    # ==========================================
+    # СЛИШКОМ МНОГО LONG
+    # ==========================================
+
+    if funding >= 0.10:
+
+        if move_type == "PUMP":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "LONGS_OVERHEATED",
+                "text": "Funding очень высокий — LONG перегружен"
+            }
+
+    if funding >= 0.05:
+
+        if move_type == "PUMP":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 2,
+                "reason": "LONGS_CROWDED",
+                "text": "Funding повышен — LONG становится перегруженным"
+            }
+
+    # ==========================================
+    # СЛИШКОМ МНОГО SHORT
+    # ==========================================
+
+    if funding <= -0.10:
+
+        if move_type == "DUMP":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "SHORTS_OVERHEATED",
+                "text": "Funding сильно отрицательный — SHORT перегружен"
+            }
+
+    if funding <= -0.05:
+
+        if move_type == "DUMP":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 2,
+                "reason": "SHORTS_CROWDED",
+                "text": "Отрицательный Funding повышает риск short squeeze"
+            }
+
+    return {
+        "vote": "NEUTRAL",
+        "weight": 1,
+        "reason": "FUNDING_NORMAL",
+        "text": "Funding не показывает экстремальной перегруженности"
+    }
+
 
 def scenario_vote(signal):
 
