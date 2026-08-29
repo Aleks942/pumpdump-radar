@@ -1058,19 +1058,21 @@ def _chief_collect_votes(signal):
     vote_functions = [
 
         ("OI", oi_vote),
-
+    
         ("TREND", trend_vote),
-
+    
         ("MONEY", money_vote),
-
+    
         ("PRESSURE", pressure_vote),
-
+    
         ("LIQUIDATIONS", liquidation_vote),
-
+    
         ("SPOT", spot_vote),
-
+    
+        ("FUNDING", funding_vote),
+    
         ("SCENARIO", scenario_vote),
-
+    
     ]
 
     votes = []
