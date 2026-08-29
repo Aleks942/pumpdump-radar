@@ -62,11 +62,13 @@ def get_market_buy_sell(inst_id, limit=100):
         "instId": inst_id,
         "limit": limit
     })
+    
     if not data:
         return {
             "market_buy_qty": 0,
             "market_sell_qty": 0,
             "delta": 0,
+            "delta_ratio": 0,
             "pressure": "NO_DATA"
         }
 
@@ -105,6 +107,7 @@ def get_market_buy_sell(inst_id, limit=100):
         "market_buy_qty": buy_qty,
         "market_sell_qty": sell_qty,
         "delta": delta,
+        "delta_ratio": round(ratio * 100, 2) if total > 0 else 0,
         "pressure": pressure
     }
 
