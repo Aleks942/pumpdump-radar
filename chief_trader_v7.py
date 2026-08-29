@@ -2470,16 +2470,30 @@ def calculate_market_health(signal, context):
     # MONEY FLOW
     # ========================================
 
-    money = context["money_state"]
+    money_state = context["money_state"]
 
-    if money == "STRONG_NEW_MONEY":
-        buyers += 15
+    money_data = signal.get("money") or {}
 
-    elif money == "BUILDING_MONEY":
-        buyers += 10
+    money_direction = str(
+        money_data.get("money_direction")
+        or "NEUTRAL"
+    ).upper()
 
-    elif money == "EXITING_MONEY":
-        sellers += 12
+    if money_state == "STRONG_NEW_MONEY":
+
+        if money_direction == "LONG":
+            buyers += 15
+
+        elif money_direction == "SHORT":
+            sellers += 15
+
+    elif money_state == "BUILDING_MONEY":
+
+        if money_direction == "LONG":
+            buyers += 10
+
+        elif money_direction == "SHORT":
+            sellers += 10
 
     # ========================================
     # TREND
