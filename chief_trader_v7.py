@@ -1541,7 +1541,7 @@ def _chief_build_context(signal, votes):
         "short_liq": short_liq,
 
     }
-    context["market_state"] = detect_market_state(context)
+   
 
     return context
 
