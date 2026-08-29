@@ -553,28 +553,70 @@ def spot_vote(signal):
     spot = signal.get("spot_cvd")
 
     if not spot or not spot.get("available"):
-
         return {
             "vote": "UNKNOWN",
             "weight": 0,
             "reason": "SPOT_NO_DATA",
-            "text": "Нет данных Spot"
+            "text": "Нет данных Spot CVD"
         }
 
+    move_type = str(
+        signal.get("type") or ""
+    ).upper()
+
+    spot_state = str(
+        spot.get("state") or ""
+    ).upper()
+
+    # ==========================================
+    # PUMP
+    # ==========================================
+
+    if move_type == "PUMP":
+
+        if spot_state == "BUY":
+            return {
+                "vote": "CONTINUE",
+                "weight": 3,
+                "reason": "SPOT_CONFIRMS_PUMP",
+                "text": "Spot CVD подтверждает покупки"
+            }
+
+        if spot_state == "SELL":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "SPOT_DIVERGENCE_PUMP",
+                "text": "Spot продаёт против роста"
+            }
+
+    # ==========================================
+    # DUMP
+    # ==========================================
+
+    if move_type == "DUMP":
+
+        if spot_state == "SELL":
+            return {
+                "vote": "CONTINUE",
+                "weight": 3,
+                "reason": "SPOT_CONFIRMS_DUMP",
+                "text": "Spot CVD подтверждает продажи"
+            }
+
+        if spot_state == "BUY":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": 3,
+                "reason": "SPOT_DIVERGENCE_DUMP",
+                "text": "Spot покупает против падения"
+            }
+
     return {
-
-        # Пока Spot только наблюдает
         "vote": "NEUTRAL",
-
-        # На решение не влияет
-        "weight": 0,
-
-        # Чтобы Chief Trader видел состояние
-        "reason": spot.get("state", "SPOT_UNKNOWN"),
-
-        # Будет выводиться в разделе "Почему"
-        "text": spot.get("text", "")
-
+        "weight": 1,
+        "reason": "SPOT_NEUTRAL",
+        "text": "Spot CVD не показывает явного преимущества"
     }
 
 
