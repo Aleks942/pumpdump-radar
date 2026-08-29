@@ -438,10 +438,8 @@ def analyze_smart_money(snapshot):
     block_long = (
         spot_5m_imbalance is not None
         and futures_5m_imbalance is not None
-        and (
-            spot_5m_imbalance >= STRONG_FLOW_BUY
-            or futures_5m_imbalance >= STRONG_FLOW_BUY
-        )
+        and spot_5m_imbalance >= STRONG_FLOW_BUY
+        and futures_5m_imbalance >= STRONG_FLOW_BUY
         and price_5m in ("FLAT", "DOWN")
     )
 
@@ -471,10 +469,8 @@ def analyze_smart_money(snapshot):
     block_short = (
         spot_5m_imbalance is not None
         and futures_5m_imbalance is not None
-        and (
-            spot_5m_imbalance <= STRONG_FLOW_SELL
-            or futures_5m_imbalance <= STRONG_FLOW_SELL
-        )
+        and spot_5m_imbalance <= STRONG_FLOW_SELL
+        and futures_5m_imbalance <= STRONG_FLOW_SELL
         and price_5m in ("FLAT", "UP")
     )
 
