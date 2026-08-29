@@ -568,26 +568,67 @@ def spot_vote(signal):
         spot.get("state") or ""
     ).upper()
 
+    cvd_percent = safe_float(
+        spot.get("cvd_percent"),
+        0
+    )
+
+    # ==========================================
+    # НАПРАВЛЕНИЕ SPOT
+    # ==========================================
+
+    buy_states = {
+        "SPOT_BUY",
+        "STRONG_SPOT_BUY",
+    }
+
+    sell_states = {
+        "SPOT_SELL",
+        "STRONG_SPOT_SELL",
+    }
+
+    # Сильный Spot получает больший вес.
+    if spot_state in {
+        "STRONG_SPOT_BUY",
+        "STRONG_SPOT_SELL",
+    }:
+        weight = 4
+
+    elif spot_state in {
+        "SPOT_BUY",
+        "SPOT_SELL",
+    }:
+        weight = 2
+
+    else:
+        weight = 1
+
     # ==========================================
     # PUMP
     # ==========================================
 
     if move_type == "PUMP":
 
-        if spot_state == "BUY":
+        if spot_state in buy_states:
             return {
                 "vote": "CONTINUE",
-                "weight": 3,
+                "weight": weight,
                 "reason": "SPOT_CONFIRMS_PUMP",
-                "text": "Spot CVD подтверждает покупки"
+                "text": (
+                    f"Spot CVD подтверждает покупки "
+                    f"({cvd_percent:+.1f}%)"
+                )
             }
 
-        if spot_state == "SELL":
+        if spot_state in sell_states:
             return {
                 "vote": "EXHAUSTION",
-                "weight": 3,
+                "weight": weight,
                 "reason": "SPOT_DIVERGENCE_PUMP",
-                "text": "Spot продаёт против роста"
+                "text": (
+                    f"Spot продаёт против роста "
+                    f"({cvd_percent:+.1f}%)"
+                )
             }
 
     # ==========================================
@@ -596,28 +637,38 @@ def spot_vote(signal):
 
     if move_type == "DUMP":
 
-        if spot_state == "SELL":
+        if spot_state in sell_states:
             return {
                 "vote": "CONTINUE",
-                "weight": 3,
+                "weight": weight,
                 "reason": "SPOT_CONFIRMS_DUMP",
-                "text": "Spot CVD подтверждает продажи"
+                "text": (
+                    f"Spot CVD подтверждает продажи "
+                    f"({cvd_percent:+.1f}%)"
+                )
             }
 
-        if spot_state == "BUY":
+        if spot_state in buy_states:
             return {
                 "vote": "EXHAUSTION",
-                "weight": 3,
+                "weight": weight,
                 "reason": "SPOT_DIVERGENCE_DUMP",
-                "text": "Spot покупает против падения"
+                "text": (
+                    f"Spot покупает против падения "
+                    f"({cvd_percent:+.1f}%)"
+                )
             }
 
     return {
         "vote": "NEUTRAL",
         "weight": 1,
         "reason": "SPOT_NEUTRAL",
-        "text": "Spot CVD не показывает явного преимущества"
+        "text": (
+            f"Spot CVD без явного преимущества "
+            f"({cvd_percent:+.1f}%)"
+        )
     }
+
 
 def funding_vote(signal):
 
