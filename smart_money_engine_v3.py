@@ -593,7 +593,7 @@ def analyze_smart_money(snapshot):
         ready=True,
         pattern="WAIT",
         dominant_side="NONE",
-        long_forbidden=False,
-        short_forbidden=False,
+        long_forbidden=True,
+        short_forbidden=True,
         reasons=reasons,
     )
