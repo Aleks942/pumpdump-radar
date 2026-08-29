@@ -2629,12 +2629,22 @@ def calculate_market_health(signal, context):
     # ========================================
     # SPOT CVD
     # ========================================
-
-    if context["spot_state"] == "BUY":
+    
+    spot_state = str(
+        context.get("spot_state") or ""
+    ).upper()
+    
+    if spot_state == "STRONG_SPOT_BUY":
         buyers += 18
-
-    elif context["spot_state"] == "SELL":
+    
+    elif spot_state == "SPOT_BUY":
+        buyers += 12
+    
+    elif spot_state == "STRONG_SPOT_SELL":
         sellers += 18
+    
+    elif spot_state == "SPOT_SELL":
+        sellers += 12
 
     # ========================================
     # MONEY FLOW
