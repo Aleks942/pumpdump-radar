@@ -423,11 +423,20 @@ def analyze_smart_money(snapshot):
     # ========================================================
 
     if (
-        spot_5m == "BUYING"
-        and futures_5m == "SELLING"
-    ) or (
         spot_5m == "SELLING"
-        and futures_5m == "BUYING"
+        and futures_5m == "SELLING"
+        and (
+            spot_5m_imbalance is not None
+            and futures_5m_imbalance is not None
+        )
+        and (
+            spot_5m_imbalance <= STRONG_FLOW_SELL
+            or futures_5m_imbalance <= STRONG_FLOW_SELL
+        )
+        and price_5m in (
+            "FLAT",
+            "UP",
+        )
     ):
         pattern = "CONFLICT"
 
