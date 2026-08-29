@@ -27,9 +27,7 @@ OKX_REST_URL = "https://www.okx.com"
 
 REQUEST_TIMEOUT = 10
 
-# Пока тестируем на BTC.
-SPOT_SYMBOL = "BTC-USDT"
-SWAP_SYMBOL = "BTC-USDT-SWAP"
+
 
 
 # ============================================================
@@ -190,6 +188,8 @@ def calc_swap_quote_value(
 def handle_trade(
     inst_id,
     trade,
+    spot_symbol,
+    swap_symbol,
 ):
     """
     Обрабатывает одну сделку из OKX trades channel.
@@ -224,11 +224,9 @@ def handle_trade(
         return
 
     # SPOT
-    if inst_id == SPOT_SYMBOL:
+    if inst_id == spot_symbol:
 
-        quote_value = (
-            price * size
-        )
+        quote_value = price * size
 
         save_trade(
             symbol=inst_id,
@@ -243,14 +241,12 @@ def handle_trade(
         return
 
     # SWAP
-    if inst_id == SWAP_SYMBOL:
+    if inst_id == swap_symbol:
 
-        quote_value = (
-            calc_swap_quote_value(
-                inst_id,
-                price,
-                size,
-            )
+        quote_value = calc_swap_quote_value(
+            inst_id,
+            price,
+            size,
         )
 
         if quote_value is None:
@@ -265,13 +261,11 @@ def handle_trade(
             event_ts=ts,
             quote_value=quote_value,
         )
-
-
 def on_message(ws, message):
 
     mark_stream_activity("spot")
     mark_stream_activity("swap")
-    
+
     try:
         payload = json.loads(
             message
@@ -280,7 +274,6 @@ def on_message(ws, message):
     except Exception:
         return
 
-    # subscribe confirmation / service events
     if "event" in payload:
         print(
             "[V3_WS_EVENT]",
@@ -304,6 +297,21 @@ def on_message(ws, message):
     if not inst_id:
         return
 
+    spot_symbol = getattr(
+        ws,
+        "v3_spot_symbol",
+        None,
+    )
+
+    swap_symbol = getattr(
+        ws,
+        "v3_swap_symbol",
+        None,
+    )
+
+    if not spot_symbol or not swap_symbol:
+        return
+
     data = payload.get(
         "data",
         [],
@@ -313,19 +321,26 @@ def on_message(ws, message):
         handle_trade(
             inst_id,
             trade,
+            spot_symbol,
+            swap_symbol,
         )
-
 
 # ============================================================
 # WEBSOCKET CALLBACKS
 # ============================================================
 
 def on_open(ws):
+
     mark_stream_connected("spot")
     mark_stream_connected("swap")
-    
+
+    spot_symbol = ws.v3_spot_symbol
+    swap_symbol = ws.v3_swap_symbol
+
     print(
         "[V3_WS_OPEN]",
+        spot_symbol,
+        swap_symbol,
         flush=True,
     )
 
@@ -334,11 +349,11 @@ def on_open(ws):
         "args": [
             {
                 "channel": "trades",
-                "instId": SPOT_SYMBOL,
+                "instId": spot_symbol,
             },
             {
                 "channel": "trades",
-                "instId": SWAP_SYMBOL,
+                "instId": swap_symbol,
             },
         ],
     }
@@ -351,19 +366,18 @@ def on_open(ws):
 
     print(
         "[V3_WS_SUBSCRIBE]",
-        SPOT_SYMBOL,
-        SWAP_SYMBOL,
+        spot_symbol,
+        swap_symbol,
         flush=True,
     )
-
 
 def on_error(ws, error):
     print(
         "[V3_WS_ERROR]",
+        getattr(ws, "v3_symbol", "UNKNOWN"),
         repr(error),
         flush=True,
     )
-
 
 def on_close(
     ws,
@@ -386,16 +400,38 @@ def on_close(
 # RUNNER
 # ============================================================
 
-def run_stream_forever():
+def run_stream_forever(symbol="BTCUSDT"):
     """
-    Перезапускает WebSocket после обрыва.
+    Запускает отдельный Spot + SWAP поток
+    для указанной монеты.
     """
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    if not symbol.endswith("USDT"):
+        raise ValueError(
+            f"Invalid symbol: {symbol}"
+        )
+
+    base = symbol[:-4]
+
+    spot_symbol = (
+        f"{base}-USDT"
+    )
+
+    swap_symbol = (
+        f"{base}-USDT-SWAP"
+    )
 
     while True:
 
         try:
+
             print(
                 "[V3_WS_CONNECTING]",
+                symbol,
                 OKX_WS_URL,
                 flush=True,
             )
@@ -408,32 +444,44 @@ def run_stream_forever():
                 on_close=on_close,
             )
 
+            # Каждый WebSocket получает
+            # собственные инструменты.
+            ws.v3_symbol = symbol
+            ws.v3_spot_symbol = spot_symbol
+            ws.v3_swap_symbol = swap_symbol
+
             ws.run_forever(
                 ping_interval=20,
                 ping_timeout=10,
             )
 
         except KeyboardInterrupt:
+
             print(
                 "[V3_WS_STOPPED]",
+                symbol,
                 flush=True,
             )
+
             break
 
         except Exception as exc:
+
             print(
                 "[V3_WS_FATAL]",
+                symbol,
                 repr(exc),
                 flush=True,
             )
 
         print(
             "[V3_WS_RECONNECT_IN_5S]",
+            symbol,
             flush=True,
         )
 
         time.sleep(5)
-
+        
 
 if __name__ == "__main__":
     run_stream_forever()
