@@ -289,71 +289,96 @@ def money_vote(signal):
     money = signal.get("money")
 
     if not money:
-
         return {
             "vote": "UNKNOWN",
             "weight": 0,
             "reason": "NO_MONEY_DATA",
-            "text": "Нет данных по деньгам"
+            "text": "Нет данных по денежному потоку"
         }
 
-    score = money.get("money_score", 0)
+    move_type = str(
+        signal.get("type") or ""
+    ).upper()
 
-    state = money.get("money_state", "")
+    money_direction = str(
+        money.get("money_direction") or "NEUTRAL"
+    ).upper()
 
-    # ==========================
-    # VERY STRONG MONEY
-    # ==========================
+    score = safe_float(
+        money.get("money_score"),
+        0
+    )
 
-    if score >= 5:
+    # ==========================================
+    # СИЛА ГОЛОСА
+    # ==========================================
 
+    if score >= 6:
+        weight = 4
+
+    elif score >= 4:
+        weight = 3
+
+    elif score >= 2:
+        weight = 2
+
+    else:
         return {
-            "vote": "CONTINUE",
-            "weight": 4,
-            "reason": "STRONG_NEW_MONEY",
-            "text": "Заходят деньги"
+            "vote": "NEUTRAL",
+            "weight": 1,
+            "reason": "NO_CLEAR_MONEY",
+            "text": "Явного направления новых денег нет"
         }
 
-    # ==========================
-    # BUILDING MONEY
-    # ==========================
+    # ==========================================
+    # PUMP
+    # ==========================================
 
-    if score >= 3:
+    if move_type == "PUMP":
 
-        return {
-            "vote": "CONTINUE",
-            "weight": 2,
-            "reason": "BUILDING_MONEY",
-            "text": "Деньги постепенно заходят"
-        }
+        if money_direction == "LONG":
+            return {
+                "vote": "CONTINUE",
+                "weight": weight,
+                "reason": "NEW_LONG_MONEY",
+                "text": "Новые деньги поддерживают LONG"
+            }
 
-    # ==========================
-    # WEAK FLOW
-    # ==========================
+        if money_direction == "SHORT":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": weight,
+                "reason": "SHORT_MONEY_AGAINST_PUMP",
+                "text": "Новые деньги направлены против роста"
+            }
 
-    if (
-        "WEAK" in state
-        or
-        "NO_CLEAR" in state
-    ):
+    # ==========================================
+    # DUMP
+    # ==========================================
 
-        return {
-            "vote": "EXHAUSTION",
-            "weight": 2,
-            "reason": "WEAK_MONEY_FLOW",
-            "text": "Деньги выходят"
-        }
+    if move_type == "DUMP":
+
+        if money_direction == "SHORT":
+            return {
+                "vote": "CONTINUE",
+                "weight": weight,
+                "reason": "NEW_SHORT_MONEY",
+                "text": "Новые деньги поддерживают SHORT"
+            }
+
+        if money_direction == "LONG":
+            return {
+                "vote": "EXHAUSTION",
+                "weight": weight,
+                "reason": "LONG_MONEY_AGAINST_DUMP",
+                "text": "Новые деньги направлены против падения"
+            }
 
     return {
-
         "vote": "NEUTRAL",
-
         "weight": 1,
-
         "reason": "MONEY_NEUTRAL",
-
-        "text": "Поток денег нейтральный"
-
+        "text": "Направление новых денег не подтверждено"
     }
 
 
