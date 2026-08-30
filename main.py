@@ -779,6 +779,22 @@ def analyze(ticker):
         else:
             continue
 
+        # ====================================
+        # ONE CHIEF CALL PER SYMBOL PER SCAN
+        # ====================================
+
+        if chief_called:
+            print(
+                "[CHIEF_SKIP_EXTRA_WINDOW]",
+                symbol,
+                window_name,
+                round(change, 2),
+                flush=True
+            )
+            continue
+
+        chief_called = True
+
         print(
             "[FILTERED]",
             symbol,
