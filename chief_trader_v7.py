@@ -5481,10 +5481,10 @@ def chief_trader_v7(signal):
 
     print(
         "[FINAL_STATE]",
+        signal.get("symbol"),
         context.get("market_state"),
         flush=True
     )
-
     # ============================================
     # DEBUG CONTEXT
     # ============================================
