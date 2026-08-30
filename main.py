@@ -744,6 +744,7 @@ def analyze(ticker):
     best_quality = -1
     
     exhaustion = None
+    chief_called = False
     
     for window_name, cfg in TIME_WINDOWS.items():
 
