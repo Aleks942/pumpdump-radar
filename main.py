@@ -863,8 +863,7 @@ def analyze(ticker):
                 round(oi_change, 2)
             )
 
-        if not can_send(symbol, move_type, window_name, change):
-            continue
+        
 
         signal_count = add_signal_count(symbol)
 
