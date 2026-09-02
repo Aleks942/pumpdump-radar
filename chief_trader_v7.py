@@ -2544,15 +2544,7 @@ def build_market_context(signal, votes):
         2
     )
 
-    # ============================================
-    # STATE ENGINE
-    # ============================================
-    
-    context["market_state"] = detect_market_state(
-        context
-    )
-    
-    return context
+   
 
 # ============================================
 # MARKET HEALTH ENGINE
