@@ -572,6 +572,22 @@ def detect_market_state(context):
         if oi_change <= -5:
             contradiction_score += 2
 
+    print(
+        "[STATE_DEBUG]",
+        symbol,
+        "dir=", direction,
+        "confirm_score=", confirmation_score,
+        "contradictions=", contradiction_score,
+        "power=", round(movement_power, 1),
+        "consensus=", round(consensus, 1),
+        "health=", round(health, 1),
+        "energy=", round(energy, 1),
+        "spot=", spot_confirmation,
+        "pressure=", pressure_confirmation,
+        "oi=", oi_confirmation,
+        flush=True,
+    )
+
     # ============================================
     # ПОЛУЧАЕМ ПРЕДЫДУЩЕЕ СОСТОЯНИЕ
     # ============================================
