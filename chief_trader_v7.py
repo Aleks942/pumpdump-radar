@@ -3935,6 +3935,12 @@ RULEBOOK = {
             "conditions": [
 
                 {
+                    "field": "allow_entry",
+                    "op": "==",
+                    "value": True,
+                },
+
+                {
                     "field": "entry_score",
                     "op": ">=",
                     "value": 78,
