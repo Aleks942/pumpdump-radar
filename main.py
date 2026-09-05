@@ -636,6 +636,32 @@ def analyze(ticker):
 
         OI_HISTORY[symbol].append(oi)
 
+        import time
+
+        if symbol not in OI_TIME_HISTORY:
+            OI_TIME_HISTORY[symbol] = []
+        
+        OI_TIME_HISTORY[symbol].append(time.time())
+        
+        if len(OI_TIME_HISTORY[symbol]) > 60:
+            OI_TIME_HISTORY[symbol].pop(0)
+        
+        if len(OI_TIME_HISTORY[symbol]) >= 2:
+            oi_window_minutes = (
+                OI_TIME_HISTORY[symbol][-1]
+                - OI_TIME_HISTORY[symbol][0]
+            ) / 60
+        
+            print(
+                "[OI_WINDOW]",
+                symbol,
+                "points=",
+                len(OI_TIME_HISTORY[symbol]),
+                "minutes=",
+                round(oi_window_minutes, 1),
+                flush=True,
+            )
+
         print(
             "[OI_KEYS]",
             len(OI_HISTORY),
