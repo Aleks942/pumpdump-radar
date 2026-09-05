@@ -1182,6 +1182,7 @@ def analyze(ticker):
                 "funding": funding,
                 "oi": oi,
                 "oi_change": oi_short_change,
+                "oi_trend_change": oi_trend_change,
                 "oi_warning": oi_warning,
                 "oi_slope": oi_slope,
                 "accumulation": accumulation,
