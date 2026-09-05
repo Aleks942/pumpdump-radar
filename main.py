@@ -968,7 +968,7 @@ def analyze(ticker):
         accumulation = detect_accumulation(
             {
                 "change": change,
-                "oi_change": oi_change,
+                "oi_change": oi_trend_change,
                 "oi_slope": oi_slope,
                 "money": money,
             }
@@ -986,7 +986,11 @@ def analyze(ticker):
             "funding": funding,
         
             "oi": oi,
-            "oi_change": oi_change,
+
+            "oi_change": oi_short_change,
+            "oi_short_change": oi_short_change,
+            "oi_trend_change": oi_trend_change,
+            
             "oi_slope": oi_slope,
             "oi_change_history": oi_change_history,
         
