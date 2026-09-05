@@ -628,7 +628,8 @@ def analyze(ticker):
         )
 
     oi_trend_change = None
-
+    oi_short_change = None
+    
     if oi is not None:
 
         if symbol not in OI_HISTORY:
@@ -719,23 +720,23 @@ def analyze(ticker):
 
                 
 
-                if oi_change >= 5:
+                if oi_trend_change is not None and oi_trend_change >= 5:
                     print(
                         "[SMART_OI] NEW MONEY",
                         symbol,
-                        round(oi_change, 2)
+                        round(oi_trend_change, 2)
                     )
-
-                if oi_change <= -5:
+                
+                if oi_trend_change is not None and oi_trend_change <= -5:
                     print(
                         "[SMART_OI] EXIT MONEY",
                         symbol,
-                        round(oi_change, 2)
+                        round(oi_trend_change, 2)
                     )
 
     oi_change_history = update_oi_change_history(
         symbol,
-        oi_change
+        oi_short_change
     )
     
    
