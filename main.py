@@ -680,6 +680,31 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) > 60:
             OI_HISTORY[symbol].pop(0)
 
+        # ====================================
+        # SHORT OI — свежий поток денег
+        # примерно последние 15–30 минут
+        # ====================================
+        
+        oi_short_change = None
+        
+        if len(OI_HISTORY[symbol]) >= 3:
+        
+            short_old_oi = OI_HISTORY[symbol][-3]
+        
+            if short_old_oi > 0:
+                oi_short_change = (
+                    (oi - short_old_oi) / short_old_oi
+                ) * 100
+        
+                print(
+                    "[OI_SHORT]",
+                    symbol,
+                    "change=",
+                    round(oi_short_change, 2),
+                    "%",
+                    flush=True
+                )
+
         if len(OI_HISTORY[symbol]) >= 2:
 
             old_oi = OI_HISTORY[symbol][0]
