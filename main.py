@@ -627,7 +627,7 @@ def analyze(ticker):
             flush=True
         )
 
-    oi_change = None
+    oi_trend_change = None
 
     if oi is not None:
 
@@ -711,7 +711,7 @@ def analyze(ticker):
 
             if old_oi > 0:
 
-                oi_change = (
+                oi_trend_change = (
                     (oi - old_oi) / old_oi
                 ) * 100
 
