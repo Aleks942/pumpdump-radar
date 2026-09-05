@@ -884,7 +884,7 @@ def analyze(ticker):
             "CHANGE=",
             round(change, 2),
             "OI=",
-            round(oi_change, 2) if oi_change is not None else None
+            round(oi_short_change, 2) if oi_short_change is not None else None
         )
 
         exhaustion = detect_exhaustion(
@@ -909,28 +909,28 @@ def analyze(ticker):
 
         if (
             move_type == "PUMP"
-            and oi_change is not None
-            and oi_change > 3
+            and oi_short_change is not None
+            and oi_short_change > 3
         ):
             oi_warning = "⚠️ PUMP + OI ↑: новые деньги заходят, шорт опаснее"
-
+        
             print(
                 "[OI_WARNING] PUMP WITH NEW MONEY",
                 symbol,
-                round(oi_change, 2)
+                round(oi_short_change, 2)
             )
-
+        
         if (
             move_type == "DUMP"
-            and oi_change is not None
-            and oi_change > 3
+            and oi_short_change is not None
+            and oi_short_change > 3
         ):
             oi_warning = "⚠️ DUMP + OI ↑: новые шорты набиваются, лонг опаснее"
-
+        
             print(
                 "[OI_WARNING] DUMP WITH NEW SHORTS",
                 symbol,
-                round(oi_change, 2)
+                round(oi_short_change, 2)
             )
 
         
@@ -940,18 +940,12 @@ def analyze(ticker):
         flow_comment = classify_flow(
             move_type,
             funding,
-            oi_change
+            oi_short_change
         )
-
+        
         oi_flow = classify_oi_flow(
             move_type,
-            oi_change
-        )
-
-        print(
-            "[FLOW]",
-            symbol,
-            flow_comment
+            oi_short_change
         )
 
         print(
