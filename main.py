@@ -1426,6 +1426,13 @@ def analyze_oi_price_divergence(signal):
     price_change = float(signal.get("change") or 0)
 
     oi_change = signal.get("oi_change")
+    oi_trend_change = signal.get("oi_trend_change")
+
+    if oi_trend_change is not None:
+        oi_trend_change = _chief_safe_float(
+            oi_trend_change,
+            None
+        )
     oi_slope = signal.get("oi_slope") or {}
 
     money = signal.get("money") or {}
