@@ -1522,6 +1522,8 @@ def _chief_build_context(signal, votes):
 
         "oi_change": oi_change,
 
+        "oi_trend_change": oi_trend_change,
+
         "oi_total": oi_total,
 
         "oi_acceleration": oi_acceleration,
