@@ -1409,6 +1409,15 @@ def _chief_build_context(signal, votes):
             None
         )
 
+    oi_trend_change = signal.get("oi_trend_change")
+
+    if oi_trend_change is not None:
+    
+        oi_trend_change = _chief_safe_float(
+            oi_trend_change,
+            None
+        )
+
     oi_slope = signal.get("oi_slope") or {}
 
     oi_total = _chief_safe_float(
