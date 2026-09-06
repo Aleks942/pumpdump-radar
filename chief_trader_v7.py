@@ -3607,7 +3607,8 @@ def calculate_entry_risk(signal, context):
         entry_direction = continuation_direction
 
         if (
-            entry_score >= 75
+            context.get("allow_entry") is True
+            and entry_score >= 75
             and movement_power >= 65
             and consensus >= 65
             and data_quality >= 50
@@ -3627,7 +3628,8 @@ def calculate_entry_risk(signal, context):
         # Разворотный вход всегда требует
         # более строгих условий.
         if (
-            stage == "REVERSAL"
+            context.get("allow_entry") is True
+            and stage == "REVERSAL"
             and entry_score >= 65
             and opposite_power >= 68
             and consensus >= 65
