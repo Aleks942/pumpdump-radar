@@ -2242,6 +2242,7 @@ def build_market_context(signal, votes):
 
         # Сырые рыночные показатели
         "oi_change": None,
+        "oi_trend_change": None,
         "oi_total": 0.0,
         "oi_acceleration": 0.0,
 
@@ -2401,6 +2402,18 @@ def build_market_context(signal, votes):
 
         except (TypeError, ValueError):
             context["oi_change"] = None
+
+    oi_trend_change = signal.get("oi_trend_change")
+
+    if oi_trend_change is not None:
+
+        try:
+            context["oi_trend_change"] = float(
+                oi_trend_change
+            )
+
+        except (TypeError, ValueError):
+            context["oi_trend_change"] = None
 
     oi_slope = (
         signal.get("oi_slope")
