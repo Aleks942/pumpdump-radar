@@ -3693,6 +3693,21 @@ def calculate_entry_risk(signal, context):
         )
 
     # ========================================
+    # STATE ENGINE OVERRIDE
+    # ========================================
+
+    if context.get("allow_entry") is not True:
+        entry_ready = False
+
+        if entry_risk == "LOW":
+            entry_risk = "MEDIUM"
+
+        risk_factors.append(
+            "State Engine ещё не разрешил вход"
+        )
+
+
+    # ========================================
     # 11. ОБЪЯСНЕНИЕ
     # ========================================
 
