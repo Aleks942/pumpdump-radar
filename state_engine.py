@@ -775,7 +775,7 @@ def detect_market_state(context):
 
         if (
             confirmation_score >= 7
-            and contradiction_score == 0
+            and contradiction_score <= 1
             and movement_power >= 65
             and consensus >= 65
             and health >= 58
