@@ -2607,6 +2607,27 @@ while True:
         )
     
         signals += 1
+
+        decision = signal.get("decision") or {}
+
+        if decision.get("trade_state") == "ENTRY":
+            print(
+                "[ENTRY_TRACK]",
+                signal["symbol"],
+                "direction=",
+                decision.get("direction"),
+                "price=",
+                signal.get("price"),
+                "window=",
+                signal.get("window"),
+                "stage=",
+                decision.get("stage"),
+                "entry_score=",
+                decision.get("entry_score"),
+                "time=",
+                datetime.now(UTC).isoformat(),
+                flush=True
+            )
     
         if not should_send_signal(signal):
             print(
