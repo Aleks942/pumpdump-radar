@@ -63,6 +63,7 @@ OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
 OI_CHANGE_HISTORY = {}
+ENTRY_TRACKER = {}
 print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
