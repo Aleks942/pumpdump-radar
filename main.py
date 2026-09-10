@@ -2652,6 +2652,12 @@ while True:
     
     for ticker in current_chunk:
         checked += 1
+
+        symbol = ticker.get("instId", "").replace("-USDT-SWAP", "USDT")
+        current_price = float(ticker.get("last") or 0)
+
+        if symbol and current_price > 0:
+            update_entry_tracker(symbol, current_price)
     
         signal = analyze(ticker)
     
