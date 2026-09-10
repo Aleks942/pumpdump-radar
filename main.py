@@ -594,6 +594,71 @@ def get_oi_slope(symbol):
     }
 
 
+ENTRY_CHECKPOINTS = {
+    300: "5m",
+    900: "15m",
+    1800: "30m",
+    3600: "60m",
+}
+
+
+def update_entry_tracker(symbol, current_price):
+
+    item = ENTRY_TRACKER.get(symbol)
+
+    if not item:
+        return
+
+    entry_price = item.get("entry_price")
+    direction = item.get("direction")
+    entry_time = item.get("entry_time")
+    checked = item.get("checked", set())
+
+    if not entry_price or not entry_time:
+        return
+
+    elapsed = (datetime.now(UTC) - entry_time).total_seconds()
+
+    for seconds, label in ENTRY_CHECKPOINTS.items():
+
+        if elapsed >= seconds and label not in checked:
+
+            price_change = (
+                (current_price - entry_price) / entry_price
+            ) * 100
+
+            if direction == "SHORT":
+                result = -price_change
+            else:
+                result = price_change
+
+            print(
+                "[ENTRY_RESULT]",
+                symbol,
+                "checkpoint=",
+                label,
+                "direction=",
+                direction,
+                "entry=",
+                entry_price,
+                "current=",
+                current_price,
+                "result=",
+                round(result, 2),
+                "%",
+                "elapsed_min=",
+                round(elapsed / 60, 1),
+                flush=True
+            )
+
+            checked.add(label)
+
+    item["checked"] = checked
+
+    if "60m" in checked:
+        del ENTRY_TRACKER[symbol]
+
+
 def analyze(ticker):
     try:
         raw_symbol = ticker["instId"]
