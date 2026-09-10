@@ -607,6 +607,16 @@ def update_entry_tracker(symbol, current_price):
 
     item = ENTRY_TRACKER.get(symbol)
 
+    print(
+        "[TRACKER_DEBUG]",
+        symbol,
+        "found=",
+        bool(item),
+        "price=",
+        current_price,
+        flush=True
+    )
+
     if not item:
         return
 
