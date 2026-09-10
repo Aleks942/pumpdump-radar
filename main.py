@@ -2650,7 +2650,7 @@ while True:
     checked = 0
     signals = 0
     no_signal = 0
-    
+
     for ticker in current_chunk:
         checked += 1
 
@@ -2658,8 +2658,26 @@ while True:
         current_price = float(ticker.get("last") or 0)
 
         if symbol and current_price > 0:
+
+            if ENTRY_TRACKER_TEST and not ENTRY_TRACKER:
+                ENTRY_TRACKER[symbol] = {
+                    "direction": "LONG",
+                    "entry_price": current_price,
+                    "entry_time": datetime.now(UTC),
+                    "checked": set(),
+                    "test": True,
+                }
+
+                print(
+                    "[TEST_ENTRY_CREATED]",
+                    symbol,
+                    "price=",
+                    current_price,
+                    flush=True
+                )
+
             update_entry_tracker(symbol, current_price)
-    
+
         signal = analyze(ticker)
     
         if not signal:
@@ -2684,6 +2702,15 @@ while True:
         decision = signal.get("decision") or {}
 
         if decision.get("trade_state") == "ENTRY":
+
+            if signal["symbol"] not in ENTRY_TRACKER:
+                ENTRY_TRACKER[signal["symbol"]] = {
+                    "direction": decision.get("direction"),
+                    "entry_price": signal.get("price"),
+                    "entry_time": datetime.now(UTC),
+                    "checked": set(),
+                }
+
             print(
                 "[ENTRY_TRACK]",
                 signal["symbol"],
