@@ -630,6 +630,16 @@ def update_entry_tracker(symbol, current_price):
 
     elapsed = (datetime.now(UTC) - entry_time).total_seconds()
 
+    print(
+        "[TRACKER_TIME]",
+        symbol,
+        "elapsed_sec=",
+        round(elapsed, 1),
+        "checked=",
+        checked,
+        flush=True
+    )
+
     for seconds, label in ENTRY_CHECKPOINTS.items():
 
         if elapsed >= seconds and label not in checked:
