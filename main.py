@@ -2661,14 +2661,7 @@ while True:
     signals = 0
     no_signal = 0
 
-    for tracked_symbol in list(ENTRY_TRACKER.keys()):
-        tracked_price = current_prices.get(tracked_symbol)
-
-        if tracked_price:
-            update_entry_tracker(
-                tracked_symbol,
-                tracked_price
-            )
+    
 
     for tracked_symbol in list(ENTRY_TRACKER.keys()):
         tracked_price = current_prices.get(tracked_symbol)
