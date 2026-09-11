@@ -23,11 +23,6 @@ from stats_engine import (
     update_signal_result,
 )
 
-from scenario_stats_engine import (
-    register_scenario_signal,
-    update_scenario_results,
-)
-
 from market_memory import (
     initialize_market_memory,
     market_memory_healthcheck,
