@@ -381,30 +381,31 @@ def on_close(
 # RUNNER
 # ============================================================
 
-def run_stream_forever(symbol="BTCUSDT"):
+def run_stream_forever(swap_symbols=None):
     """
-    Запускает отдельный Spot + SWAP поток
-    для указанной монеты.
+    Один WebSocket для списка OKX USDT SWAP инструментов.
     """
 
-    symbol = str(
-        symbol
-    ).upper().strip()
+    if swap_symbols is None:
+        swap_symbols = [
+            "BTC-USDT-SWAP"
+        ]
 
-    if not symbol.endswith("USDT"):
+    if isinstance(swap_symbols, str):
+        swap_symbols = [
+            swap_symbols
+        ]
+
+    swap_symbols = [
+        str(symbol).upper().strip()
+        for symbol in swap_symbols
+        if str(symbol).upper().strip().endswith("-USDT-SWAP")
+    ]
+
+    if not swap_symbols:
         raise ValueError(
-            f"Invalid symbol: {symbol}"
+            "No valid SWAP symbols"
         )
-
-    base = symbol[:-4]
-
-    spot_symbol = (
-        f"{base}-USDT"
-    )
-
-    swap_symbol = (
-        f"{base}-USDT-SWAP"
-    )
 
     while True:
 
@@ -412,7 +413,8 @@ def run_stream_forever(symbol="BTCUSDT"):
 
             print(
                 "[V3_WS_CONNECTING]",
-                symbol,
+                "symbols=",
+                len(swap_symbols),
                 OKX_WS_URL,
                 flush=True,
             )
@@ -425,11 +427,10 @@ def run_stream_forever(symbol="BTCUSDT"):
                 on_close=on_close,
             )
 
-            # Каждый WebSocket получает
-            # собственные инструменты.
-            ws.v3_symbol = symbol
-            ws.v3_spot_symbol = spot_symbol
-            ws.v3_swap_symbol = swap_symbol
+            ws.v3_swap_symbols = swap_symbols
+            ws.v3_symbol = (
+                f"{len(swap_symbols)} SWAP symbols"
+            )
 
             ws.run_forever(
                 ping_interval=20,
@@ -440,7 +441,6 @@ def run_stream_forever(symbol="BTCUSDT"):
 
             print(
                 "[V3_WS_STOPPED]",
-                symbol,
                 flush=True,
             )
 
@@ -450,14 +450,12 @@ def run_stream_forever(symbol="BTCUSDT"):
 
             print(
                 "[V3_WS_FATAL]",
-                symbol,
                 repr(exc),
                 flush=True,
             )
 
         print(
             "[V3_WS_RECONNECT_IN_5S]",
-            symbol,
             flush=True,
         )
 
