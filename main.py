@@ -11,6 +11,7 @@ from money_scenarios import detect_money_scenario
 from smart_score_engine import calculate_smart_score
 from chief_trader_v7 import chief_trader_v7
 from telegram_builder import build_short_message
+from trade_flow_collector_v3 import get_futures_windows
 
 from liquidation_engine import (
     start_liquidation_streams,
