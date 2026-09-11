@@ -2733,15 +2733,17 @@ while True:
 
         decision = signal.get("decision") or {}
 
-        if decision.get("trade_state") == "ENTRY":
+        if decision.get("trade_state") != "ENTRY":
+            print(
+                "[TG_SKIP_NON_ENTRY]",
+                signal["symbol"],
+                "trade_state=",
+                decision.get("trade_state"),
+                flush=True
+            )
+            continue
 
-            if signal["symbol"] not in ENTRY_TRACKER:
-                ENTRY_TRACKER[signal["symbol"]] = {
-                    "direction": decision.get("direction"),
-                    "entry_price": signal.get("price"),
-                    "entry_time": datetime.now(UTC),
-                    "checked": set(),
-                }
+        if not should_send_signal(signal):
 
             print(
                 "[ENTRY_TRACK]",
