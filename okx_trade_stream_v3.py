@@ -293,17 +293,7 @@ def on_message(ws, message):
     if not inst_id:
         return
 
-    spot_symbol = getattr(
-        ws,
-        "v3_spot_symbol",
-        None,
-    )
-
-    swap_symbol = getattr(
-        ws,
-        "v3_swap_symbol",
-        None,
-    )
+   
 
     if not spot_symbol or not swap_symbol:
         return
