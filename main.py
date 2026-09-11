@@ -2732,14 +2732,7 @@ while True:
         send_telegram(build_short_message(signal))
         register_signal(signal)
     
-        try:
-            register_scenario_signal(signal)
-        except Exception as e:
-            print(
-                "[REGISTER_SCENARIO_ERROR]",
-                e,
-                flush=True
-            )
+     
         
         try:
             record_id = save_market_signal(signal)
