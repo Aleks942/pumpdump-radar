@@ -64,7 +64,7 @@ OI_TIME_HISTORY = {}
 signal_memory = {}
 OI_CHANGE_HISTORY = {}
 ENTRY_TRACKER = {}
-ENTRY_TRACKER_TEST = True
+ENTRY_TRACKER_TEST = False
 print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
