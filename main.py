@@ -596,10 +596,10 @@ def get_oi_slope(symbol):
 
 
 ENTRY_CHECKPOINTS = {
-    60: "1m_TEST",
-    120: "2m_TEST",
-    180: "3m_TEST",
-    240: "4m_TEST",
+    300: "5m",
+    600: "10m",
+    1200: "20m",
+    1800: "30m",
 }
 
 
