@@ -185,12 +185,8 @@ def calc_swap_quote_value(
 # MESSAGE HANDLER
 # ============================================================
 
-def handle_trade(
-    inst_id,
-    trade,
-    spot_symbol,
-    swap_symbol,
-):
+def handle_trade(inst_id, trade):
+
     """
     Обрабатывает одну сделку из OKX trades channel.
     """
@@ -224,7 +220,7 @@ def handle_trade(
         return
 
     # SPOT
-    if inst_id == spot_symbol:
+    if not inst_id.endswith("-SWAP"):
 
         quote_value = price * size
 
@@ -241,7 +237,7 @@ def handle_trade(
         return
 
     # SWAP
-    if inst_id == swap_symbol:
+    if inst_id.endswith("-SWAP"):
 
         quote_value = calc_swap_quote_value(
             inst_id,
@@ -318,12 +314,7 @@ def on_message(ws, message):
     )
 
     for trade in data:
-        handle_trade(
-            inst_id,
-            trade,
-            spot_symbol,
-            swap_symbol,
-        )
+       handle_trade(inst_id, trade)
 
 # ============================================================
 # WEBSOCKET CALLBACKS
