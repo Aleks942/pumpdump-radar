@@ -2650,12 +2650,24 @@ send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
 start_liquidation_streams()
 
+initial_tickers = get_market_tickers()
+
+swap_symbols = [t.get("instId") for t in initial_tickers if t.get("instId")]
+
+threading.Thread(
+    target=run_stream_forever,
+    args=(swap_symbols,),
+    daemon=True,
+).start()
+
+print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
+
 while True:
     print("[SCAN] scanning market...")
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
-    
+
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
     
