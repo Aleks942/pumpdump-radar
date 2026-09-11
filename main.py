@@ -1044,6 +1044,19 @@ def analyze(ticker):
 
         money = analyze_new_money(raw_symbol)
 
+        futures_windows = get_futures_windows(symbol)
+
+        futures_5m = futures_windows.get("5m", {})
+        
+        futures_delta = futures_5m.get("delta_quote", 0)
+        
+        futures_imbalance = futures_5m.get("imbalance_pct", 0)
+        
+        futures_ready = futures_5m.get("window_ready", False)
+
+        print("[FUTURES_FLOW]", symbol, "delta=", round(futures_delta, 2), "imbalance=",
+        round(futures_imbalance, 2), "ready=", futures_ready)
+
         spot_cvd = get_spot_cvd(raw_symbol)
         
         fetch_okx_liquidations(raw_symbol)
