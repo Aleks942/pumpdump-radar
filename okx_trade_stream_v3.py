@@ -293,10 +293,6 @@ def on_message(ws, message):
     if not inst_id:
         return
 
-   
-
-    if not spot_symbol or not swap_symbol:
-        return
 
     data = payload.get(
         "data",
