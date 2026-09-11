@@ -312,46 +312,46 @@ def on_message(ws, message):
 
 def on_open(ws):
 
-    mark_stream_connected("spot")
     mark_stream_connected("swap")
 
-    spot_symbol = ws.v3_spot_symbol
-    swap_symbol = ws.v3_swap_symbol
+    swap_symbols = ws.v3_swap_symbols
 
     print(
         "[V3_WS_OPEN]",
-        spot_symbol,
-        swap_symbol,
+        "symbols=",
+        len(swap_symbols),
         flush=True,
     )
 
-    subscription = {
-        "op": "subscribe",
-        "args": [
-            {
-                "channel": "trades",
-                "instId": spot_symbol,
-            },
-            {
-                "channel": "trades",
-                "instId": swap_symbol,
-            },
-        ],
-    }
+    args = [
+        {
+            "channel": "trades",
+            "instId": symbol,
+        }
+        for symbol in swap_symbols
+    ]
 
-    ws.send(
-        json.dumps(
-            subscription
+    # Подписываемся небольшими пачками,
+    # но всё идёт через один WebSocket.
+    batch_size = 50
+
+    for i in range(0, len(args), batch_size):
+
+        subscription = {
+            "op": "subscribe",
+            "args": args[i:i + batch_size],
+        }
+
+        ws.send(
+            json.dumps(subscription)
         )
-    )
 
     print(
         "[V3_WS_SUBSCRIBE]",
-        spot_symbol,
-        swap_symbol,
+        "swap_symbols=",
+        len(swap_symbols),
         flush=True,
     )
-
 def on_error(ws, error):
     print(
         "[V3_WS_ERROR]",
