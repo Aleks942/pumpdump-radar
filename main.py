@@ -2479,12 +2479,6 @@ def build_message(signal):
     🤖 Качество данных: <b>{confidence}%</b>
         
     ━━━━━━━━━━━━━━
-
-    ⭐ <b>SMART SCORE</b>
-    
-    ⚠️ Риск: <b>{smart_risk}</b>
-    
-    ━━━━━━━━━━━━━━
     
     📊 <b>Что видит бот</b>
     
