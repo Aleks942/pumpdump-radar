@@ -2224,7 +2224,7 @@ def build_message(signal):
     
     
     
-    smart_risk = smart.get("risk", "")
+    
 
     reversal_score = decision.get("reversal_score", 0)
 
