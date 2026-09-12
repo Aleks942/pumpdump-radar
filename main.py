@@ -1255,7 +1255,7 @@ def analyze(ticker):
                 "liquidations": liquidations,
                 "trend_strength": temp_signal["trend_strength"],
                 "decision": decision,
-                "smart_score": smart_score,
+                
             }
 
     return best_signal
