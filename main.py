@@ -1104,7 +1104,7 @@ def analyze(ticker):
         temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
 
         # ====================================
-        # CHIEF TRADER V7
+        # PATTERN DETECTOR
         # ====================================
         
         spot_cvd_value = spot_cvd.get("cvd_percent", 0)
@@ -1132,79 +1132,39 @@ def analyze(ticker):
         
         temp_signal["decision"] = decision
 
-        
-        
-        
-        print(
-            "[CHIEF_V7]",
-            symbol,
-            decision["trade_state"],
-            decision["stage"],
-            decision["quality"],
-            flush=True
-        )
-        
-        # ====================================
-        # SIGNAL QUALITY FILTER
-        # ====================================
+        if decision.get("pattern") == "NONE":
+            continue 
+    
+        best_signal = {
+            "symbol": symbol,
+            "type": move_type,
+            "window": window_name,
+            "change": change,
+            "start_price": move["start_price"],
+            "end_price": move["end_price"],
+            "price": price,
+            "volume": volume_24h,
+            "funding": funding,
+            "oi": oi,
+            "oi_change": oi_short_change,
+            "oi_trend_change": oi_trend_change,
+            "oi_warning": oi_warning,
+            "oi_slope": oi_slope,
+            "accumulation": accumulation,
+            "smart_money_state": smart_money_state,
+            "flow_comment": flow_comment,
+            "oi_flow": oi_flow,
+            "signal_24h": signal_count,
+            "oi_change_history": oi_change_history,
+            "money": money,
+            "spot_cvd": spot_cvd,
+            "liquidations": liquidations,
+            "trend_strength": temp_signal["trend_strength"],
+            "decision": decision,
+            
+        }
 
-        quality = decision.get("quality", 0)
-        
-        print(
-            "[QUALITY]",
-            symbol,
-            "window=", window_name,
-            "quality=", quality,
-            "stage=", decision.get("stage"),
-            "action=", decision.get("action"),
-            "continue=", decision.get("continue_score"),
-            "exhaustion=", decision.get("exhaustion_score"),
-            flush=True
-        )
-        print(
-            "[QUALITY FILTER]",
-            symbol,
-            window_name,
-            "quality=", quality,
-            flush=True
-        )
-        if quality < 3:
-            continue
-        
-        if quality > best_quality:
-        
-            best_quality = quality
-        
-            best_signal = {
-                "symbol": symbol,
-                "type": move_type,
-                "window": window_name,
-                "change": change,
-                "start_price": move["start_price"],
-                "end_price": move["end_price"],
-                "price": price,
-                "volume": volume_24h,
-                "funding": funding,
-                "oi": oi,
-                "oi_change": oi_short_change,
-                "oi_trend_change": oi_trend_change,
-                "oi_warning": oi_warning,
-                "oi_slope": oi_slope,
-                "accumulation": accumulation,
-                "smart_money_state": smart_money_state,
-                "flow_comment": flow_comment,
-                "oi_flow": oi_flow,
-                "signal_24h": signal_count,
-                "oi_change_history": oi_change_history,
-                "money": money,
-                "spot_cvd": spot_cvd,
-                "liquidations": liquidations,
-                "trend_strength": temp_signal["trend_strength"],
-                "decision": decision,
-                
-            }
-
-    return best_signal
+        return best_signal
 
 STATE_MAP = {
     "STRONG_NEW_MONEY": "Заходят крупные деньги",
