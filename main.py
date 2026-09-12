@@ -1186,13 +1186,7 @@ def analyze(ticker):
         
         temp_signal["decision"] = decision
 
-        # ====================================
-        # SMART SCORE ENGINE
-        # ====================================
         
-        smart_score = calculate_smart_score(
-            temp_signal
-        )
         
         
         print(
