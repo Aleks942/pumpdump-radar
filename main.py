@@ -2222,15 +2222,7 @@ def build_message(signal):
     
     decision = chief
     
-    smart = signal.get("smart_score", {})
     
-    smart_score = smart.get("score", 0)
-    
-    smart_rating = smart.get("rating", "-")
-    
-    smart_stars = smart.get("stars", "")
-    
-    smart_quality = smart.get("quality", "")
     
     smart_risk = smart.get("risk", "")
 
@@ -2489,14 +2481,6 @@ def build_message(signal):
     ━━━━━━━━━━━━━━
 
     ⭐ <b>SMART SCORE</b>
-    
-    {smart_stars}
-    
-    🎯 <b>{smart_score}/100</b>
-    
-    🏆 Рейтинг: <b>{smart_rating}</b>
-    
-    📈 Качество: <b>{smart_quality}</b>
     
     ⚠️ Риск: <b>{smart_risk}</b>
     
