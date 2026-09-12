@@ -1107,9 +1107,27 @@ def analyze(ticker):
         # CHIEF TRADER V7
         # ====================================
         
-        decision = chief_trader_v7(
-            temp_signal
+        spot_cvd_value = spot_cvd.get("cvd_percent", 0)
+        
+        long_liq = liquidations.get("long_liq", 0)
+        
+        short_liq = liquidations.get("short_liq", 0)
+        
+        pattern_result = detect_pattern(
+        price_change=change,
+        oi_change=oi_short_change,
+        futures_cvd=futures_imbalance,
+        spot_cvd=spot_cvd_value,
+        delta=futures_delta,
+        long_liquidations=long_liq,
+        short_liquidations=short_liq,
         )
+        
+        decision = {
+        "pattern": pattern_result.get("pattern", "NONE"),
+        "direction": pattern_result.get("direction", "NONE"),
+        "reason": pattern_result.get("reason", ""),
+        }
         
         # ------------------------------------
         # Совместимость со старым кодом
