@@ -11,6 +11,7 @@ from chief_trader_v7 import chief_trader_v7
 from telegram_builder import build_short_message
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
+from pattern_detector import detect_pattern
 
 from liquidation_engine import (
     start_liquidation_streams,
