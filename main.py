@@ -723,6 +723,8 @@ def analyze(ticker):
             OI_HISTORY[symbol] = []
 
         OI_HISTORY[symbol].append(oi)
+        print("[OI_HISTORY_LEN]", symbol, "len=", len(OI_HISTORY[symbol]), "oi=", oi, flush=True)
+        
 
         import time
 
