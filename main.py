@@ -226,6 +226,7 @@ def get_funding_rate(raw_symbol):
 
 
 def get_open_interest(raw_symbol):
+    print("[OI_TEST_NEW_CODE]", raw_symbol, flush=True)
     print("[OI_REQUEST]", raw_symbol, flush=True)
     
     url = "https://www.okx.com/api/v5/public/open-interest"
