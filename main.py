@@ -878,7 +878,7 @@ def analyze(ticker):
     best_signal = None
    
     exhaustion = None
-    chief_called = False
+    pattern_called = False
     
     for window_name, cfg in TIME_WINDOWS.items():
 
@@ -914,12 +914,12 @@ def analyze(ticker):
             continue
 
         # ====================================
-        # ONE CHIEF CALL PER SYMBOL PER SCAN
+        # ONE PATTERN CHECK PER SYMBOL PER SCAN
         # ====================================
 
-        if chief_called:
+        if pattern_called:
             print(
-                "[CHIEF_SKIP_EXTRA_WINDOW]",
+                [PATTERN_SKIP_EXTRA_WINDOW]
                 symbol,
                 window_name,
                 round(change, 2),
@@ -927,7 +927,7 @@ def analyze(ticker):
             )
             continue
 
-        chief_called = True
+        pattern_called = True
 
         print(
             "[FILTERED]",
