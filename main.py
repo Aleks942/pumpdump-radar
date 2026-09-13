@@ -1112,22 +1112,28 @@ def analyze(ticker):
         short_liq = liquidations.get("short_liq", 0)
         
         pattern_result = detect_pattern(
-        print("[PATTERN]", symbol, pattern_result.get("pattern"), 
-        pattern_result.get("direction"), 
-        pattern_result.get("reason"), flush=True)
-        price_change=change,
-        oi_change=oi_short_change,
-        futures_cvd=futures_imbalance,
-        spot_cvd=spot_cvd_value,
-        delta=futures_delta,
-        long_liquidations=long_liq,
-        short_liquidations=short_liq,
+            price_change=change,
+            oi_change=oi_short_change,
+            futures_cvd=futures_imbalance,
+            spot_cvd=spot_cvd_value,
+            delta=futures_delta,
+            long_liquidations=long_liq,
+            short_liquidations=short_liq,
+        )
+        
+        print(
+            "[PATTERN]",
+            symbol,
+            pattern_result.get("pattern"),
+            pattern_result.get("direction"),
+            pattern_result.get("reason"),
+            flush=True,
         )
         
         decision = {
-        "pattern": pattern_result.get("pattern", "NONE"),
-        "direction": pattern_result.get("direction", "NONE"),
-        "reason": pattern_result.get("reason", ""),
+            "pattern": pattern_result.get("pattern", "NONE"),
+            "direction": pattern_result.get("direction", "NONE"),
+            "reason": pattern_result.get("reason", ""),
         }
         
         
