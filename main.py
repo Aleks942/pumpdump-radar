@@ -2377,11 +2377,13 @@ def build_message(signal):
     🕒 {datetime.now(UTC).strftime("%H:%M")}
     """
     
+
 def should_send_signal(signal):
     symbol = signal["symbol"]
     decision = signal.get("decision", {})
-    action = decision.get("action")
-    stage = decision.get("stage")
+
+    pattern = decision.get("pattern", "NONE")
+    direction = decision.get("direction", "NONE")
     change = abs(signal.get("change", 0))
 
     now = time.time()
@@ -2390,43 +2392,43 @@ def should_send_signal(signal):
 
     if state is None:
         signal_memory[symbol] = {
-            "last_action": action,
-            "last_stage": stage,
+            "last_pattern": pattern,
+            "last_direction": direction,
             "last_change": change,
             "last_time": now,
         }
         return True
 
-    old_action = state.get("last_action")
-    old_stage = state.get("last_stage")
+    old_pattern = state.get("last_pattern")
+    old_direction = state.get("last_direction")
     old_change = state.get("last_change", 0)
     old_time = state.get("last_time", 0)
 
-    # если решение или стадия изменились — шлём
-    if action != old_action or stage != old_stage:
+    # новый паттерн или сменилось направление
+    if pattern != old_pattern or direction != old_direction:
         signal_memory[symbol] = {
-            "last_action": action,
-            "last_stage": stage,
+            "last_pattern": pattern,
+            "last_direction": direction,
             "last_change": change,
             "last_time": now,
         }
         return True
 
-    # если движение стало намного сильнее — шлём обновление
+    # движение усилилось минимум на 3%
     if change >= old_change + 3:
         signal_memory[symbol] = {
-            "last_action": action,
-            "last_stage": stage,
+            "last_pattern": pattern,
+            "last_direction": direction,
             "last_change": change,
             "last_time": now,
         }
         return True
 
-    # через 30 минут можно напомнить
+    # повтор через 30 минут
     if now - old_time >= 1800:
         signal_memory[symbol] = {
-            "last_action": action,
-            "last_stage": stage,
+            "last_pattern": pattern,
+            "last_direction": direction,
             "last_change": change,
             "last_time": now,
         }
