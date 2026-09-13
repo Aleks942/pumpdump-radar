@@ -2358,8 +2358,7 @@ def build_message(signal):
     
     🎯 Решение Chief: <b>{decision.get("trade_state", "WATCH")}</b>
     📍 Стадия: <b>{decision.get("market_stage_v6", "UNCERTAIN")}</b>
-    🤖 Качество данных: <b>{confidence}%</b>
-        
+    
     ━━━━━━━━━━━━━━
     
     📊 <b>Что видит бот</b>
