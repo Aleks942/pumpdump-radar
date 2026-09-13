@@ -68,8 +68,8 @@ TIME_WINDOWS = {
     "5m": {
         "bar": "1m",
         "candles": 5,
-        "pump": float(os.getenv("PUMP_THRESHOLD_5M", 1.5))
-        "dump": -float(os.getenv("DUMP_THRESHOLD_5M", 1.5))
+        "pump": float(os.getenv("PUMP_THRESHOLD_5M", 1.5)),
+        "dump": -float(os.getenv("DUMP_THRESHOLD_5M", 1.5)),
     },
 
     "10m": {
