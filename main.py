@@ -1112,6 +1112,9 @@ def analyze(ticker):
         short_liq = liquidations.get("short_liq", 0)
         
         pattern_result = detect_pattern(
+        print("[PATTERN]", symbol, pattern_result.get("pattern"), 
+        pattern_result.get("direction"), 
+        pattern_result.get("reason"), flush=True)
         price_change=change,
         oi_change=oi_short_change,
         futures_cvd=futures_imbalance,
