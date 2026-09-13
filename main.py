@@ -919,7 +919,7 @@ def analyze(ticker):
 
         if pattern_called:
             print(
-                [PATTERN_SKIP_EXTRA_WINDOW]
+                "[PATTERN_SKIP_EXTRA_WINDOW]"
                 symbol,
                 window_name,
                 round(change, 2),
