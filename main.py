@@ -893,6 +893,17 @@ def analyze(ticker):
 
         change = move["change"]
 
+        if abs(change) >= 1:
+            print(
+                "[WINDOW_CHECK]",
+                symbol,
+                window_name,
+                "change=", round(change, 2),
+                "pump_need=", cfg["pump"],
+                "dump_need=", cfg["dump"],
+                flush=True
+            )
+
         if abs(change) >= 3:
             print(
                 "[TRIGGER_CANDIDATE]",
