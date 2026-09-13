@@ -1897,12 +1897,7 @@ def build_message(signal):
         )
     
     
-    # =========================
-    # CHIEF TRADER
-    # Главный аналитик
-    # =========================
-    
-    chief = signal.get("decision", {})
+    decision = signal.get("decision", {})
     
     # =========================
     # Единственный источник решения
