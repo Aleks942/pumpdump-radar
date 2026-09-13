@@ -876,8 +876,7 @@ def analyze(ticker):
     # ====================================
     
     best_signal = None
-    best_quality = -1
-    
+   
     exhaustion = None
     chief_called = False
     
