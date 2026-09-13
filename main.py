@@ -1110,6 +1110,18 @@ def analyze(ticker):
         long_liq = liquidations.get("long_liq", 0)
         
         short_liq = liquidations.get("short_liq", 0)
+
+        print(
+            "[PATTERN_INPUT]",
+            symbol,
+            "price=", change,
+            "oi=", oi_short_change,
+            "futures=", futures_imbalance,
+            "spot=", spot_cvd_value,
+            "long_liq=", long_liq,
+            "short_liq=", short_liq,
+            flush=True,
+        )
         
         pattern_result = detect_pattern(
             price_change=change,
