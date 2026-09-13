@@ -2127,36 +2127,14 @@ def build_message(signal):
     decision = chief
     
     
-    
-    
+    pattern = decision.get("pattern", "NONE")
 
-    reversal_score = decision.get("reversal_score", 0)
-
-    reversal_level = decision.get(
-        "reversal_level",
-        "⚪ Нет данных"
-    )
+    direction = decision.get("direction", "NONE")
     
-    reversal_text = decision.get(
-        "reversal_text",
-        "Недостаточно данных."
-    )
+    reason = decision.get("reason", "")
         
-    confidence = decision.get("confidence", 50)
+
     
-    stage = decision.get("stage", "UNKNOWN")
-    action = decision.get("action", "WAIT")
-
-    decision_text = decision.get(
-        "decision_text",
-        "🟡 Подождать"
-    )
-
-    move_status = decision.get(
-        "move_status",
-        "⚪ Недостаточно данных"
-    )
-
     # ============================================================
     # OLD MARKET PHASE ENGINE
     # Перенесён в Chief Trader V3.
