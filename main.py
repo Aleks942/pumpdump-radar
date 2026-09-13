@@ -245,8 +245,9 @@ def get_open_interest(raw_symbol):
         rows = data.get("data", [])
 
         if not rows:
-            return None
-
+        return None
+        
+        print("[OI_API_OK]", raw_symbol, rows[0].get("oi"), flush=True)
         return float(rows[0].get("oi", 0))
 
     except Exception as e:
