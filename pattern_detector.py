@@ -16,6 +16,13 @@ def detect_pattern(
     }
     """
 
+    if oi_change is None:
+        return {
+            "pattern": "NONE",
+            "direction": "NONE",
+            "reason": "OI data unavailable",
+        }
+
     # 1. NEW LONG BUILDUP
     if (
         price_change > 0
