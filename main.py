@@ -2051,50 +2051,7 @@ def build_message(signal):
     """
 
     
-    # =========================
-    # Понятные торговые решения
-    # =========================
 
-    if action == "IGNORE_REVERSAL":
-
-        if signal["type"] == "PUMP":
-            decision_text = "⛔ НЕ ШОРТИТЬ"
-        else:
-            decision_text = "⛔ НЕ ПОКУПАТЬ"
-
-    elif action == "WATCH":
-
-        decision_text = "👀 НАБЛЮДАТЬ"
-
-    elif action == "LOOK_REVERSAL":
-
-        decision_text = "🎯 ИСКАТЬ КОРРЕКЦИЮ"
-
-    elif action == "WAIT":
-
-        decision_text = "🟡 ЖДАТЬ"
-
-    else:
-
-        decision_text = "🟡 ЖДАТЬ"
-
-    # =========================
-    # Тип движения
-    # =========================
-    
-    move_title, move_description = classify_move_type(signal)
-
-    
-
-    market_summary = decision["market_summary"]
-    stronger_summary = decision.get(
-        "control_summary",
-        ""
-    )
-    action_summary = decision["action_summary"]
-    next_move_summary = decision["next_move_summary"]
-        
-    
 
     # =========================
     # Убираем причины про OI,
@@ -2196,31 +2153,16 @@ def build_message(signal):
     {emoji} <b>{signal["symbol"]}</b>   {signal["change"]:.2f}%   |   {signal["window"]}
     
     ━━━━━━━━━━━━━━
+
     
     📍 <b>Что происходит</b>
+
+    🧩 <b>Паттерн:</b> {pattern}
     
-    {market_summary}
+    🧭 <b>Направление:</b> {direction}
     
-    ━━━━━━━━━━━━━━
-    
-    👑 <b>Кто сильнее</b>
-    
-    {stronger_summary}
-    
-    ━━━━━━━━━━━━━━
-    
-    🎯 <b>Что делать сейчас</b>
-    
-    {action_summary}
-    
-    ━━━━━━━━━━━━━━
-    
-    📈 <b>Что вероятнее дальше</b>
-    
-    {next_move_summary}
-    
-    🎯 Решение Chief: <b>{decision.get("trade_state", "WATCH")}</b>
-    📍 Стадия: <b>{decision.get("market_stage_v6", "UNCERTAIN")}</b>
+    💡 <b>Причина:</b> {reason}
+      
     
     ━━━━━━━━━━━━━━
     
