@@ -23,6 +23,13 @@ def detect_pattern(
             "reason": "OI data unavailable",
         }
 
+    if spot_cvd is None:
+        return {
+            "pattern": "NONE",
+            "direction": "NONE",
+            "reason": "Spot CVD unavailable",
+        }
+
     # 1. NEW LONG BUILDUP
     if (
         price_change > 0
