@@ -701,7 +701,7 @@ def analyze(ticker):
 
     funding = get_funding_rate(raw_symbol)
     oi = get_open_interest(raw_symbol)
-    print("[OI_RESULT]", symbol, "raw=", raw_symbol, "oi=", oi, flush=True)
+    
 
     try:
         save_oi_snapshot(symbol, oi)
