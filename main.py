@@ -1267,66 +1267,6 @@ def classify_market_state(
     
 
 
-def analyze_trend_strength(signal):
-    try:
-        score = 0
-        reasons = []
-
-        move_type = signal.get("type")
-        change = signal.get("change", 0)
-
-        # ==========================
-        # PRICE STRENGTH
-        # ==========================
-
-        if abs(change) >= 10:
-            score += 2
-            reasons.append("PRICE_IMPULSE")
-
-        elif abs(change) >= 5:
-            score += 1
-            reasons.append("PRICE_STRONG")
-
-        # ==========================
-        # PRICE DIRECTION
-        # ==========================
-
-        if move_type == "PUMP" and change > 0:
-            score += 1
-            reasons.append("PRICE_UP")
-
-        elif move_type == "DUMP" and change < 0:
-            score += 1
-            reasons.append("PRICE_DOWN")
-
-        score = max(0, min(score, 10))
-
-        print(
-            "[SMART_TREND]",
-            signal.get("symbol"),
-            move_type,
-            "score=",
-            score,
-            "change=",
-            round(change, 2),
-            "reasons=",
-            reasons,
-            flush=True
-        )
-
-        return {
-            "score": score,
-            "reasons": reasons
-        }
-
-    except Exception as e:
-        print("[SMART_TREND_ERROR]", e, flush=True)
-
-        return {
-            "score": 0,
-            "reasons": []
-        }
-
 
 
 def analyze_oi_price_divergence(signal):
