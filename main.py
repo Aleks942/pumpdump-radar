@@ -452,7 +452,7 @@ def update_oi_change_history(symbol, oi_change):
 
         
 
-        elif avg < -0.25 and acceleration < -0.15:
+        if avg < -0.25 and acceleration < -0.15:
 
             print(
                 "[SMART_DISTRIBUTION]",
