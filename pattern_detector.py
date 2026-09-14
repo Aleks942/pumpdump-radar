@@ -23,19 +23,15 @@ def detect_pattern(
             "reason": "OI data unavailable",
         }
 
-    if spot_cvd is None:
-        return {
-            "pattern": "NONE",
-            "direction": "NONE",
-            "reason": "Spot CVD unavailable",
-        }
+    spot_up = spot_cvd is not None and spot_cvd > 0
+    spot_down = spot_cvd is not None and spot_cvd < 0
 
     # 1. NEW LONG BUILDUP
     if (
         price_change > 0
         and oi_change > 0
         and futures_cvd > 0
-        and spot_cvd > 0
+        and spot_up
         and delta > 0
     ):
         return {
@@ -49,7 +45,7 @@ def detect_pattern(
         price_change < 0
         and oi_change > 0
         and futures_cvd < 0
-        and spot_cvd < 0
+        and spot_down
         and delta < 0
     ):
         return {
@@ -87,7 +83,7 @@ def detect_pattern(
     # 5. SELL ABSORPTION
     if (
         futures_cvd < 0
-        and spot_cvd < 0
+        and spot_down
         and delta < 0
         and price_change >= -0.3
     ):
@@ -100,7 +96,7 @@ def detect_pattern(
     # 6. BUY ABSORPTION
     if (
         futures_cvd > 0
-        and spot_cvd > 0
+        and spot_up
         and delta > 0
         and price_change <= 0.3
     ):
@@ -114,7 +110,7 @@ def detect_pattern(
     if (
         price_change < 0
         and futures_cvd < 0
-        and spot_cvd < 0
+        and spot_down
         and delta < 0
     ):
         return {
@@ -127,7 +123,7 @@ def detect_pattern(
     if (
         price_change > 0
         and futures_cvd > 0
-        and spot_cvd > 0
+        and spot_up
         and delta > 0
     ):
         return {
