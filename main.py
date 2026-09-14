@@ -1123,7 +1123,8 @@ def analyze(ticker):
         # PATTERN DETECTOR
         # ====================================
         
-        spot_cvd_value = spot_cvd.get("cvd_percent", 0)
+        
+        spot_cvd_value = spot_cvd.get("cvd_percent")
         
         long_liq = liquidations.get("long_liq", 0)
         
