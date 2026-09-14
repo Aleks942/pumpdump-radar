@@ -448,15 +448,7 @@ def update_oi_change_history(symbol, oi_change):
 
         acceleration = avg_second - avg_first
 
-        print(
-            "[SMART_OI]",
-            symbol,
-            "AVG=",
-            round(avg, 3),
-            "ACC=",
-            round(acceleration, 3),
-            flush=True
-        )
+       
 
         if avg > 0.25 and acceleration > 0.15:
 
@@ -803,23 +795,7 @@ def analyze(ticker):
                     (oi - old_oi) / old_oi
                 ) * 100
 
-                
-
-                
-
-                if oi_trend_change is not None and oi_trend_change >= 5:
-                    print(
-                        "[SMART_OI] NEW MONEY",
-                        symbol,
-                        round(oi_trend_change, 2)
-                    )
-                
-                if oi_trend_change is not None and oi_trend_change <= -5:
-                    print(
-                        "[SMART_OI] EXIT MONEY",
-                        symbol,
-                        round(oi_trend_change, 2)
-                    )
+               
 
     oi_change_history = update_oi_change_history(
         symbol,
