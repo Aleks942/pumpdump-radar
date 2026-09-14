@@ -1115,8 +1115,7 @@ def analyze(ticker):
             "smart_money_state": smart_money_state,
         }
         
-        temp_signal["trend_strength"] = analyze_trend_strength(temp_signal)
-
+        
         # ====================================
         # PATTERN DETECTOR
         # ====================================
