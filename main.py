@@ -826,12 +826,7 @@ def analyze(ticker):
     
             smart_money_state = "SMART_ACCUMULATION"
     
-            print(
-                "[SMART_ACCUMULATION]",
-                symbol,
-                round(oi_slope["total_change"], 2),
-                flush=True
-            )
+            
     
         elif (
             oi_slope["total_change"] <= -5
