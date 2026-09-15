@@ -872,40 +872,7 @@ def analyze(ticker):
                 exhaustion["type"],
                 exhaustion["history"]
             )
-        
-        # ===================================
-        # OI WARNING — не режем сигнал, а помечаем
-        # ===================================
-
-        oi_warning = None
-
-        if (
-            move_type == "PUMP"
-            and oi_short_change is not None
-            and oi_short_change > 3
-        ):
-            oi_warning = "⚠️ PUMP + OI ↑: новые деньги заходят, шорт опаснее"
-        
-            print(
-                "[OI_WARNING] PUMP WITH NEW MONEY",
-                symbol,
-                round(oi_short_change, 2)
-            )
-        
-        if (
-            move_type == "DUMP"
-            and oi_short_change is not None
-            and oi_short_change > 3
-        ):
-            oi_warning = "⚠️ DUMP + OI ↑: новые шорты набиваются, лонг опаснее"
-        
-            print(
-                "[OI_WARNING] DUMP WITH NEW SHORTS",
-                symbol,
-                round(oi_short_change, 2)
-            )
-
-        
+     
 
         signal_count = add_signal_count(symbol)
 
