@@ -909,24 +909,6 @@ def analyze(ticker):
 
         signal_count = add_signal_count(symbol)
 
-        flow_comment = classify_flow(
-            move_type,
-            funding,
-            oi_short_change
-        )
-        
-        oi_flow = classify_oi_flow(
-            move_type,
-            oi_short_change
-        )
-
-        print(
-            "[OI_FLOW]",
-            symbol,
-            oi_flow
-        )
-
-        
 
         futures_windows = get_futures_windows(symbol)
 
