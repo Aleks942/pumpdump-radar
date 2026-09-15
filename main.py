@@ -829,12 +829,7 @@ def analyze(ticker):
     
             smart_money_state = "SMART_DISTRIBUTION"
     
-            print(
-                "[SMART_DISTRIBUTION]",
-                symbol,
-                round(oi_slope["total_change"], 2),
-                flush=True
-            )
+           
     # ====================================
     # BEST SIGNAL SELECTOR
     # ====================================
