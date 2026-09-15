@@ -446,21 +446,7 @@ def analyze(ticker):
                 - OI_TIME_HISTORY[symbol][0]
             ) / 60
         
-            print(
-                "[OI_WINDOW]",
-                symbol,
-                "points=",
-                len(OI_TIME_HISTORY[symbol]),
-                "minutes=",
-                round(oi_window_minutes, 1),
-                flush=True,
-            )
-
-        print(
-            "[OI_KEYS]",
-            len(OI_HISTORY),
-            flush=True
-        )
+           
 
         
         if symbol == "DOGEUSDT":
