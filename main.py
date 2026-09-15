@@ -939,7 +939,6 @@ def analyze(ticker):
             "oi_change": oi_short_change,
             "oi_trend_change": oi_trend_change,
             "oi_slope": oi_slope,
-            "signal_24h": signal_count,
             "oi_change_history": oi_change_history,
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
