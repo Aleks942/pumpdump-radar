@@ -807,27 +807,6 @@ def analyze(ticker):
             round(oi_slope["acceleration"], 2),
             flush=True
         )
-
-
-    smart_money_state = None
-    
-    if oi_slope:
-    
-        if (
-            oi_slope["total_change"] >= 5
-            and oi_slope["acceleration"] > 0
-        ):
-    
-            smart_money_state = "SMART_ACCUMULATION"
-    
-            
-    
-        elif (
-            oi_slope["total_change"] <= -5
-            and oi_slope["acceleration"] < 0
-        ):
-    
-            smart_money_state = "SMART_DISTRIBUTION"
     
            
     # ====================================
