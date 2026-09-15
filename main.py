@@ -309,48 +309,6 @@ def can_send(symbol, move_type, window, change):
 
 
 
-
-def update_oi_change_history(symbol, oi_change):
-
-    if oi_change is None:
-        return []
-
-    if symbol not in OI_CHANGE_HISTORY:
-        OI_CHANGE_HISTORY[symbol] = []
-
-    history = OI_CHANGE_HISTORY[symbol]
-
-    history.append(float(oi_change))
-
-    if len(history) > 12:
-        history.pop(0)
-
-    # ===========================
-    # SMART OI ANALYSIS
-    # ===========================
-
-    if len(history) >= 5:
-
-        avg = sum(history) / len(history)
-
-        first_half = history[:len(history)//2]
-        second_half = history[len(history)//2:]
-
-        avg_first = sum(first_half) / len(first_half)
-        avg_second = sum(second_half) / len(second_half)
-
-        acceleration = avg_second - avg_first
-
-       
-
-        
-
-        
-
-    return history
-
-
-
 def get_oi_slope(symbol):
 
     history = OI_HISTORY.get(symbol, [])
