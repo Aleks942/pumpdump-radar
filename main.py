@@ -196,31 +196,6 @@ def get_rotation_chunk(tickers):
     return current_chunk
 
 
-def get_funding_rate(raw_symbol):
-    url = "https://www.okx.com/api/v5/public/funding-rate"
-
-    params = {
-        "instId": raw_symbol
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=15)
-        data = r.json()
-
-        if data.get("code") != "0":
-            return None
-
-        rows = data.get("data", [])
-
-        if not rows:
-            return None
-
-        return float(rows[0].get("fundingRate", 0)) * 100
-
-    except Exception as e:
-        print("[FUNDING EXCEPTION]", raw_symbol, e)
-        return None
-
 
 def get_open_interest(raw_symbol):
    
