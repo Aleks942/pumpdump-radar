@@ -504,7 +504,7 @@ def analyze(ticker):
 
     best_signal = None
 
-    funding = get_funding_rate(raw_symbol)
+    
     oi = get_open_interest(raw_symbol)
     
 
@@ -826,7 +826,6 @@ def analyze(ticker):
             "end_price": move["end_price"],
             "price": price,
             "volume": volume_24h,
-            "funding": funding,
             "oi": oi,
             "oi_change": oi_short_change,
             "oi_trend_change": oi_trend_change,
