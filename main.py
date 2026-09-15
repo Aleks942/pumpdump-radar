@@ -440,14 +440,7 @@ def analyze(ticker):
         if len(OI_TIME_HISTORY[symbol]) > 60:
             OI_TIME_HISTORY[symbol].pop(0)
         
-        if len(OI_TIME_HISTORY[symbol]) >= 2:
-            oi_window_minutes = (
-                OI_TIME_HISTORY[symbol][-1]
-                - OI_TIME_HISTORY[symbol][0]
-            ) / 60
         
-           
-
         
         if symbol == "DOGEUSDT":
             print(
