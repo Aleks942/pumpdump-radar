@@ -1000,8 +1000,6 @@ def analyze(ticker):
             "oi_trend_change": oi_trend_change,
             "oi_warning": oi_warning,
             "oi_slope": oi_slope,
-            "flow_comment": flow_comment,
-            "oi_flow": oi_flow,
             "signal_24h": signal_count,
             "oi_change_history": oi_change_history,
             "spot_cvd": spot_cvd,
