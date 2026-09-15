@@ -1088,69 +1088,7 @@ def analyze(ticker):
 
         return best_signal
 
-STATE_MAP = {
-    "STRONG_NEW_MONEY": "Заходят крупные деньги",
-    "BUILDING_MONEY": "Деньги постепенно заходят",
-    "WEAK_FLOW": "Слабый приток денег",
-    "NO_CLEAR_MONEY": "Притока денег не видно"
-}
 
-PRESSURE_MAP = {
-    "STRONG_BUY_PRESSURE": "Покупатели очень активны",
-    "BUY_PRESSURE": "Покупатели сильнее",
-    "BALANCED": "Покупатели и продавцы равны",
-    "SELL_PRESSURE": "Продавцы сильнее",
-    "STRONG_SELL_PRESSURE": "Продавцы очень активны"
-}
-
-def classify_market_state(
-    move_type,
-    oi_change,
-    long_liq,
-    short_liq,
-    pressure
-):
-
-    if oi_change is None:
-        return "НЕ ХВАТАЕТ ДАННЫХ"
-
-    # НОВЫЕ ЛОНГИ
-
-    if (
-        move_type == "PUMP"
-        and oi_change >= 3
-        and short_liq < long_liq * 2
-    ):
-        return "🚀 НОВЫЕ ЛОНГИ — ПАМП ПРОДОЛЖАЕТСЯ"
-
-    # НОВЫЕ ШОРТЫ
-
-    if (
-        move_type == "DUMP"
-        and oi_change >= 3
-        and long_liq < short_liq * 2
-    ):
-        return "🔻 НОВЫЕ ШОРТЫ — ДАМП ПРОДОЛЖАЕТСЯ"
-
-    # КАПИТУЛЯЦИЯ ШОРТОВ
-
-    if (
-        move_type == "PUMP"
-        and oi_change <= -5
-        and short_liq > long_liq
-    ):
-        return "🔥 КАПИТУЛЯЦИЯ ШОРТОВ — ВЫДОХ ПАМПА"
-
-    # КАПИТУЛЯЦИЯ ЛОНГОВ
-
-    if (
-        move_type == "DUMP"
-        and oi_change <= -5
-        and long_liq > short_liq
-    ):
-        return "🔥 КАПИТУЛЯЦИЯ ЛОНГОВ — ВЫДОХ ДАМПА"
-
-    return "⚪ ПЕРЕХОДНАЯ ФАЗА — НУЖНО НАБЛЮДАТЬ"
     
 
 
