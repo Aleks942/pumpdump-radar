@@ -1054,7 +1054,6 @@ def analyze(ticker):
             "flow_comment": flow_comment,
             "oi_flow": oi_flow,
         
-            "accumulation": accumulation,
             "smart_money_state": smart_money_state,
         }
         
