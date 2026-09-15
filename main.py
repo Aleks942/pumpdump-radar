@@ -767,21 +767,7 @@ def analyze(ticker):
             round(oi_short_change, 2) if oi_short_change is not None else None
         )
 
-        exhaustion = detect_exhaustion(
-            move_type,
-            change,
-            oi_change_history
-        )
-        
-        if exhaustion:
-            print(
-                "[EXHAUSTION]",
-                symbol,
-                exhaustion["type"],
-                exhaustion["history"]
-            )
-
-
+       
         futures_windows = get_futures_windows(symbol)
 
         futures_5m = futures_windows.get("5m", {})
