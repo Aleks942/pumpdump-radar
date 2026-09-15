@@ -982,7 +982,7 @@ def analyze(ticker):
             oi_flow
         )
 
-        money = analyze_new_money(raw_symbol)
+        
 
         futures_windows = get_futures_windows(symbol)
 
