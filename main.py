@@ -30,7 +30,7 @@ from market_memory import (
     update_market_memory,
     save_oi_snapshot,
     load_recent_oi_history,
-    get_similar_reversal_statistics,
+   
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
