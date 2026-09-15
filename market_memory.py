@@ -630,7 +630,7 @@ def save_market_signal(signal):
                         ?, ?, ?,
                         ?, ?,
                         ?,
-                        ?, ?, ?,
+                        ?, ?, ?
                     )
                     """,
                     (
