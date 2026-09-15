@@ -51,7 +51,6 @@ SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 
 symbol_states = {}
-signal_24h_count = {}
 OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
