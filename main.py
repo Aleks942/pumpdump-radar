@@ -54,7 +54,6 @@ symbol_states = {}
 OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
-OI_CHANGE_HISTORY = {}
 ENTRY_TRACKER = {}
 ENTRY_TRACKER_TEST = False
 print("[BOOT] OI_HISTORY CREATED")
@@ -788,7 +787,6 @@ def analyze(ticker):
             "oi_change": oi_short_change,
             "oi_trend_change": oi_trend_change,
             "oi_slope": oi_slope,
-            "oi_change_history": oi_change_history,
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
             "decision": decision,
