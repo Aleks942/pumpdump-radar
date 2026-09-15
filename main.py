@@ -1025,18 +1025,7 @@ def analyze(ticker):
         fetch_okx_liquidations(raw_symbol)
         liquidations = get_liquidation_summary(raw_symbol)
 
-        # ====================================
-        # SMART ACCUMULATION
-        # ====================================
-        
-        accumulation = detect_accumulation(
-            {
-                "change": change,
-                "oi_change": oi_trend_change,
-                "oi_slope": oi_slope,
-                "money": money,
-            }
-        )
+       
 
         # ==========================
         # MOVE STATUS ENGINE
