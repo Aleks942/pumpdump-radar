@@ -848,9 +848,6 @@ def analyze(ticker):
                 exhaustion["type"],
                 exhaustion["history"]
             )
-     
-
-        signal_count = add_signal_count(symbol)
 
 
         futures_windows = get_futures_windows(symbol)
