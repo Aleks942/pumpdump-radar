@@ -419,7 +419,7 @@ def analyze(ticker):
             flush=True
         )
 
-    oi_trend_change = None
+    
     oi_short_change = None
     
     if oi is not None:
@@ -694,7 +694,6 @@ def analyze(ticker):
             "volume": volume_24h,
             "oi": oi,
             "oi_change": oi_short_change,
-            "oi_trend_change": oi_trend_change,
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
             "decision": decision,
