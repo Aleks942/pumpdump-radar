@@ -1005,36 +1005,6 @@ def analyze(ticker):
         liquidations = get_liquidation_summary(raw_symbol)
 
        
-
-        # ==========================
-        # MOVE STATUS ENGINE
-        # ==========================
-        
-        temp_signal = {
-            "symbol": symbol,
-            "type": move_type,
-            "change": change,
-        
-            "funding": funding,
-        
-            "oi": oi,
-
-            "oi_change": oi_short_change,
-            "oi_short_change": oi_short_change,
-            "oi_trend_change": oi_trend_change,
-            
-            "oi_slope": oi_slope,
-            "oi_change_history": oi_change_history,
-        
-            "money": money,
-            "spot_cvd": spot_cvd,
-            "liquidations": liquidations,
-        
-            "flow_comment": flow_comment,
-            "oi_flow": oi_flow,
-        
-            
-        }
         
         
         # ====================================
