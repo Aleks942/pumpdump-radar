@@ -374,75 +374,7 @@ def update_oi_change_history(symbol, oi_change):
 
     return history
 
-def detect_exhaustion(move_type, change, oi_change_history):
 
-    if not oi_change_history:
-        return None
-
-    if len(oi_change_history) < 2:
-        return None
-
-    try:
-        prev = float(oi_change_history[-2])
-        last = float(oi_change_history[-1])
-    except Exception:
-        return None
-
-    acceleration = last < prev
-
-    slowing = last > prev
-
-    # ==========================
-    # PUMP
-    # ==========================
-
-    if move_type == "PUMP":
-
-        # Деньги выходят всё быстрее
-        if last <= -2 and acceleration:
-
-            return {
-                "type": "LONGS_EXHAUSTING",
-                "strength": 9,
-                "side_hint": "SHORT",
-                "history": [prev, last]
-            }
-
-        # Деньги ещё выходят, но уже слабее
-        if last <= -2 and slowing:
-
-            return {
-                "type": "LONGS_COOLING",
-                "strength": 5,
-                "side_hint": "WAIT",
-                "history": [prev, last]
-            }
-
-    # ==========================
-    # DUMP
-    # ==========================
-
-    if move_type == "DUMP":
-
-        if last <= -2 and acceleration:
-
-            return {
-                "type": "SHORTS_EXHAUSTING",
-                "strength": 9,
-                "side_hint": "LONG",
-                "history": [prev, last]
-            }
-
-        if last <= -2 and slowing:
-
-            return {
-                "type": "SHORTS_COOLING",
-                "strength": 5,
-                "side_hint": "WAIT",
-                "history": [prev, last]
-            }
-
-    return None
 
 def get_oi_slope(symbol):
 
