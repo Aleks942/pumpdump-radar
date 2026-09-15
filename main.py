@@ -509,23 +509,7 @@ def analyze(ticker):
                     (oi - old_oi) / old_oi
                 ) * 100
     
-   
 
-    oi_slope = get_oi_slope(symbol)
-
-    if oi_slope:
-    
-        print(
-            "[OI_SLOPE]",
-            symbol,
-            "history=",
-            oi_slope["history"],
-            "total=",
-            round(oi_slope["total_change"], 2),
-            "acc=",
-            round(oi_slope["acceleration"], 2),
-            flush=True
-        )
     
            
     # ====================================
@@ -723,7 +707,6 @@ def analyze(ticker):
             "oi": oi,
             "oi_change": oi_short_change,
             "oi_trend_change": oi_trend_change,
-            "oi_slope": oi_slope,
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
             "decision": decision,
