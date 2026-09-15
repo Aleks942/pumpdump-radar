@@ -1033,7 +1033,7 @@ def analyze(ticker):
             "flow_comment": flow_comment,
             "oi_flow": oi_flow,
         
-            "smart_money_state": smart_money_state,
+            
         }
         
         
@@ -1106,7 +1106,6 @@ def analyze(ticker):
             "oi_trend_change": oi_trend_change,
             "oi_warning": oi_warning,
             "oi_slope": oi_slope,
-            "smart_money_state": smart_money_state,
             "flow_comment": flow_comment,
             "oi_flow": oi_flow,
             "signal_24h": signal_count,
