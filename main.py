@@ -498,18 +498,6 @@ def analyze(ticker):
                     "%",
                     flush=True
                 )
-
-        if len(OI_HISTORY[symbol]) >= 2:
-
-            old_oi = OI_HISTORY[symbol][0]
-
-            if old_oi > 0:
-
-                oi_trend_change = (
-                    (oi - old_oi) / old_oi
-                ) * 100
-    
-
     
            
     # ====================================
