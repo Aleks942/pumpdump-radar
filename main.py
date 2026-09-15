@@ -563,7 +563,7 @@ def analyze(ticker):
 
                 oi_trend_change = (
                     (oi - old_oi) / old_oi
-                ) * 1:
+                ) * 100
     
    
 
