@@ -665,7 +665,6 @@ def analyze(ticker):
     
     best_signal = None
    
-    exhaustion = None
     pattern_called = False
     
     for window_name, cfg in TIME_WINDOWS.items():
