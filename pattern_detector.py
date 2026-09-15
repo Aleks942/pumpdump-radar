@@ -64,7 +64,7 @@ def detect_pattern(
         return {
             "pattern": "SHORT_SQUEEZE",
             "direction": "UP",
-            "reason": "Price↑ + OI↓ + Futures buying + Short liquidations",
+            "reason": "Price↑ + OI↓ significantly + Futures buying + Short liquidations dominate",
         }
 
     # 4. LONG LIQUIDATION
