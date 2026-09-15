@@ -1056,7 +1056,7 @@ def analyze(ticker):
         }
         
         
-        temp_signal["decision"] = decision
+        
 
         if decision.get("pattern") == "NONE":
             continue 
