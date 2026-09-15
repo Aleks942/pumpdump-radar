@@ -57,9 +57,9 @@ def detect_pattern(
     # 3. SHORT SQUEEZE
     if (
         price_change > 0
-        and oi_change < 0
+        and oi_change <= -0.10
         and futures_cvd > 0
-        and short_liquidations > 0
+        and short_liquidations > long_liquidations
     ):
         return {
             "pattern": "SHORT_SQUEEZE",
