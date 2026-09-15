@@ -357,62 +357,6 @@ def can_send(symbol, move_type, window, change):
     return True
 
 
-def classify_flow(move_type, funding, oi_change):
-    if oi_change is None:
-        return "OI пока нет данных"
-
-    if move_type == "PUMP":
-        if oi_change > 2:
-            return "Цена растёт + OI растёт: новые деньги заходят в рост"
-        if oi_change < -2:
-            return "Цена растёт + OI падает: возможный short squeeze"
-
-    if move_type == "DUMP":
-        if oi_change > 2:
-            return "Цена падает + OI растёт: новые шорты давят цену"
-        if oi_change < -2:
-            return "Цена падает + OI падает: позиции закрываются, возможная капитуляция"
-
-    if funding is not None:
-        if move_type == "PUMP" and funding < -0.01:
-            return "Памп против отрицательного funding: шортистов могут выносить"
-        if move_type == "DUMP" and funding > 0.01:
-            return "Дамп против положительного funding: лонгистов могут выносить"
-
-    return "Движение есть, но сильного OI/funding подтверждения пока нет"
-
-def classify_oi_flow(move_type, oi_change):
-
-    if oi_change is None:
-        return "Нет данных"
-
-    if move_type == "PUMP":
-
-        if oi_change >= 5:
-            return "🔥 НОВЫЕ ЛОНГИ: в рынок заходят реальные деньги"
-    
-        if oi_change >= 2:
-            return "🟡 Умеренный приток новых денег"
-    
-        if oi_change <= -5:
-            return "🔥 SHORT SQUEEZE: шортистов массово выносит"
-    
-        if oi_change <= -2:
-            return "🟡 Возможный short squeeze"
-
-    if move_type == "DUMP":
-
-        if oi_change >= 5:
-            return "🔥 НОВЫЕ ШОРТЫ: продавцы активно давят цену"
-    
-        if oi_change >= 2:
-            return "🟡 Умеренный набор шортов"
-    
-        if oi_change <= -5:
-            return "🔥 КАПИТУЛЯЦИЯ ЛОНГОВ"
-    
-        if oi_change <= -2:
-            return "🟡 Возможная капитуляция"
 
 
 def update_oi_change_history(symbol, oi_change):
