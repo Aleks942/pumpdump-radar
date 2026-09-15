@@ -295,29 +295,6 @@ def get_window_move(raw_symbol, bar, candles_count):
         return None
 
 
-def clean_old_signal_counts():
-    now = time.time()
-
-    for symbol in list(signal_24h_count.keys()):
-        signal_24h_count[symbol] = [
-            t for t in signal_24h_count[symbol]
-            if now - t < 86400
-        ]
-
-        if not signal_24h_count[symbol]:
-            del signal_24h_count[symbol]
-
-
-def add_signal_count(symbol):
-    now = time.time()
-
-    if symbol not in signal_24h_count:
-        signal_24h_count[symbol] = []
-
-    signal_24h_count[symbol].append(now)
-    clean_old_signal_counts()
-
-    return len(signal_24h_count.get(symbol, []))
 
 
 def can_send(symbol, move_type, window, change):
