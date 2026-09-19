@@ -609,7 +609,7 @@ def analyze(ticker):
         print("[FUTURES_FLOW]", symbol, "delta=", round(futures_delta, 2), "imbalance=",
         round(futures_imbalance, 2), "ready=", futures_ready)
 
-        f not futures_ready:
+        if not futures_ready:
             print(
                 "[PATTERN_SKIP_NOT_READY]",
                 symbol,
