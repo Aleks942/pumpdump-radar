@@ -45,13 +45,14 @@ def detect_pattern(
         price_change < 0
         and oi_change > 0
         and futures_cvd < 0
-        and spot_down
+        and spot_cvd is not None
+        and spot_cvd <= -5.0
         and delta < 0
     ):
         return {
             "pattern": "NEW_SHORT_BUILDUP",
             "direction": "DOWN",
-            "reason": "Price↓ + OI↑ + Futures CVD↓ + Spot CVD↓ + Delta↓",
+            "reason": "Цена↓ + OI↑ + продажи во фьючерсах + Spot CVD заметно↓",
         }
 
     # 3. SHORT SQUEEZE
