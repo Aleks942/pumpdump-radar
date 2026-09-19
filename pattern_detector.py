@@ -70,14 +70,14 @@ def detect_pattern(
     # 4. LONG LIQUIDATION
     if (
         price_change < 0
-        and oi_change < 0
+        and oi_change <= -0.10
         and futures_cvd < 0
-        and long_liquidations > 0
+        and long_liquidations > short_liquidations
     ):
         return {
             "pattern": "LONG_LIQUIDATION",
             "direction": "DOWN",
-            "reason": "Price↓ + OI↓ + Futures selling + Long liquidations",
+            "reason": "Цена↓ + OI заметно↓ + продажи во фьючерсах + ликвидации лонгов преобладают",
         }
 
     # 5. SELL ABSORPTION
