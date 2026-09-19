@@ -606,8 +606,18 @@ def analyze(ticker):
         
         futures_ready = futures_5m.get("window_ready", False)
 
-        print("[FUTURES_FLOW]", symbol, "delta=", round(futures_delta, 2), "imbalance=",
-        round(futures_imbalance, 2), "ready=", futures_ready)
+        print(
+            "[FUTURES_FLOW]",
+            symbol,
+            "delta=", round(futures_delta, 2),
+            "imbalance=", round(futures_imbalance, 2),
+            "ready=", futures_ready,
+            "quality=", futures_5m.get("quality"),
+            "continuous_sec=", futures_5m.get("stream_continuous_seconds"),
+            "stale_sec=", futures_5m.get("stream_stale_seconds"),
+            "generation=", futures_5m.get("stream_generation"),
+            flush=True,
+        )
 
         if not futures_ready:
             print(
