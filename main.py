@@ -334,6 +334,7 @@ def update_entry_tracker(symbol, current_price):
 
     entry_price = item.get("entry_price")
     direction = item.get("direction")
+    pattern = item.get("pattern")
     entry_time = item.get("entry_time")
     checked = item.get("checked", set())
 
