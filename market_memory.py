@@ -654,7 +654,7 @@ def save_market_signal(signal):
                         scenario.get("strength"),
 
                         decision.get("stage"),
-                        decision.get("action"),
+                        decision.get("direction"),
                         decision.get("confidence"),
 
                         decision.get("score"),
