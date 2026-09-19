@@ -899,6 +899,38 @@ while True:
                 flush=True
             )
             continue
+
+        pattern = signal.get("decision", {}).get("pattern")
+        pattern_direction = signal.get("decision", {}).get("direction")
+
+        if pattern_direction == "UP":
+            tracker_direction = "LONG"
+        elif pattern_direction == "DOWN":
+            tracker_direction = "SHORT"
+        else:
+            tracker_direction = None
+
+        if tracker_direction and signal["symbol"] not in ENTRY_TRACKER:
+            ENTRY_TRACKER[signal["symbol"]] = {
+                "pattern": pattern,
+                "direction": tracker_direction,
+                "entry_price": signal["price"],
+                "entry_time": datetime.now(UTC),
+                "checked": set(),
+                "test": False,
+            }
+
+            print(
+                "[ENTRY_CREATED]",
+                signal["symbol"],
+                "pattern=",
+                pattern,
+                "direction=",
+                tracker_direction,
+                "price=",
+                signal["price"],
+                flush=True
+            )
     
         send_telegram(build_short_message(signal))
         register_signal(signal)
