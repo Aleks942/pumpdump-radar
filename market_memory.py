@@ -694,10 +694,10 @@ def save_market_signal(signal):
                 symbol,
                 "id=",
                 record_id,
-                "scenario=",
-                scenario.get("name"),
-                "action=",
-                decision.get("action"),
+                "pattern=",
+                decision.get("pattern"),
+                "direction=",
+                decision.get("direction"),
                 flush=True
             )
 
