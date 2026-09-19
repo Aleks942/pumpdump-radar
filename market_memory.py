@@ -648,9 +648,9 @@ def save_market_signal(signal):
                         entry_price,
                         signal.get("change"),
 
-                        scenario.get("name"),
-                        scenario.get("title"),
-                        scenario.get("bias"),
+                        decision.get("pattern"),
+                        decision.get("reason"),
+                        decision.get("direction"),
                         scenario.get("strength"),
 
                         decision.get("stage"),
