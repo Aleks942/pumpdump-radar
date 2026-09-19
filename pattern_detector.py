@@ -107,31 +107,7 @@ def detect_pattern(
             "reason": "Strong buying but price is not rising",
         }
 
-    # 7. FAILED HIGH
-    if (
-        price_change < 0
-        and futures_cvd < 0
-        and spot_down
-        and delta < 0
-    ):
-        return {
-            "pattern": "FAILED_HIGH",
-            "direction": "DOWN",
-            "reason": "Price rejected higher levels and flow turned bearish",
-        }
-
-    # 8. FAILED LOW
-    if (
-        price_change > 0
-        and futures_cvd > 0
-        and spot_up
-        and delta > 0
-    ):
-        return {
-            "pattern": "FAILED_LOW",
-            "direction": "UP",
-            "reason": "Price rejected lower levels and flow turned bullish",
-        }
+   
 
     return {
         "pattern": "NONE",
