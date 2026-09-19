@@ -82,32 +82,7 @@ def detect_pattern(
             "reason": "Цена↓ + OI заметно↓ + продажи во фьючерсах + ликвидации лонгов преобладают",
         }
 
-    # 5. SELL ABSORPTION
-    if (
-        futures_cvd < 0
-        and spot_down
-        and delta < 0
-        and price_change >= -0.3
-    ):
-        return {
-            "pattern": "SELL_ABSORPTION",
-            "direction": "UP",
-            "reason": "Strong selling but price is not falling",
-        }
-
-    # 6. BUY ABSORPTION
-    if (
-        futures_cvd > 0
-        and spot_up
-        and delta > 0
-        and price_change <= 0.3
-    ):
-        return {
-            "pattern": "BUY_ABSORPTION",
-            "direction": "DOWN",
-            "reason": "Strong buying but price is not rising",
-        }
-
+    
    
 
     return {
