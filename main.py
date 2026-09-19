@@ -609,6 +609,15 @@ def analyze(ticker):
         print("[FUTURES_FLOW]", symbol, "delta=", round(futures_delta, 2), "imbalance=",
         round(futures_imbalance, 2), "ready=", futures_ready)
 
+        f not futures_ready:
+            print(
+                "[PATTERN_SKIP_NOT_READY]",
+                symbol,
+                "Futures 5m window is not ready",
+                flush=True,
+            )
+            continue
+
         spot_cvd = get_spot_cvd(raw_symbol)
         
         fetch_okx_liquidations(raw_symbol)
