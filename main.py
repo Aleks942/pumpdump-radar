@@ -369,6 +369,8 @@ def update_entry_tracker(symbol, current_price):
             print(
                 "[ENTRY_RESULT]",
                 symbol,
+                "pattern=",
+                pattern,
                 "checkpoint=",
                 label,
                 "direction=",
