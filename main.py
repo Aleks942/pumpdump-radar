@@ -415,7 +415,7 @@ def update_entry_tracker(symbol, current_price):
 
     item["checked"] = checked
 
-    if "30m" in checked:
+    if all(label in checked for label in ENTRY_CHECKPOINTS.values()):
         del ENTRY_TRACKER[symbol]
 
 
