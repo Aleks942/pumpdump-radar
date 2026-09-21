@@ -913,8 +913,7 @@ while True:
                     flush=True
                 )
 
-            if symbol in ENTRY_TRACKER:
-                update_entry_tracker(symbol, current_price)
+           
 
         signal = analyze(ticker)
     
