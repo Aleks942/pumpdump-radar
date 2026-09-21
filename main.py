@@ -388,7 +388,30 @@ def update_entry_tracker(symbol, current_price):
                 flush=True
             )
 
+            saved = save_entry_result(
+                symbol=symbol,
+                pattern=pattern,
+                direction=direction,
+                entry_price=entry_price,
+                entry_ts=entry_time.timestamp(),
+                checkpoint_seconds=seconds,
+                current_price=current_price,
+                observed_ts=entry_time.timestamp() + elapsed,
+                result_pct=result,
+            )
+
+            if not saved:
+                break
+
             checked.add(label)
+
+            print(
+                "[ENTRY_SAVED]",
+                symbol,
+                "pattern=", pattern,
+                "checkpoint=", label,
+                flush=True,
+            )
 
     item["checked"] = checked
 
