@@ -996,6 +996,81 @@ def get_reversal_statistics():
 
     }
 
+def save_entry_result(
+    symbol,
+    pattern,
+    direction,
+    entry_price,
+    entry_ts,
+    checkpoint_seconds,
+    current_price,
+    observed_ts,
+    result_pct,
+):
+    try:
+        with _db_lock:
+            with closing(get_connection()) as connection:
+                connection.execute("""
+                    CREATE TABLE IF NOT EXISTS entry_results (
+                        symbol TEXT NOT NULL,
+                        pattern TEXT NOT NULL,
+                        direction TEXT NOT NULL,
+                        entry_price REAL NOT NULL,
+                        entry_ts REAL NOT NULL,
+                        checkpoint_seconds INTEGER NOT NULL,
+                        current_price REAL NOT NULL,
+                        observed_ts REAL NOT NULL,
+                        elapsed_seconds REAL NOT NULL,
+                        delay_seconds REAL NOT NULL,
+                        result_pct REAL NOT NULL,
+                        PRIMARY KEY (
+                            symbol, entry_ts, checkpoint_seconds
+                        )
+                    )
+                """)
+
+                elapsed = observed_ts - entry_ts
+
+                connection.execute("""
+                    INSERT INTO entry_results (
+                        symbol, pattern, direction,
+                        entry_price, entry_ts,
+                        checkpoint_seconds, current_price,
+                        observed_ts, elapsed_seconds,
+                        delay_seconds, result_pct
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (
+                        symbol, entry_ts, checkpoint_seconds
+                    ) DO NOTHING
+                """, (
+                    symbol,
+                    pattern,
+                    direction,
+                    entry_price,
+                    entry_ts,
+                    checkpoint_seconds,
+                    current_price,
+                    observed_ts,
+                    elapsed,
+                    max(0.0, elapsed - checkpoint_seconds),
+                    result_pct,
+                ))
+
+                connection.commit()
+
+        return True
+
+    except Exception as error:
+        print(
+            "[ENTRY_SAVE_ERROR]",
+            symbol,
+            checkpoint_seconds,
+            str(error),
+            flush=True,
+        )
+        return False
+
 def get_similar_reversal_statistics(signal):
 
     move_type = signal["type"]
