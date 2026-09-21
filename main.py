@@ -3,6 +3,7 @@ import csv
 import time
 import random
 import threading
+import math
 import requests
 from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
@@ -56,6 +57,8 @@ OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
 ENTRY_TRACKER = {}
+ENTRY_TRACKER_LOCK = threading.Lock()
+ENTRY_TRACKER_INTERVAL = 15
 ENTRY_TRACKER_TEST = False
 
 ENTRY_CHECKPOINTS = {
@@ -316,107 +319,130 @@ def can_send(symbol, move_type, window, change):
     return True
 
 
-def update_entry_tracker(symbol, current_price):
-
-    item = ENTRY_TRACKER.get(symbol)
-
+def create_entry_tracker(symbol, pattern, direction, price, test=False):
+    with ENTRY_TRACKER_LOCK:
+        if symbol in ENTRY_TRACKER or (test and ENTRY_TRACKER):
+            return False
+        ENTRY_TRACKER[symbol] = {
+            "pattern": pattern,
+            "direction": direction,
+            "entry_price": price,
+            "entry_time": datetime.now(UTC),
+            "checked": set(),
+            "test": test,
+        }
     print(
-        "[TRACKER_DEBUG]",
-        symbol,
-        "found=",
-        bool(item),
-        "price=",
-        current_price,
-        flush=True
+        "[TEST_ENTRY_CREATED]" if test else "[ENTRY_CREATED]",
+        symbol, "pattern=", pattern, "direction=", direction,
+        "price=", price, flush=True,
     )
+    return True
 
-    if not item:
+
+def update_entry_tracker(symbol, current_price, observed_ts, expected_item):
+    # Only the tracker worker calls this function. Network and DB operations
+    # stay outside the dictionary lock so scanning can create new entries.
+    with ENTRY_TRACKER_LOCK:
+        item = ENTRY_TRACKER.get(symbol)
+        if item is not expected_item:
+            return
+        entry_price = item["entry_price"]
+        entry_time = item["entry_time"]
+        direction = item["direction"]
+        pattern = item["pattern"]
+        checked = set(item["checked"])
+        is_test = item.get("test", False)
+
+    if not math.isfinite(current_price) or current_price <= 0 or entry_price <= 0:
         return
-
-    entry_price = item.get("entry_price")
-    direction = item.get("direction")
-    pattern = item.get("pattern")
-    entry_time = item.get("entry_time")
-    checked = item.get("checked", set())
-
-    if not entry_price or not entry_time:
-        return
-
-    elapsed = (datetime.now(UTC) - entry_time).total_seconds()
-
-    print(
-        "[TRACKER_TIME]",
-        symbol,
-        "elapsed_sec=",
-        round(elapsed, 1),
-        "checked=",
-        checked,
-        flush=True
-    )
+    elapsed = observed_ts - entry_time.timestamp()
+    result = (current_price - entry_price) / entry_price * 100
+    if direction == "SHORT":
+        result = -result
 
     for seconds, label in ENTRY_CHECKPOINTS.items():
-
-        if elapsed >= seconds and label not in checked:
-
-            price_change = (
-                (current_price - entry_price) / entry_price
-            ) * 100
-
-            if direction == "SHORT":
-                result = -price_change
-            else:
-                result = price_change
-
-            print(
-                "[ENTRY_RESULT]",
-                symbol,
-                "pattern=",
-                pattern,
-                "checkpoint=",
-                label,
-                "direction=",
-                direction,
-                "entry=",
-                entry_price,
-                "current=",
-                current_price,
-                "result=",
-                round(result, 2),
-                "%",
-                "elapsed_min=",
-                round(elapsed / 60, 1),
-                flush=True
-            )
-
+        if elapsed < seconds or label in checked:
+            continue
+        if not is_test:
             saved = save_entry_result(
-                symbol=symbol,
-                pattern=pattern,
-                direction=direction,
-                entry_price=entry_price,
-                entry_ts=entry_time.timestamp(),
-                checkpoint_seconds=seconds,
-                current_price=current_price,
-                observed_ts=entry_time.timestamp() + elapsed,
-                result_pct=result,
+                symbol=symbol, pattern=pattern, direction=direction,
+                entry_price=entry_price, entry_ts=entry_time.timestamp(),
+                checkpoint_seconds=seconds, current_price=current_price,
+                observed_ts=observed_ts, result_pct=result,
             )
-
             if not saved:
                 break
 
+        with ENTRY_TRACKER_LOCK:
+            if ENTRY_TRACKER.get(symbol) is not item:
+                return
+            item["checked"].add(label)
             checked.add(label)
+        print(
+            "[TEST_ENTRY_RESULT]" if is_test else "[ENTRY_SAVED]",
+            symbol, "pattern=", pattern, "checkpoint=", label,
+            "direction=", direction, "entry=", entry_price,
+            "current=", current_price, "result=", round(result, 2),
+            "elapsed_sec=", round(elapsed, 1),
+            "delay_sec=", round(max(0, elapsed - seconds), 1),
+            flush=True,
+        )
 
-            print(
-                "[ENTRY_SAVED]",
-                symbol,
-                "pattern=", pattern,
-                "checkpoint=", label,
-                flush=True,
-            )
+    with ENTRY_TRACKER_LOCK:
+        if (ENTRY_TRACKER.get(symbol) is item
+                and all(label in item["checked"]
+                        for label in ENTRY_CHECKPOINTS.values())):
+            del ENTRY_TRACKER[symbol]
 
-    item["checked"] = checked
 
-    if all(label in checked for label in ENTRY_CHECKPOINTS.values()):
-        del ENTRY_TRACKER[symbol]
+def poll_entry_tracker():
+    # Snapshot before fetching: a new entry cannot inherit an older quote.
+    with ENTRY_TRACKER_LOCK:
+        tracked = dict(ENTRY_TRACKER)
+    if not tracked:
+        return
+
+    response = requests.get(
+        "https://www.okx.com/api/v5/market/tickers?instType=SWAP",
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json()
+    observed_ts = time.time()
+    if data.get("code") != "0":
+        raise ValueError("OKX ticker response code: " + str(data.get("code")))
+
+    updated = set()
+    for ticker in data.get("data", []):
+        symbol = str(ticker.get("instId") or "").replace("-USDT-SWAP", "USDT")
+        if symbol not in tracked or symbol in updated:
+            continue
+        try:
+            price = float(ticker.get("last") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(price) or price <= 0:
+            continue
+        try:
+            update_entry_tracker(symbol, price, observed_ts, tracked[symbol])
+            updated.add(symbol)
+        except Exception as error:
+            print("[ENTRY_TRACKER_SYMBOL_ERROR]", symbol, str(error), flush=True)
+    missing = set(tracked) - updated
+    if missing:
+        print("[ENTRY_TRACKER_MISSING_PRICE]", ",".join(sorted(missing)), flush=True)
+
+
+def run_entry_tracker():
+    print("[ENTRY_TRACKER_STARTED]", "interval_sec=", ENTRY_TRACKER_INTERVAL, flush=True)
+    while True:
+        started = time.monotonic()
+        try:
+            poll_entry_tracker()
+        except Exception as error:
+            print("[ENTRY_TRACKER_ERROR]", str(error), flush=True)
+        duration = time.monotonic() - started
+        time.sleep(max(1.0, ENTRY_TRACKER_INTERVAL - duration))
 
 
 def analyze(ticker):
@@ -840,6 +866,12 @@ threading.Thread(
 
 print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
 
+threading.Thread(
+    target=run_entry_tracker,
+    name="entry-tracker",
+    daemon=True,
+).start()
+
 while True:
     print("[SCAN] scanning market...")
 
@@ -879,41 +911,14 @@ while True:
 
     
 
-    for tracked_symbol in list(ENTRY_TRACKER.keys()):
-        tracked_price = current_prices.get(tracked_symbol)
-
-        if tracked_price:
-            update_entry_tracker(
-                tracked_symbol,
-                tracked_price
-            )
-
     for ticker in current_chunk:
         checked += 1
 
         symbol = ticker.get("instId", "").replace("-USDT-SWAP", "USDT")
         current_price = float(ticker.get("last") or 0)
 
-        if symbol and current_price > 0:
-
-            if ENTRY_TRACKER_TEST and not ENTRY_TRACKER:
-                ENTRY_TRACKER[symbol] = {
-                    "direction": "LONG",
-                    "entry_price": current_price,
-                    "entry_time": datetime.now(UTC),
-                    "checked": set(),
-                    "test": True,
-                }
-
-                print(
-                    "[TEST_ENTRY_CREATED]",
-                    symbol,
-                    "price=",
-                    current_price,
-                    flush=True
-                )
-
-           
+        if ENTRY_TRACKER_TEST and symbol and current_price > 0:
+            create_entry_tracker(symbol, "TEST", "LONG", current_price, test=True)
 
         signal = analyze(ticker)
     
@@ -955,28 +960,11 @@ while True:
         else:
             tracker_direction = None
 
-        if tracker_direction and signal["symbol"] not in ENTRY_TRACKER:
-            ENTRY_TRACKER[signal["symbol"]] = {
-                "pattern": pattern,
-                "direction": tracker_direction,
-                "entry_price": signal["price"],
-                "entry_time": datetime.now(UTC),
-                "checked": set(),
-                "test": False,
-            }
-
-            print(
-                "[ENTRY_CREATED]",
-                signal["symbol"],
-                "pattern=",
-                pattern,
-                "direction=",
-                tracker_direction,
-                "price=",
-                signal["price"],
-                flush=True
+        if tracker_direction:
+            create_entry_tracker(
+                signal["symbol"], pattern, tracker_direction, signal["price"]
             )
-    
+
         send_telegram(build_short_message(signal))
         register_signal(signal)
     
