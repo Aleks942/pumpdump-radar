@@ -1,161 +1,79 @@
-# ============================================
-# TELEGRAM BUILDER V7
-# ============================================
+import math
+from html import escape
 
-from datetime import datetime
-from chief_explainer import build_verdict
 
+PATTERN_NAMES = {
+    "NEW_LONG_BUILDUP": "Признаки набора новых лонгов",
+    "NEW_SHORT_BUILDUP": "Признаки набора новых шортов",
+    "SHORT_SQUEEZE": "Признаки выноса шортов",
+    "LONG_LIQUIDATION": "Признаки ликвидации лонгов",
+    "NONE": "Нет полного подтверждения паттерна",
+}
+
+
+def number(value, signed=False, suffix=""):
+    if value is None:
+        return "нет данных"
+
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "нет данных"
+
+    if not math.isfinite(value):
+        return "нет данных"
+
+    text = f"{value:+.2f}" if signed else f"{value:.2f}"
+    return text + suffix
 
 
 def build_short_message(signal):
-    """
-    Основное короткое сообщение Telegram.
-    """
+    decision = signal.get("decision") or {}
+    spot = signal.get("spot_cvd") or {}
+    liquidations = signal.get("liquidations") or {}
 
-    decision = signal.get("decision", {})
-    smart = signal.get("smart_score", {})
+    pattern = decision.get("pattern") or "NONE"
+    direction = decision.get("direction") or "NONE"
 
-    parts = []
+    direction_text = {
+        "UP": "⬆️ Вверх",
+        "DOWN": "⬇️ Вниз",
+        "NONE": "⚪ Не определено",
+    }.get(direction, "⚪ Не определено")
 
-    parts.append(
-        build_header(signal, decision)
+    symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
+    window = escape(str(signal.get("window") or "—"))
+    pattern_text = escape(str(pattern))
+    description = PATTERN_NAMES.get(
+        pattern, "Неизвестный паттерн"
     )
 
-    parts.append(
-        build_score_block(smart)
-    )
+    parts = [
+        "📡 PumpDump Radar",
+        "",
+        f"🪙 {symbol} | окно движения: {window}",
+        f"🧩 {pattern_text}",
+        description,
+        f"Направление: {direction_text}",
+        "",
+        "━━━━━━━━━━━━",
+        "",
+        "Изменение цены: "
+        + number(signal.get("change"), signed=True, suffix="%"),
+        "Изменение OI: "
+        + number(signal.get("oi_change"), signed=True, suffix="%"),
+        "Spot CVD: "
+        + number(spot.get("cvd_percent"), signed=True, suffix="%"),
+        "",
+        "Ликвидации лонгов: "
+        + number(liquidations.get("long_liq")),
+        "Ликвидации шортов: "
+        + number(liquidations.get("short_liq")),
+        "",
+        "━━━━━━━━━━━━",
+        "",
+        "Паттерн описывает наблюдаемое движение.",
+        "Продолжение проверяем через 5 / 10 / 20 / 30 минут.",
+    ]
 
-    parts.append(
-        build_power_block(decision)
-    )
-
-    parts.append(
-        build_reason_block(
-            signal,
-            decision
-        )
-    )
-
-    parts.append(
-        build_footer()
-    )
-
-    return "\n".join(
-        x for x in parts if x
-    )
-
-# ============================================
-# HEADER
-# ============================================
-
-def build_header(signal, decision):
-
-    trade = decision.get(
-        "trade_state",
-        "WATCH"
-    )
-
-    direction = decision.get(
-        "direction",
-        "NONE"
-    )
-
-    symbol = signal.get(
-        "symbol",
-        "UNKNOWN"
-    )
-
-    window = signal.get(
-        "window",
-        ""
-    )
-
-    change = signal.get(
-        "change",
-        0
-    )
-
-    if trade == "ENTRY":
-        icon = "🟢"
-
-    elif trade == "SETUP":
-        icon = "🟡"
-
-    elif trade == "WATCH":
-        icon = "🟠"
-
-    else:
-        icon = "⚪"
-
-    return (
-        f"{icon} {trade} {direction}\n\n"
-        f"🪙 {symbol} | {window}\n"
-        f"📈 {change:+.2f}%"
-    )
-
-# ============================================
-# SMART SCORE
-# ============================================
-
-def build_score_block(smart):
-
-    return (
-        "\n━━━━━━━━━━━━\n\n"
-        f"{smart.get('stars','⭐')}"
-        f" {smart.get('score',0)}/100\n\n"
-        f"{smart.get('rating','')}\n"
-        f"⚠️ {smart.get('risk','')}"
-    )
-
-# ============================================
-# BUYERS / SELLERS
-# ============================================
-
-def build_power_block(decision):
-
-    buyers = decision.get(
-        "buyers_power",
-        50
-    )
-
-    sellers = decision.get(
-        "sellers_power",
-        50
-    )
-
-    return (
-        "\n━━━━━━━━━━━━\n\n"
-        f"👥 BUY {buyers}% • SELL {sellers}%"
-    )
-
-# ============================================
-# CHIEF VERDICT
-# ============================================
-
-def build_reason_block(signal, decision):
-
-    reasons = build_verdict(
-        signal,
-        decision
-    )
-
-    if not reasons:
-        return ""
-
-    txt = "\n━━━━━━━━━━━━\n"
-
-    txt += "\n🎯 Вердикт Chief\n"
-
-    for r in reasons:
-
-        txt += f"\n\n✔ {r}"
-
-    return txt
-
-# ============================================
-# FOOTER
-# ============================================
-
-def build_footer():
-
-    return "\n\n🤖 Chief Trader V7"
+    return "\n".join(parts)
