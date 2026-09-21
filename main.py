@@ -23,6 +23,7 @@ from stats_engine import (
 )
 
 from market_memory import (
+    save_entry_result,
     initialize_market_memory,
     market_memory_healthcheck,
     save_market_signal,
