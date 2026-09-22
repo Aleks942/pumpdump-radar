@@ -68,6 +68,17 @@ def build_short_message(signal):
         + number(signal.get("change"), signed=True, suffix="%"),
         "Изменение OI: "
         + number(signal.get("oi_change"), signed=True, suffix="%"),
+                "",
+        f"Фьючерсы — окно 5м: {futures_status}",
+        "Дельта объёма: "
+        + number(futures.get("delta_quote"), signed=True),
+        "Дисбаланс покупок/продаж: "
+        + number(
+            futures.get("imbalance_pct"),
+            signed=True,
+            suffix="%"
+        ),
+        "",
         "Spot CVD: "
         + number(spot.get("cvd_percent"), signed=True, suffix="%"),
         "",
