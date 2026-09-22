@@ -30,6 +30,12 @@ def number(value, signed=False, suffix=""):
 def build_short_message(signal):
     decision = signal.get("decision") or {}
     spot = signal.get("spot_cvd") or {}
+    futures = signal.get("futures_flow") or {}
+    ready = futures.get("window_ready")
+    futures_status = {
+        True: "готово",
+        False: "не готово",
+    }.get(ready, "нет данных")
     liquidations = signal.get("liquidations") or {}
 
     pattern = decision.get("pattern") or "NONE"
