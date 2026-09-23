@@ -103,21 +103,68 @@ TIME_WINDOWS = {
 
 }
 
-def send_telegram(text):
+def send_telegram(text, symbol="SYSTEM"):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
         "parse_mode": "HTML",
-        "disable_web_page_preview": True
+        "disable_web_page_preview": True,
     }
 
+    started = time.monotonic()
+
     try:
-        r = requests.post(url, json=payload, timeout=10)
-        print("[TG STATUS]", r.status_code)
-    except Exception as e:
-        print("[TG ERROR]", e)
+        response = requests.post(url, json=payload, timeout=10)
+        data = response.json()
+
+        if not isinstance(data, dict):
+            raise ValueError("Invalid Telegram response")
+
+        if response.status_code == 200 and data.get("ok") is True:
+            message = data.get("result") or {}
+
+            print(
+                "[TG_SENT]",
+                symbol,
+                "message_id=", message.get("message_id"),
+                "telegram_ts=", message.get("date"),
+                "confirmed_at=", datetime.now(UTC).isoformat(),
+                "request_sec=", round(time.monotonic() - started, 3),
+                flush=True,
+            )
+            return True
+
+        if data.get("ok") is False:
+            print(
+                "[TG_REJECTED]",
+                symbol,
+                "http_status=", response.status_code,
+                "error_code=", data.get("error_code"),
+                "retry_after=",
+                (data.get("parameters") or {}).get("retry_after"),
+                flush=True,
+            )
+            return False
+
+        print(
+            "[TG_UNKNOWN]",
+            symbol,
+            "http_status=", response.status_code,
+            flush=True,
+        )
+        return None
+
+    except Exception as error:
+        # Не выводим URL: он содержит токен бота.
+        print(
+            "[TG_UNKNOWN]",
+            symbol,
+            "error_type=", type(error).__name__,
+            flush=True,
+        )
+        return None
         
 def test_binance():
     try:
