@@ -1065,6 +1065,10 @@ while True:
     
         signals += 1
 
+        previous_signal_state = signal_memory.get(signal["symbol"])
+        if previous_signal_state is not None:
+            previous_signal_state = dict(previous_signal_state)
+
        
         if not should_send_signal(signal):
             print(
