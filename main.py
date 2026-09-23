@@ -319,22 +319,34 @@ def can_send(symbol, move_type, window, change):
     return True
 
 
-def create_entry_tracker(symbol, pattern, direction, price, test=False):
+def create_entry_tracker(
+    symbol, pattern, direction, price,
+    test=False, entry_time=None
+):
     with ENTRY_TRACKER_LOCK:
         if symbol in ENTRY_TRACKER or (test and ENTRY_TRACKER):
             return False
+
         ENTRY_TRACKER[symbol] = {
             "pattern": pattern,
             "direction": direction,
             "entry_price": price,
-            "entry_time": datetime.now(UTC),
+            "entry_time": (
+                entry_time
+                if entry_time is not None
+                else datetime.now(UTC)
+            ),
             "checked": set(),
             "test": test,
         }
+
     print(
         "[TEST_ENTRY_CREATED]" if test else "[ENTRY_CREATED]",
-        symbol, "pattern=", pattern, "direction=", direction,
-        "price=", price, flush=True,
+        symbol,
+        "pattern=", pattern,
+        "direction=", direction,
+        "price=", price,
+        flush=True,
     )
     return True
 
