@@ -986,6 +986,10 @@ while True:
         if not signal:
             no_signal += 1
             continue
+
+        if not refresh_signal_price(signal):
+            no_signal += 1
+            continue
     
         print(
             "[SIGNAL READY]",
