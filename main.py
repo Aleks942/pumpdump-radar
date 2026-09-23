@@ -1039,7 +1039,11 @@ while True:
 
         if tracker_direction:
             create_entry_tracker(
-                signal["symbol"], pattern, tracker_direction, signal["price"]
+                signal["symbol"],
+                pattern,
+                tracker_direction,
+                signal["price"],
+                entry_time=signal["entry_observed_at"],
             )
 
         send_telegram(build_short_message(signal))
