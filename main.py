@@ -444,6 +444,66 @@ def run_entry_tracker():
         duration = time.monotonic() - started
         time.sleep(max(1.0, ENTRY_TRACKER_INTERVAL - duration))
 
+def refresh_signal_price(signal):
+    import math
+
+    try:
+        response = requests.get(
+            "https://www.okx.com/api/v5/market/tickers",
+            params={"instType": "SWAP"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        observed_at = datetime.now(UTC)
+
+        if data.get("code") != "0":
+            raise ValueError("OKX returned an error")
+
+        target = signal["symbol"]
+        fresh_price = None
+
+        for ticker in data.get("data", []):
+            instrument = str(ticker.get("instId") or "")
+
+            if not instrument.endswith("-USDT-SWAP"):
+                continue
+
+            symbol = instrument.replace("-USDT-SWAP", "USDT")
+
+            if symbol == target:
+                fresh_price = float(ticker.get("last") or 0)
+                break
+
+        if (
+            fresh_price is None
+            or not math.isfinite(fresh_price)
+            or fresh_price <= 0
+        ):
+            raise ValueError("No valid fresh price")
+
+        old_price = signal["price"]
+        signal["price"] = fresh_price
+        signal["entry_observed_at"] = observed_at
+
+        print(
+            "[ENTRY_PRICE_REFRESH]",
+            target,
+            "scan_price=", old_price,
+            "fresh_price=", fresh_price,
+            "observed_at=", observed_at.isoformat(),
+            flush=True,
+        )
+        return True
+
+    except Exception as error:
+        print(
+            "[ENTRY_PRICE_REFRESH_ERROR]",
+            signal.get("symbol"),
+            str(error),
+            flush=True,
+        )
+        return False
 
 def analyze(ticker):
     try:
