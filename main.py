@@ -643,6 +643,31 @@ def analyze(ticker):
         if len(OI_HISTORY[symbol]) >= 3:
         
             short_old_oi = OI_HISTORY[symbol][-3]
+
+            oi_times = OI_TIME_HISTORY.get(symbol, [])
+
+            if len(oi_times) >= 3:
+                oi_period_sec = oi_times[-1] - oi_times[-3]
+                previous_gap_sec = oi_times[-2] - oi_times[-3]
+                latest_gap_sec = oi_times[-1] - oi_times[-2]
+
+                print(
+                    "[OI_WINDOW_CHECK]",
+                    symbol,
+                    "period_sec=", round(oi_period_sec, 1),
+                    "period_min=", round(oi_period_sec / 60, 2),
+                    "previous_gap_sec=", round(previous_gap_sec, 1),
+                    "latest_gap_sec=", round(latest_gap_sec, 1),
+                    flush=True,
+                )
+            else:
+                print(
+                    "[OI_WINDOW_CHECK]",
+                    symbol,
+                    "period=UNKNOWN",
+                    "timed_points=", len(oi_times),
+                    flush=True,
+                )
         
             if short_old_oi > 0:
                 oi_short_change = (
