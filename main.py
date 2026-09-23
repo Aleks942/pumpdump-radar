@@ -1088,8 +1088,40 @@ while True:
         else:
             tracker_direction = None
 
+        sent = send_telegram(
+            build_short_message(signal),
+            symbol=signal["symbol"],
+        )
+
+        if sent is not True:
+            if sent is False:
+                if previous_signal_state is None:
+                    signal_memory.pop(signal["symbol"], None)
+                else:
+                    signal_memory[signal["symbol"]] = previous_signal_state
+
+            print(
+                "[SIGNAL_SEND_UNCONFIRMED]",
+                signal["symbol"],
+                "status=", "REJECTED" if sent is False else "UNKNOWN",
+                flush=True,
+            )
+            continue
+
+        quote_to_confirmation = (
+            datetime.now(UTC) - signal["entry_observed_at"]
+        ).total_seconds()
+
+        print(
+            "[SIGNAL_TIMING]",
+            signal["symbol"],
+            "quote_to_confirmation_sec=",
+            round(quote_to_confirmation, 3),
+            flush=True,
+        )
+
         if tracker_direction:
-            create_entry_tracker(
+            created = create_entry_tracker(
                 signal["symbol"],
                 pattern,
                 tracker_direction,
@@ -1097,7 +1129,13 @@ while True:
                 entry_time=signal["entry_observed_at"],
             )
 
-        send_telegram(build_short_message(signal))
+            if not created:
+                print(
+                    "[ENTRY_ALREADY_TRACKED]",
+                    signal["symbol"],
+                    flush=True,
+                )
+
         register_signal(signal)
     
      
