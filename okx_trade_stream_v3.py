@@ -259,7 +259,7 @@ def handle_trade(inst_id, trade):
         )
 def on_message(ws, message):
 
-    mark_stream_activity("spot")
+    
     mark_stream_activity("swap")
 
     try:
