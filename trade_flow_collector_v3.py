@@ -122,33 +122,45 @@ def mark_stream_connected(market):
     return True
 
 
+def _touch_stream_locked(market, now):
+    state = STREAM_STATE[market]
+    last = state["last_activity_at"]
+    gap = now - last if last is not None else None
+
+    if (
+        not state["connected"]
+        or last is None
+        or gap > STREAM_STALE_SECONDS
+        or gap < 0
+    ):
+        TRADE_HISTORY[market].clear()
+
+        state["connected"] = True
+        state["started_at"] = now
+        state["last_trade_at"] = None
+        state["generation"] += 1
+
+        print(
+            "[V3_STREAM_RESET]",
+            market,
+            "gap_sec=", gap,
+            "generation=", state["generation"],
+            flush=True,
+        )
+
+    state["last_activity_at"] = now
+
+
 def mark_stream_activity(market):
-    """
-    Подтверждает, что WebSocket продолжает получать сообщения.
-
-    Это важно: отсутствие сделок само по себе
-    не означает data gap.
-    """
-
     market = _normalize_market(market)
 
     if not market:
         return False
 
-    now = time.time()
-
     with _LOCK:
-        state = STREAM_STATE[market]
-
-        if not state["connected"]:
-            state["connected"] = True
-            state["started_at"] = now
-            state["generation"] += 1
-
-        state["last_activity_at"] = now
+        _touch_stream_locked(market, time.time())
 
     return True
-
 
 def mark_stream_disconnected(market):
     """
