@@ -91,18 +91,7 @@ def _normalize_market(market):
     return None
 
 
-# ============================================================
-# STREAM STATE
-# ============================================================
-
 def mark_stream_connected(market):
-    """
-    Новый непрерывный период данных.
-
-    При reconnect started_at начинается заново.
-    Поэтому старое окно не сможет ошибочно получить READY.
-    """
-
     market = _normalize_market(market)
 
     if not market:
@@ -112,6 +101,7 @@ def mark_stream_connected(market):
 
     with _LOCK:
         state = STREAM_STATE[market]
+        TRADE_HISTORY[market].clear()
 
         state["connected"] = True
         state["started_at"] = now
@@ -121,6 +111,27 @@ def mark_stream_connected(market):
 
     return True
 
+# ============================================================
+# STREAM STATE
+# ============================================================
+
+def mark_stream_disconnected(market):
+    market = _normalize_market(market)
+
+    if not market:
+        return False
+
+    with _LOCK:
+        state = STREAM_STATE[market]
+
+        TRADE_HISTORY[market].clear()
+
+        state["connected"] = False
+        state["started_at"] = None
+        state["last_activity_at"] = None
+        state["last_trade_at"] = None
+
+    return True
 
 def _touch_stream_locked(market, now):
     state = STREAM_STATE[market]
