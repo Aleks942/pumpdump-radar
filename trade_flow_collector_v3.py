@@ -319,6 +319,8 @@ def save_trade(
     now = time.time()
 
     with _LOCK:
+        _touch_stream_locked(market, now)
+
         TRADE_HISTORY[
             market
         ][symbol].append(row)
