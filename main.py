@@ -636,7 +636,7 @@ def analyze(ticker):
    
     pattern_called = False
     
-    for window_name, cfg in TIME_WINDOWS.items():
+    for window_name, cfg in (("5m", TIME_WINDOWS["5m"]),):
 
         move = get_window_move(
             raw_symbol,
