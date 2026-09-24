@@ -175,7 +175,9 @@ def mark_stream_disconnected(market):
     with _LOCK:
         state = STREAM_STATE[market]
 
-        state["connected"] = False
+        TRADE_HISTORY[market].clear()
+
+        state["connected"] = True
         state["started_at"] = None
         state["last_activity_at"] = None
         state["last_trade_at"] = None
