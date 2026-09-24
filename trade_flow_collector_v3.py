@@ -173,27 +173,7 @@ def mark_stream_activity(market):
 
     return True
 
-def mark_stream_disconnected(market):
-    """
-    После disconnect окна больше не считаются READY.
-    """
 
-    market = _normalize_market(market)
-
-    if not market:
-        return False
-
-    with _LOCK:
-        state = STREAM_STATE[market]
-
-        TRADE_HISTORY[market].clear()
-
-        state["connected"] = True
-        state["started_at"] = None
-        state["last_activity_at"] = None
-        state["last_trade_at"] = None
-
-    return True
 
 
 def get_stream_state(market):
