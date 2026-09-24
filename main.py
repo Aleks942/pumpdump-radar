@@ -586,9 +586,36 @@ def analyze(ticker):
 
     best_signal = None
 
-    
-    oi = get_open_interest(raw_symbol)
-    
+
+    oi_data = get_oi_5m(symbol)
+
+    print(
+        "[OI_5M]",
+        symbol,
+        "quality=", oi_data["quality"],
+        "period_sec=", (
+            round(oi_data["period_sec"], 1)
+            if oi_data["period_sec"] is not None
+            else None
+        ),
+        "age_sec=", (
+            round(oi_data["age_sec"], 1)
+            if oi_data["age_sec"] is not None
+            else None
+        ),
+        "change_pct=", (
+            round(oi_data["change_pct"], 3)
+            if oi_data["change_pct"] is not None
+            else None
+        ),
+        flush=True,
+    )
+
+    if not oi_data["ready"]:
+        return None
+
+    oi = oi_data["oi"]
+    oi_short_change = oi_data["change_pct"]
 
     try:
         save_oi_snapshot(symbol, oi)
@@ -597,94 +624,10 @@ def analyze(ticker):
             "[SAVE_OI_SNAPSHOT_ERROR]",
             symbol,
             e,
-            flush=True
+            flush=True,
         )
 
     
-    oi_short_change = None
-    
-    if oi is not None:
-
-        if symbol not in OI_HISTORY:
-            OI_HISTORY[symbol] = []
-
-        OI_HISTORY[symbol].append(oi)
-       
-        
-        import time
-
-        if symbol not in OI_TIME_HISTORY:
-            OI_TIME_HISTORY[symbol] = []
-        
-        OI_TIME_HISTORY[symbol].append(time.time())
-        
-        if len(OI_TIME_HISTORY[symbol]) > 60:
-            OI_TIME_HISTORY[symbol].pop(0)
-        
-        
-        
-        if symbol == "DOGEUSDT":
-            print(
-                "[DOGE_HISTORY]",
-                len(OI_HISTORY[symbol]),
-                OI_HISTORY[symbol],
-                flush=True
-            )
-
-        if len(OI_HISTORY[symbol]) > 60:
-            OI_HISTORY[symbol].pop(0)
-
-        # ====================================
-        # SHORT OI — свежий поток денег
-        # примерно последние 15–30 минут
-        # ====================================
-        
-        oi_short_change = None
-        
-        if len(OI_HISTORY[symbol]) >= 3:
-        
-            short_old_oi = OI_HISTORY[symbol][-3]
-
-            oi_times = OI_TIME_HISTORY.get(symbol, [])
-
-            if len(oi_times) >= 3:
-                oi_period_sec = oi_times[-1] - oi_times[-3]
-                previous_gap_sec = oi_times[-2] - oi_times[-3]
-                latest_gap_sec = oi_times[-1] - oi_times[-2]
-
-                print(
-                    "[OI_WINDOW_CHECK]",
-                    symbol,
-                    "period_sec=", round(oi_period_sec, 1),
-                    "period_min=", round(oi_period_sec / 60, 2),
-                    "previous_gap_sec=", round(previous_gap_sec, 1),
-                    "latest_gap_sec=", round(latest_gap_sec, 1),
-                    flush=True,
-                )
-            else:
-                print(
-                    "[OI_WINDOW_CHECK]",
-                    symbol,
-                    "period=UNKNOWN",
-                    "timed_points=", len(oi_times),
-                    flush=True,
-                )
-        
-            if short_old_oi > 0:
-                oi_short_change = (
-                    (oi - short_old_oi) / short_old_oi
-                ) * 100
-        
-                print(
-                    "[OI_SHORT]",
-                    symbol,
-                    "change=",
-                    round(oi_short_change, 2),
-                    "%",
-                    flush=True
-                )
-    
-           
     # ====================================
     # BEST SIGNAL SELECTOR
     # ====================================
