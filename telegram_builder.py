@@ -24,6 +24,7 @@ def number(value, signed=False, suffix=""):
         return "нет данных"
 
     text = f"{value:+.2f}" if signed else f"{value:.2f}"
+
     return text + suffix
 
 
@@ -31,12 +32,22 @@ def build_short_message(signal):
     decision = signal.get("decision") or {}
     spot = signal.get("spot_cvd") or {}
     futures = signal.get("futures_flow") or {}
+    liquidations = signal.get("liquidations") or {}
+
     ready = futures.get("window_ready")
+
     futures_status = {
         True: "готово",
         False: "не готово",
     }.get(ready, "нет данных")
-    liquidations = signal.get("liquidations") or {}
+
+    liq_available = liquidations.get("available", True)
+
+    liq_note = (
+        "Ликвидации — 5м, доступная неполная выборка (USDT):"
+        if liq_available
+        else "Ликвидации — нет свежих доступных данных"
+    )
 
     pattern = decision.get("pattern") or "NONE"
     direction = decision.get("direction") or "NONE"
@@ -47,11 +58,19 @@ def build_short_message(signal):
         "NONE": "⚪ Не определено",
     }.get(direction, "⚪ Не определено")
 
-    symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
-    window = escape(str(signal.get("window") or "—"))
+    symbol = escape(
+        str(signal.get("symbol") or "UNKNOWN")
+    )
+
+    window = escape(
+        str(signal.get("window") or "—")
+    )
+
     pattern_text = escape(str(pattern))
+
     description = PATTERN_NAMES.get(
-        pattern, "Неизвестный паттерн"
+        pattern,
+        "Неизвестный паттерн",
     )
 
     parts = [
@@ -65,28 +84,61 @@ def build_short_message(signal):
         "━━━━━━━━━━━━",
         "",
         "Изменение цены: "
-        + number(signal.get("change"), signed=True, suffix="%"),
+        + number(
+            signal.get("change"),
+            signed=True,
+            suffix="%",
+        ),
         "Изменение OI: "
-        + number(signal.get("oi_change"), signed=True, suffix="%"),
-                "",
+        + number(
+            signal.get("oi_change"),
+            signed=True,
+            suffix="%",
+        ),
+        "",
         f"Фьючерсы — окно 5м: {futures_status}",
         "Дельта объёма: "
-        + number(futures.get("delta_quote"), signed=True),
+        + number(
+            futures.get("delta_quote"),
+            signed=True,
+        ),
         "Дисбаланс покупок/продаж: "
         + number(
             futures.get("imbalance_pct"),
             signed=True,
-            suffix="%"
+            suffix="%",
         ),
         "",
         "Spot CVD: "
-        + number(spot.get("cvd_percent"), signed=True, suffix="%"),
+        + number(
+            spot.get("cvd_percent"),
+            signed=True,
+            suffix="%",
+        ),
         "",
+        liq_note,
         "Ликвидации лонгов: "
-        + number(liquidations.get("long_liq")),
+        + number(
+            liquidations.get("long_liq")
+            if liq_available
+            else None
+        ),
         "Ликвидации шортов: "
-        + number(liquidations.get("short_liq")),
+        + number(
+            liquidations.get("short_liq")
+            if liq_available
+            else None
+        ),
         "",
+        "Источники: "
+        + escape(
+            str(
+                liquidations.get(
+                    "exchanges",
+                    "нет данных",
+                )
+            )
+        ),
         "━━━━━━━━━━━━",
         "",
         "Паттерн описывает наблюдаемое движение.",
