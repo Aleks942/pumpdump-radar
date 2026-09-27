@@ -369,24 +369,65 @@ def can_send(symbol, move_type, window, change):
 
 def create_entry_tracker(
     symbol, pattern, direction, price,
-    test=False, entry_time=None
+    test=False, entry_time=None, context=None
 ):
+    entry_at = (
+        entry_time
+        if entry_time is not None
+        else datetime.now(UTC)
+    )
+
     with ENTRY_TRACKER_LOCK:
         if symbol in ENTRY_TRACKER or (test and ENTRY_TRACKER):
             return False
 
-        ENTRY_TRACKER[symbol] = {
+        item = {
             "pattern": pattern,
             "direction": direction,
             "entry_price": price,
-            "entry_time": (
-                entry_time
-                if entry_time is not None
-                else datetime.now(UTC)
-            ),
+            "entry_time": entry_at,
             "checked": set(),
             "test": test,
+            "context_id": None,
         }
+
+        ENTRY_TRACKER[symbol] = item
+
+    context_id = None
+
+    if not test:
+        try:
+            from market_memory import save_entry_context
+
+            context_id = save_entry_context(
+                symbol=symbol,
+                pattern=pattern,
+                direction=direction,
+                entry_price=price,
+                entry_ts=entry_at.timestamp(),
+                signal=context,
+            )
+
+        except Exception as error:
+            print(
+                "[ENTRY_CONTEXT_ERROR]",
+                symbol,
+                type(error).__name__,
+                str(error),
+                flush=True,
+            )
+
+        with ENTRY_TRACKER_LOCK:
+            if ENTRY_TRACKER.get(symbol) is item:
+                item["context_id"] = context_id
+
+        if context_id is None:
+            print(
+                "[ENTRY_CONTEXT_MISSING]",
+                symbol,
+                "entry_ts=", entry_at.timestamp(),
+                flush=True,
+            )
 
     print(
         "[TEST_ENTRY_CREATED]" if test else "[ENTRY_CREATED]",
@@ -394,8 +435,10 @@ def create_entry_tracker(
         "pattern=", pattern,
         "direction=", direction,
         "price=", price,
+        "context_id=", context_id,
         flush=True,
     )
+
     return True
 
 
