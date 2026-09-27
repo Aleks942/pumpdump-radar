@@ -1133,7 +1133,7 @@ while True:
         )
 
         if tracker_direction:
-                created = create_entry_tracker(
+            created = create_entry_tracker(
                 signal["symbol"],
                 pattern,
                 tracker_direction,
