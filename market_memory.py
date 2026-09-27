@@ -1159,3 +1159,84 @@ def get_similar_reversal_statistics(signal):
 
     }
 
+def save_entry_context(
+    symbol, pattern, direction, entry_price, entry_ts, signal
+):
+    import json
+    import uuid
+
+    try:
+        if not isinstance(signal, dict) or signal.get("symbol") != symbol:
+            raise ValueError("missing or mismatched signal context")
+
+        fields = (
+            "symbol", "type", "window", "change", "start_price",
+            "end_price", "price", "volume", "oi", "oi_change",
+            "futures_flow", "spot_cvd", "liquidations", "decision",
+        )
+
+        snapshot = {key: signal.get(key) for key in fields}
+        payload = json.dumps(
+            snapshot,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+
+        with _db_lock:
+            with closing(get_connection()) as connection:
+                connection.execute("""
+                    CREATE TABLE IF NOT EXISTS entry_contexts (
+                        context_id TEXT PRIMARY KEY,
+                        schema_version INTEGER NOT NULL,
+                        symbol TEXT NOT NULL,
+                        entry_ts REAL NOT NULL,
+                        pattern TEXT NOT NULL,
+                        direction TEXT NOT NULL,
+                        entry_price REAL NOT NULL,
+                        snapshot_json TEXT NOT NULL,
+                        UNIQUE(symbol, entry_ts)
+                    )
+                """)
+
+                connection.execute("""
+                    INSERT INTO entry_contexts (
+                        context_id, schema_version, symbol, entry_ts,
+                        pattern, direction, entry_price, snapshot_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, entry_ts) DO NOTHING
+                """, (
+                    uuid.uuid4().hex,
+                    1,
+                    symbol,
+                    entry_ts,
+                    pattern,
+                    direction,
+                    entry_price,
+                    payload,
+                ))
+
+                context_id = connection.execute(
+                    "SELECT context_id FROM entry_contexts "
+                    "WHERE symbol = ? AND entry_ts = ?",
+                    (symbol, entry_ts),
+                ).fetchone()[0]
+
+                connection.commit()
+
+        print(
+            "[ENTRY_CONTEXT_SAVED]",
+            symbol,
+            "id=", context_id,
+            flush=True,
+        )
+        return context_id
+
+    except Exception as error:
+        print(
+            "[ENTRY_CONTEXT_ERROR]",
+            symbol,
+            type(error).__name__,
+            str(error),
+            flush=True,
+        )
+        return None
