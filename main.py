@@ -537,15 +537,41 @@ def poll_entry_tracker():
 
 
 def run_entry_tracker():
-    print("[ENTRY_TRACKER_STARTED]", "interval_sec=", ENTRY_TRACKER_INTERVAL, flush=True)
+    print(
+        "[ENTRY_TRACKER_STARTED]",
+        "interval_sec=", ENTRY_TRACKER_INTERVAL,
+        flush=True,
+    )
+
+    try:
+        from candle_path import start_candle_path
+        start_candle_path()
+    except Exception as error:
+        print(
+            "[CANDLE_PATH_START_ERROR]",
+            type(error).__name__,
+            str(error),
+            flush=True,
+        )
+
     while True:
         started = time.monotonic()
+
         try:
             poll_entry_tracker()
         except Exception as error:
-            print("[ENTRY_TRACKER_ERROR]", str(error), flush=True)
+            print(
+                "[ENTRY_TRACKER_ERROR]",
+                str(error),
+                flush=True,
+            )
+
         duration = time.monotonic() - started
-        time.sleep(max(1.0, ENTRY_TRACKER_INTERVAL - duration))
+
+        time.sleep(
+            max(1.0, ENTRY_TRACKER_INTERVAL - duration)
+        )
+
 
 def refresh_signal_price(signal):
     import math
