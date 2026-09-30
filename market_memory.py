@@ -1173,6 +1173,7 @@ def save_entry_context(
             "symbol", "type", "window", "change", "start_price",
             "end_price", "price", "volume", "oi", "oi_change",
             "futures_flow", "spot_cvd", "liquidations", "decision",
+            "aggregated_oi",
         )
 
         snapshot = {key: signal.get(key) for key in fields}
