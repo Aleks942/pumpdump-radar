@@ -12,6 +12,7 @@ from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
 from oi_collector import get_oi_5m
+from aggregated_oi import watch_symbol, get_aggregated_oi
 
 from liquidation_engine import (
     start_liquidation_streams,
