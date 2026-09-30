@@ -657,6 +657,7 @@ def analyze(ticker):
     best_signal = None
 
 
+    watch_symbol(symbol)
     oi_data = get_oi_5m(symbol)
 
     print(
