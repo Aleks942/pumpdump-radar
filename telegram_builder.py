@@ -1,5 +1,6 @@
 import math
 from html import escape
+from aggregated_oi import format_aggregated_oi
 
 
 PATTERN_NAMES = {
