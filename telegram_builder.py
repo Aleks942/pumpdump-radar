@@ -97,6 +97,8 @@ def build_short_message(signal):
             suffix="%",
         ),
         "",
+        format_aggregated_oi(signal.get("aggregated_oi")),
+        "",
         f"Фьючерсы — окно 5м: {futures_status}",
         "Дельта объёма: "
         + number(
