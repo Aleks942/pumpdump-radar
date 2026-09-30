@@ -912,6 +912,7 @@ def analyze(ticker):
             "volume": volume_24h,
             "oi": oi,
             "oi_change": oi_short_change,
+            "aggregated_oi": get_aggregated_oi(symbol),
             "futures_flow": dict(futures_5m),
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
