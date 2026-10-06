@@ -90,14 +90,14 @@ def build_short_message(signal):
             signed=True,
             suffix="%",
         ),
-        "Изменение OI: "
+        "OI 5м (основной расчёт): "
         + number(
             signal.get("oi_change"),
             signed=True,
             suffix="%",
         ),
         "",
-        format_aggregated_oi(signal.get("aggregated_oi")),
+        "📊 " + format_aggregated_oi(signal.get("aggregated_oi")),
         "",
         f"Фьючерсы — окно 5м: {futures_status}",
         "Дельта объёма: "
@@ -148,4 +148,21 @@ def build_short_message(signal):
         "Продолжение проверяем через 5 / 10 / 20 / 30 минут.",
     ]
 
-    return "\n".join(parts)
+    message = "\n".join(parts)
+
+    aggregated = signal.get("aggregated_oi") or {}
+    windows = aggregated.get("windows") or {}
+    oi_5m = windows.get("5m") or {}
+    oi_30m = windows.get("30m") or {}
+
+    print(
+        "[TG_OI_BLOCK]",
+        signal.get("symbol"),
+        "agg_5m_ready=", oi_5m.get("ready"),
+        "agg_5m_pct=", oi_5m.get("change_pct"),
+        "agg_30m_ready=", oi_30m.get("ready"),
+        "agg_30m_pct=", oi_30m.get("change_pct"),
+        flush=True,
+    )
+
+    return message
