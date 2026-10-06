@@ -59,6 +59,18 @@ def build_short_message(signal):
         "NONE": "⚪ Не определено",
     }.get(direction, "⚪ Не определено")
 
+    alert_side = {
+        "UP": "UP",
+        "DOWN": "DOWN",
+        "NONE": "SIGNAL",
+    }.get(direction, "SIGNAL")
+
+    alert_icon = {
+        "UP": "🟢",
+        "DOWN": "🔴",
+        "NONE": "🚨",
+    }.get(direction, "🚨")
+
     symbol = escape(
         str(signal.get("symbol") or "UNKNOWN")
     )
@@ -75,9 +87,12 @@ def build_short_message(signal):
     )
 
     parts = [
-        "📡 PumpDump Radar",
+        f"🚨🚨🚨 PUMPDUMP SIGNAL — {alert_side}",
+        f"{alert_icon} ВНИМАНИЕ: ПОДТВЕРЖДЁННЫЙ СИГНАЛ",
+        f"🪙 {symbol}",
+        "✅ Полный паттерн прошёл фильтры",
         "",
-        f"🪙 {symbol} | окно движения: {window}",
+        f"Окно движения: {window}",
         f"🧩 {pattern_text}",
         description,
         f"Направление: {direction_text}",
