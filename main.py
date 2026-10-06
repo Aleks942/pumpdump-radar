@@ -894,12 +894,68 @@ def analyze(ticker):
             "direction": pattern_result.get("direction", "NONE"),
             "reason": pattern_result.get("reason", ""),
         }
-        
-        
-        
 
-        if decision.get("pattern") == "NONE":
-            continue 
+        pattern_name = decision.get("pattern")
+
+        if pattern_name == "NONE":
+            continue
+
+        # Aggregated OI is a mandatory confirmation layer.
+        # New position buildup requires OI expansion; liquidation/squeeze
+        # requires OI contraction across OKX + Binance + Bybit.
+        aggregated_oi = get_aggregated_oi(symbol)
+        agg_5m = (
+            (aggregated_oi.get("windows") or {}).get("5m")
+            or {}
+        )
+        agg_5m_ready = agg_5m.get("ready") is True
+        agg_5m_change = agg_5m.get("change_pct")
+
+        if not agg_5m_ready or agg_5m_change is None:
+            print(
+                "[PATTERN_SKIP_AGG_OI_NOT_READY]",
+                symbol,
+                "pattern=", pattern_name,
+                "quality=", agg_5m.get("quality"),
+                "ready_sources=", agg_5m.get("ready_sources"),
+                flush=True,
+            )
+            continue
+
+        requires_oi_expansion = pattern_name in (
+            "NEW_LONG_BUILDUP",
+            "NEW_SHORT_BUILDUP",
+        )
+        requires_oi_contraction = pattern_name in (
+            "SHORT_SQUEEZE",
+            "LONG_LIQUIDATION",
+        )
+
+        aggregated_oi_confirms = (
+            (requires_oi_expansion and agg_5m_change > 0)
+            or
+            (requires_oi_contraction and agg_5m_change < 0)
+        )
+
+        if not aggregated_oi_confirms:
+            print(
+                "[PATTERN_SKIP_AGG_OI_MISMATCH]",
+                symbol,
+                "pattern=", pattern_name,
+                "local_oi_5m=", round(oi_short_change, 3),
+                "aggregated_oi_5m=", round(agg_5m_change, 3),
+                flush=True,
+            )
+            continue
+
+        print(
+            "[PATTERN_AGG_OI_CONFIRMED]",
+            symbol,
+            "pattern=", pattern_name,
+            "local_oi_5m=", round(oi_short_change, 3),
+            "aggregated_oi_5m=", round(agg_5m_change, 3),
+            flush=True,
+        )
     
         best_signal = {
             "symbol": symbol,
@@ -912,7 +968,7 @@ def analyze(ticker):
             "volume": volume_24h,
             "oi": oi,
             "oi_change": oi_short_change,
-            "aggregated_oi": get_aggregated_oi(symbol),
+            "aggregated_oi": aggregated_oi,
             "futures_flow": dict(futures_5m),
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
