@@ -608,3 +608,110 @@ def format_aggregated_oi(data):
             lines.append(" / ".join(details))
 
     return "\n".join(lines)
+
+# OI alignment extension. Add this block only once.
+VERSION = "2026-10-01-aligned-v2"
+_get_latest_oi_v1 = get_aggregated_oi
+_format_oi_v1 = format_aggregated_oi
+
+
+def get_aggregated_oi(symbol):
+    with _lock:
+        result = _get_latest_oi_v1(symbol)
+        now = result["observed_ts"]
+
+        for label, seconds in (("5m", 300), ("30m", 1800)):
+            window = result["windows"][label]
+            window["alignment_method"] = "LATEST"
+
+            if window["quality"] == "TIME_MISMATCH":
+                latest = window["sources"]
+                anchor = min(
+                    s["end_ts"] for s in latest.values()
+                )
+                aligned = {}
+
+                for exchange in EXCHANGES:
+                    points = [
+                        p
+                        for p in _history.get((exchange, symbol), ())
+                        if p[0] <= anchor
+                    ]
+                    aligned[exchange] = _source_window(
+                        points, seconds, now
+                    )
+
+                if all(
+                    s["quality"] == "READY"
+                    for s in aligned.values()
+                ):
+                    ends = [
+                        s["end_ts"] for s in aligned.values()
+                    ]
+                    starts = [
+                        s["start_ts"] for s in aligned.values()
+                    ]
+                    end_skew = max(ends) - min(ends)
+                    start_skew = max(starts) - min(starts)
+
+                    if max(end_skew, start_skew) <= MAX_SKEW:
+                        current = math.fsum(
+                            s["oi_coin"]
+                            for s in aligned.values()
+                        )
+                        previous = math.fsum(
+                            s["previous_coin"]
+                            for s in aligned.values()
+                        )
+
+                        window.update(
+                            ready=True,
+                            quality="READY",
+                            sources=aligned,
+                            latest_sources=latest,
+                            ready_sources=3,
+                            alignment_method="COMMON_PAST",
+                            alignment_anchor_ts=anchor,
+                            end_skew_sec=end_skew,
+                            start_skew_sec=start_skew,
+                            oi_coin=current,
+                            previous_coin=previous,
+                            change_pct=(
+                                current / previous - 1
+                            ) * 100,
+                        )
+
+            if window["ready"]:
+                ends = [
+                    s["end_ts"]
+                    for s in window["sources"].values()
+                ]
+                window["oldest_end_ts"] = min(ends)
+                window["newest_end_ts"] = max(ends)
+                window["age_sec"] = max(
+                    0.0, now - min(ends)
+                )
+
+        return result
+
+
+def format_aggregated_oi(data):
+    text = _format_oi_v1(data)
+
+    if isinstance(data, dict):
+        for label in ("5m", "30m"):
+            window = data.get("windows", {}).get(label, {})
+            age = window.get("age_sec")
+
+            if window.get("ready") and age is not None:
+                method = (
+                    "подбор к общему времени"
+                    if window.get("alignment_method") == "COMMON_PAST"
+                    else "последние замеры"
+                )
+                text += (
+                    f"\nOI {label}: возраст до "
+                    f"{math.ceil(age)} с; {method}"
+                )
+
+    return text
