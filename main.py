@@ -54,6 +54,11 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 
+ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
+ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
+ANTI_LATE_RETRACE_SHARE = float(os.getenv("ANTI_LATE_RETRACE_SHARE", 25.0))
+ANTI_LATE_OPPOSITE_1M = float(os.getenv("ANTI_LATE_OPPOSITE_1M", 0.25))
+
 symbol_states = {}
 OI_HISTORY = {}
 OI_TIME_HISTORY = {}
@@ -318,10 +323,37 @@ def get_window_move(raw_symbol, bar, candles_count):
 
         change = ((end_price - start_price) / start_price) * 100
 
+        highs = []
+        lows = []
+
+        for candle in candles:
+            try:
+                highs.append(float(candle[2]))
+                lows.append(float(candle[3]))
+            except (TypeError, ValueError, IndexError):
+                pass
+
+        newest_open = float(newest[1])
+        newest_close = float(newest[4])
+
+        last_1m_change = 0.0
+        if newest_open > 0:
+            last_1m_change = (
+                (newest_close - newest_open)
+                / newest_open
+                * 100
+            )
+
+        window_high = max(highs) if highs else end_price
+        window_low = min(lows) if lows else end_price
+
         return {
             "start_price": start_price,
             "end_price": end_price,
-            "change": change
+            "change": change,
+            "last_1m_change": last_1m_change,
+            "window_high": window_high,
+            "window_low": window_low,
         }
 
     except Exception as e:
@@ -329,6 +361,85 @@ def get_window_move(raw_symbol, bar, candles_count):
         return None
 
 
+
+
+def evaluate_anti_late(move_type, move):
+    """
+    Conservative anti-late / exhaustion filter for the 5m trigger.
+
+    It blocks only two cases:
+    1) price is already too extended for an early-entry signal;
+    2) a strong move has materially retraced from its extreme while the
+       newest 1m candle is already moving against the trigger direction.
+
+    This filter does not change OI/CVD/pattern logic. It only decides whether
+    the already-confirmed price trigger is too late to alert.
+    """
+
+    change = float(move.get("change") or 0.0)
+    magnitude = abs(change)
+    last_1m = float(move.get("last_1m_change") or 0.0)
+    end_price = float(move.get("end_price") or 0.0)
+    window_high = float(move.get("window_high") or end_price)
+    window_low = float(move.get("window_low") or end_price)
+
+    retrace_pct = 0.0
+
+    if move_type == "PUMP" and window_high > 0:
+        retrace_pct = max(
+            0.0,
+            (window_high - end_price) / window_high * 100,
+        )
+        opposite_1m = last_1m <= -ANTI_LATE_OPPOSITE_1M
+
+    elif move_type == "DUMP" and window_low > 0:
+        retrace_pct = max(
+            0.0,
+            (end_price - window_low) / window_low * 100,
+        )
+        opposite_1m = last_1m >= ANTI_LATE_OPPOSITE_1M
+
+    else:
+        opposite_1m = False
+
+    retrace_share = (
+        retrace_pct / magnitude * 100
+        if magnitude > 0
+        else 0.0
+    )
+
+    if magnitude >= ANTI_LATE_MAX_5M:
+        return {
+            "allow": False,
+            "reason": "EXTENDED_MOVE",
+            "move_pct": change,
+            "last_1m_pct": last_1m,
+            "retrace_pct": retrace_pct,
+            "retrace_share": retrace_share,
+        }
+
+    if (
+        magnitude >= ANTI_LATE_EXHAUSTION_MIN_MOVE
+        and retrace_share >= ANTI_LATE_RETRACE_SHARE
+        and opposite_1m
+    ):
+        return {
+            "allow": False,
+            "reason": "EXHAUSTION_REVERSAL",
+            "move_pct": change,
+            "last_1m_pct": last_1m,
+            "retrace_pct": retrace_pct,
+            "retrace_share": retrace_share,
+        }
+
+    return {
+        "allow": True,
+        "reason": "EARLY_ENOUGH",
+        "move_pct": change,
+        "last_1m_pct": last_1m,
+        "retrace_pct": retrace_pct,
+        "retrace_share": retrace_share,
+    }
 
 
 def can_send(symbol, move_type, window, change):
@@ -956,6 +1067,33 @@ def analyze(ticker):
             "aggregated_oi_5m=", round(agg_5m_change, 3),
             flush=True,
         )
+
+        anti_late = evaluate_anti_late(
+            move_type=move_type,
+            move=move,
+        )
+
+        print(
+            "[ANTI_LATE]",
+            symbol,
+            "allow=", anti_late["allow"],
+            "reason=", anti_late["reason"],
+            "move_pct=", round(anti_late["move_pct"], 3),
+            "last_1m_pct=", round(anti_late["last_1m_pct"], 3),
+            "retrace_pct=", round(anti_late["retrace_pct"], 3),
+            "retrace_share=", round(anti_late["retrace_share"], 1),
+            flush=True,
+        )
+
+        if not anti_late["allow"]:
+            print(
+                "[ANTI_LATE_SKIP]",
+                symbol,
+                "pattern=", pattern_name,
+                "reason=", anti_late["reason"],
+                flush=True,
+            )
+            continue
     
         best_signal = {
             "symbol": symbol,
@@ -973,6 +1111,7 @@ def analyze(ticker):
             "spot_cvd": spot_cvd,
             "liquidations": liquidations,
             "decision": decision,
+            "anti_late": anti_late,
             
         }
 
