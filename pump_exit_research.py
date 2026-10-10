@@ -177,6 +177,7 @@ def print_exit_research():
             f"older={len(older)} later={len(later)} embargo_min=30 "
             f"cost_pct={cost:.3f} "
             f"split=CHRONOLOGICAL_70_30 "
+            f"fill_sensitivity=ALERT_PRICE_VS_NEXT_FULL_1M_OPEN "
             f"status=RESEARCH_ONLY_NO_LIVE_FILTER_CHANGE",
             flush=True,
         )
@@ -198,7 +199,11 @@ def print_exit_research():
                     "INSUFFICIENT" if a["n"] < MIN_TRAIN
                     or b["n"] < MIN_LATER
                     or b["days"] < MIN_DAYS_LATER
-                    else "NEGATIVE" if a["mean"] <= 0 or b["mean"] <= 0
+                    else "NEGATIVE_OR_FILL_SENSITIVE" if (
+                        a["mean"] <= 0 or b["mean"] <= 0
+                        or delayed_train["mean"] <= 0
+                        or delayed_later["mean"] <= 0
+                    )
                     else "CANDIDATE_FOR_FUTURE_PROSPECTIVE_TEST"
                 )
                 old_mean = (f'{a["mean"]:+.4f}%' if a["mean"] is not None else "NA")
