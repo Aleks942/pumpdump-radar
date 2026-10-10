@@ -1,7 +1,7 @@
 """Deterministic regression tests for exploratory exit candidates."""
 import unittest
 
-from pump_exit_research import evaluate_exit, _cohort_split
+from pump_exit_research import evaluate_exit, _cohort_split, _stats
 
 
 def bar(minute, high, low, close):
@@ -65,6 +65,23 @@ class ExitVariantTests(unittest.TestCase):
             evaluate_exit(0, "LONG", [], 1.5, 1.0, 5, 0.22),
             ("INVALID_ENTRY", None),
         )
+
+    def test_first_full_minute_open_changes_execution_result(self):
+        candles = [
+            bar(i, 102.5, 99.5, 100.4)
+            for i in range(30)
+        ]
+        cases = [(3600.0, "BTCUSDT", "NEW_LONG_BUILDUP", "LONG",
+                  100.0, 0, 102.0, candles)]
+        alert = _stats(cases, 1.0, 1.0, 10, 0.22)
+        delayed = _stats(
+            cases, 1.0, 1.0, 10, 0.22,
+            entry_mode="NEXT_FULL_1M_OPEN",
+        )
+        self.assertEqual(alert["n"], 1)
+        self.assertEqual(delayed["n"], 1)
+        self.assertEqual(alert["mean"], 0.78)
+        self.assertEqual(delayed["mean"], -1.22)
 
     def test_time_split_keeps_boundary_out(self):
         entries = [(i * 3600.0, "BTCUSDT", "NEW_LONG_BUILDUP",
