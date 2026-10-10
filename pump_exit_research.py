@@ -90,7 +90,7 @@ def _load_cohorts(now):
             )
             SELECT s.context_id, s.entry_ts, s.symbol, s.pattern,
                    s.direction, s.entry_price, s.first_ms,
-                   b.open_ms, b.h, b.l, b.c
+                   b.open_ms, b.o, b.h, b.l, b.c
             FROM selected s
             JOIN entry_candles_1m b ON b.context_id=s.context_id
             ORDER BY s.entry_ts, s.context_id, b.open_ms
@@ -102,13 +102,13 @@ def _load_cohorts(now):
     current_id = None
     candles = []
     meta = None
-    for cid, entry_ts, symbol, pattern, side, entry, first_ms, open_ms, hi, lo, close in rows:
+    for cid, entry_ts, symbol, pattern, side, entry, first_ms, open_ms, o, hi, lo, close in rows:
         if cid != current_id:
             if meta is not None:
                 entries.append((*meta, candles))
             current_id = cid
             meta = (float(entry_ts), str(symbol), str(pattern), str(side),
-                    float(entry), int(first_ms))
+                    float(entry), int(first_ms), float(o))
             candles = []
         candles.append((int(open_ms), float(hi), float(lo), float(close)))
     if meta is not None:
@@ -127,17 +127,25 @@ def _cohort_split(entries):
     return older, later
 
 
-def _stats(entries, tp, sl, minutes, cost):
+def _stats(entries, tp, sl, minutes, cost, entry_mode="ALERT_PRICE"):
     values = []
     verdicts = defaultdict(int)
     dates = set()
     symbols = set()
-    for ts, symbol, pattern, side, entry, first_ms, candles in entries:
+    for ts, symbol, pattern, side, entry, first_ms, first_open, candles in entries:
         if not _full_history(candles, first_ms):
             verdicts["INCOMPLETE"] += 1
             continue
+        if entry_mode == "NEXT_FULL_1M_OPEN":
+            if (not math.isfinite(first_open) or first_open <= 0
+                    or not candles[0][2] <= first_open <= candles[0][1]):
+                verdicts["INVALID_OPEN"] += 1
+                continue
+            model_entry = first_open
+        else:
+            model_entry = entry
         result, value = evaluate_exit(
-            entry, side, candles, tp, sl, minutes, cost,
+            model_entry, side, candles, tp, sl, minutes, cost,
         )
         verdicts[result] += 1
         if value is None:
@@ -178,6 +186,12 @@ def print_exit_research():
             for name, tp, sl, minutes in EXITS:
                 a = _stats(train, tp, sl, minutes, cost)
                 b = _stats(verify, tp, sl, minutes, cost)
+                delayed_train = _stats(
+                    train, tp, sl, minutes, cost, entry_mode="NEXT_FULL_1M_OPEN"
+                )
+                delayed_later = _stats(
+                    verify, tp, sl, minutes, cost, entry_mode="NEXT_FULL_1M_OPEN"
+                )
                 # A positive exploratory split is NOT OOS verification:
                 # multiple candidate testing and shared market shocks remain.
                 status = (
@@ -189,12 +203,24 @@ def print_exit_research():
                 )
                 old_mean = (f'{a["mean"]:+.4f}%' if a["mean"] is not None else "NA")
                 later_mean = (f'{b["mean"]:+.4f}%' if b["mean"] is not None else "NA")
+                delayed_train_text = (
+                    f"{delayed_train['mean']:+.4f}%"
+                    if delayed_train['mean'] is not None else "NA"
+                )
+                delayed_later_text = (
+                    f"{delayed_later['mean']:+.4f}%"
+                    if delayed_later['mean'] is not None else "NA"
+                )
                 print(
                     f"[PUMP_EXIT_TEST] pattern={pattern} exit={name} "
                     f"train_n={a['n']} train_mean={old_mean} "
                     f"later_n={b['n']} later_mean={later_mean} "
                     f"later_days={b['days']} later_symbols={b['symbols']} "
                     f"later_both_as_sl={b['ambiguous']} "
+                    f"delayed_train_n={delayed_train['n']} "
+                    f"delayed_train_mean={delayed_train_text} "
+                    f"delayed_later_n={delayed_later['n']} "
+                    f"delayed_later_mean={delayed_later_text} "
                     f"status={status}",
                     flush=True,
                 )
