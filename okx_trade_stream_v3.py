@@ -38,6 +38,70 @@ CONTRACT_CACHE = {}
 CACHE_LOCK = threading.RLock()
 
 
+def prefetch_swap_contracts():
+    """Warm the full USDT-SWAP contract cache *before* the WS reader starts.
+
+    The trade callback must not wait for one REST lookup per instrument on the
+    first high-volume trade burst. On prefetch failure, the existing individual
+    contract lookup remains available as a non-invented fallback.
+    """
+    try:
+        response = requests.get(
+            OKX_REST_URL + "/api/v5/public/instruments",
+            params={"instType": "SWAP"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("code") != "0":
+            raise ValueError("OKX code=" + str(payload.get("code")))
+        rows = payload.get("data")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("No OKX instrument metadata")
+
+        prepared = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            inst_id = row.get("instId")
+            if not isinstance(inst_id, str) or not inst_id.endswith("-USDT-SWAP"):
+                continue
+            try:
+                ct_val = float(row.get("ctVal") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not (0 < ct_val < float("inf")):
+                continue
+            prepared[inst_id] = {
+                "inst_id": inst_id,
+                "ct_val": ct_val,
+                "ct_val_ccy": row.get("ctValCcy"),
+                "settle_ccy": row.get("settleCcy"),
+                "ct_type": row.get("ctType"),
+            }
+
+        if not prepared:
+            raise ValueError("No usable USDT-SWAP contracts")
+
+        with CACHE_LOCK:
+            CONTRACT_CACHE.update(prepared)
+
+        print(
+            "[V3_CONTRACT_PREFETCH_READY]",
+            "cached=", len(prepared),
+            flush=True,
+        )
+        return len(prepared)
+    except Exception as exc:
+        print(
+            "[V3_CONTRACT_PREFETCH_ERROR]",
+            type(exc).__name__,
+            str(exc)[:160],
+            flush=True,
+        )
+        return 0
+
+
 def get_swap_contract_info(inst_id):
     """
     Получает параметры SWAP инструмента.
@@ -414,6 +478,10 @@ def run_stream_forever(swap_symbols=None):
                 OKX_WS_URL,
                 flush=True,
             )
+
+            # Fetch contract metadata once outside the WebSocket callbacks.
+            # The existing per-symbol lookup remains a safe fallback.
+            prefetch_swap_contracts()
 
             ws = websocket.WebSocketApp(
                 OKX_WS_URL,
