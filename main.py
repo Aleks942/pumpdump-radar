@@ -8,6 +8,7 @@ import requests
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
 from pump_factor_report import print_factor_edge
+from pump_forward_oi import register_forward_oi, report_forward_oi
 from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message
@@ -1231,6 +1232,7 @@ threading.Thread(
     daemon=True,
 ).start()
 
+register_forward_oi()
 _last_edge_report_mono = 0.0
 
 while True:
@@ -1238,6 +1240,7 @@ while True:
         print_candle_edge_report()
         print_exit_research()
         print_factor_edge()
+        report_forward_oi()
         _last_edge_report_mono = time.monotonic()
 
     print("[SCAN] scanning market...")
