@@ -5,6 +5,7 @@ import random
 import threading
 import math
 import requests
+from pump_edge_report import print_candle_edge_report
 from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message
@@ -1228,7 +1229,13 @@ threading.Thread(
     daemon=True,
 ).start()
 
+_last_edge_report_mono = 0.0
+
 while True:
+    if time.monotonic() - _last_edge_report_mono >= 3600:
+        print_candle_edge_report()
+        _last_edge_report_mono = time.monotonic()
+
     print("[SCAN] scanning market...")
 
     tickers = get_market_tickers()
