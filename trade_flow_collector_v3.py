@@ -19,7 +19,12 @@
 
 import time
 import threading
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
+
+# Only these fields are read by the 1m/5m/15m flow calculation.
+# Compact immutable rows preserve per-trade precision and order while avoiding
+# one dictionary and unused price/size objects per received trade.
+TradePoint = namedtuple("TradePoint", "ts side quote")
 
 
 MAX_HISTORY_SECONDS = 15 * 60
@@ -236,7 +241,7 @@ def _cleanup(market, symbol, now=None):
     if not rows:
         return
 
-    while rows and rows[0]["ts"] < cutoff:
+    while rows and rows[0].ts < cutoff:
         rows.popleft()
 
     if not rows:
@@ -299,13 +304,7 @@ def save_trade(
     if quote_value <= 0:
         return False
 
-    row = {
-        "ts": ts,
-        "side": side,
-        "price": price,
-        "size": size,
-        "quote": quote_value,
-    }
+    row = TradePoint(ts=ts, side=side, quote=quote_value)
 
     now = time.time()
 
@@ -377,7 +376,7 @@ def get_flow(
         rows = [
             row
             for row in all_rows
-            if row["ts"] >= cutoff
+            if row.ts >= cutoff
         ]
 
     buy_quote = 0.0
@@ -387,13 +386,13 @@ def get_flow(
     sell_count = 0
 
     for row in rows:
-        quote = row["quote"]
+        quote = row.quote
 
-        if row["side"] == "BUY":
+        if row.side == "BUY":
             buy_quote += quote
             buy_count += 1
 
-        elif row["side"] == "SELL":
+        elif row.side == "SELL":
             sell_quote += quote
             sell_count += 1
 
