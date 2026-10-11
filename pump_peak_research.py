@@ -19,6 +19,7 @@ SYMBOLS = ("BTC ETH SOL XRP BNB DOGE ADA SUI AVAX LINK TRX DOT LTC BCH XLM "
            "HBAR TON NEAR UNI AAVE ARB OP INJ SEI PEPE WIF BONK ENA ZEC "
            "APT FIL ATOM ICP TIA PUMP PENGU FARTCOIN").split()
 URL = "https://www.okx.com/api/v5/market/history-candles"
+BYBIT_URL = "https://api.bybit.com/v5/market/kline"
 HOUR_MS = 3600000
 BAR = "1H"
 DAYS = 30
@@ -27,6 +28,34 @@ PUMP_MIN_PCT = 6
 DROP_MIN_PCT = 4
 FORWARD_HOURS = 6
 
+
+def fetch_bybit(symbol, now=None, session=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    boundary = int(now.timestamp()*1000)//HOUR_MS*HOUR_MS
+    earliest = boundary - (DAYS*24 + LOOKBACK_HOURS + 24)*HOUR_MS
+    session = session or requests.Session()
+    r = session.get(BYBIT_URL, params={"category":"linear",
+        "symbol":symbol+"USDT", "interval":"60", "limit":"1000",
+        "end":str(boundary-1)}, timeout=16)
+    r.raise_for_status()
+    body=r.json()
+    if body.get("retCode")!=0:
+        raise ValueError("BYBIT_"+str(body.get("retCode")))
+    result={}
+    for x in (body.get("result") or {}).get("list") or []:
+        try:
+            t=int(x[0])
+            op,hi,lo,cl=map(float,x[1:5])
+            if earliest<=t<boundary and all(math.isfinite(z)
+                for z in (op,hi,lo,cl)) and 0<lo<=min(op,cl)<=max(op,cl)<=hi:
+                result[t]=(op,hi,lo,cl)
+        except (ValueError,IndexError,TypeError):
+            pass
+    return [(t,*result[t]) for t in sorted(result)]
+
+def fetch_any(symbol):
+    # Single 1,000-bar request to Bybit instead of many OKX pages.
+    return fetch_bybit(symbol)
 
 def fetch_history(symbol, now=None, session=None):
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -143,7 +172,7 @@ def main():
     data={}
     errors={}
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futures={pool.submit(fetch_history, symbol):symbol for symbol in SYMBOLS}
+        futures={pool.submit(fetch_any, symbol):symbol for symbol in SYMBOLS}
         for fut in as_completed(futures):
             symbol=futures[fut]
             try:
