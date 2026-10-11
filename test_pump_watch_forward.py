@@ -43,7 +43,7 @@ class ForwardWatchTests(unittest.TestCase):
                  rise_pct REAL NOT NULL, retrace_pct REAL NOT NULL)""")
             db.execute("""INSERT INTO pump_watch_alerts
                   (symbol,ts,level,rise_pct,retrace_pct)
-                  VALUES ('LEGACYUSDT',1,1,12,3)""")
+                  VALUES ('LEGACYUSDT',?,1,12,3)""", (self.start - 3600,))
             db.commit()
         self._alert()
         with closing(watch._db()) as db:
@@ -59,7 +59,7 @@ class ForwardWatchTests(unittest.TestCase):
         with closing(watch._db()) as db:
             row=db.execute("""SELECT horizon_min,status,price,down_pct,
                               observed_at,due_at FROM pump_watch_forward""").fetchone()
-        self.assertEqual(row[0],"5" if False else 5)
+        self.assertEqual(row[0],5)
         self.assertEqual(row[1],"OK")
         self.assertEqual(row[2],106)
         self.assertAlmostEqual(row[3],3.63636,places=4)
@@ -100,13 +100,21 @@ class ForwardWatchTests(unittest.TestCase):
                                          now=self.start+550),1)
         self.assertEqual(forward.summary(now=self.start+551)[0]["n"],1)
 
-    def test_retention_orphan_outcomes_cleaned_on_report(self):
+    def test_retention_orphan_outcomes_cleaned(self):
         self._alert()
         forward.observe([ticker(108)], now=self.start+300)
         report=forward.summary(now=self.start+300)
         self.assertEqual(report[0]["n"],1)
         self.assertEqual(report[0]["status"],"COLLECTING")
         self.assertEqual(report[0]["symbols"],1)
+        expired=self.start+31*86400
+        # Parent alert expires through its existing 30-day policy.
+        watch.observe([],now=expired)
+        forward.observe([],now=expired)
+        with closing(watch._db()) as db:
+            remaining=db.execute(
+                "SELECT COUNT(*) FROM pump_watch_forward").fetchone()[0]
+        self.assertEqual(remaining,0)
 
 
 if __name__=="__main__":
