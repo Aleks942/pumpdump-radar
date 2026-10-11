@@ -12,6 +12,7 @@ from pump_forward_oi import register_forward_oi, report_forward_oi
 from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message
+from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
@@ -1247,6 +1248,34 @@ while True:
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
+
+    # Parallel research-only watchlist. Does NOT gate or alter the original
+    # price/OI/CVD/long-liquidation signal conditions below.
+    try:
+        watch_events = observe_pump_peak(tickers)
+        for watch_event in watch_events:
+            oi_watch = None
+            futures_imbalance = None
+            if watch_event["level"] >= 2:
+                try:
+                    oi_watch = get_oi_5m(watch_event["symbol"])
+                    flow_watch = get_futures_windows(watch_event["symbol"]).get("5m") or {}
+                    if flow_watch.get("window_ready"):
+                        futures_imbalance = flow_watch.get("imbalance_pct")
+                except Exception as watch_context_exc:
+                    print("[PUMP_WATCH_CONTEXT_ERROR]",
+                          type(watch_context_exc).__name__, flush=True)
+            watch_sent = send_telegram(
+                pump_peak_message(watch_event, oi_watch, futures_imbalance),
+                symbol=watch_event["symbol"],
+            )
+            ack_pump_peak(watch_event, watch_sent)
+            print("[PUMP_WATCH_NOTIFY]", watch_event["symbol"],
+                  "level=", watch_event["level"],
+                  "sent=", watch_sent is True, flush=True)
+    except Exception as watch_exc:
+        print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
+
 
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
