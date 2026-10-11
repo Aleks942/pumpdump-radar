@@ -106,6 +106,9 @@ def observe(tickers, now=None):
             # Existing research and alert tables are never touched.
             conn.execute("DELETE FROM pump_watch_state WHERE created_at < ?", (now-STATE_SEC,))
             conn.execute("DELETE FROM pump_watch_alerts WHERE ts < ?", (now-30*86400,))
+            conn.execute("""DELETE FROM pump_watch_state WHERE symbol IN (
+                SELECT symbol FROM pump_watch_state ORDER BY updated_at DESC
+                LIMIT -1 OFFSET ?)""", (MAX_WATCHES,))
             states = {r[0]: r for r in conn.execute(
                 "SELECT symbol,created_at,updated_at,anchor,peak,price,"
                 "rise_pct,falling,notified,retry_after FROM pump_watch_state")}
@@ -127,7 +130,9 @@ def observe(tickers, now=None):
                 sample_pct = max(0, historical_pct)
                 current = states.get(symbol)
                 if current is None:
-                    if max(rise24, sample_pct) < PUMP_THRESHOLD:
+                    if (max(rise24, sample_pct) < PUMP_THRESHOLD or
+                            (rise24 >= sample_pct and
+                             (price < opening or (1-price/high)*100 > 15))):
                         continue
                     if sample_pct > rise24 and history_low and history_peak:
                         anchor, peak = history_low, history_peak
@@ -211,18 +216,18 @@ def message(event, oi=None, imbalance=None):
     extra = ""
     if level >= 2:
         if isinstance(oi, dict) and oi.get("ready") and oi.get("change_pct") is not None:
-            extra += f"\\nOI 5м: {float(oi['change_pct']):+.2f}%"
+            extra += f"\nOI 5м: {float(oi['change_pct']):+.2f}%"
         if imbalance is not None:
             try:
-                extra += f"\\nFutures imbalance: {float(imbalance):+.1f}%"
+                extra += f"\nFutures imbalance: {float(imbalance):+.1f}%"
             except (ValueError, TypeError):
                 pass
-    return (f"{heading} — <b>{escape(event['symbol'])}</b>\\n"
-            f"Рост до максимума: +{event['rise']:.2f}%\\n"
-            f"Откат от пика: −{event['retrace']:.2f}%\\n"
-            f"Максимум: {event['peak']:.8g}\\n"
-            f"Цена: {event['price']:.8g}\\n"
-            f"{details}{extra}\\n"
+    return (f"{heading} — <b>{escape(event['symbol'])}</b>\n"
+            f"Рост до максимума: +{event['rise']:.2f}%\n"
+            f"Откат от пика: −{event['retrace']:.2f}%\n"
+            f"Максимум: {event['peak']:.8g}\n"
+            f"Цена: {event['price']:.8g}\n"
+            f"{details}{extra}\n"
             "Это наблюдение, НЕ подтверждённый сигнал SHORT.")
 
 
