@@ -1,0 +1,22 @@
+name: Pump peak watch tests
+on:
+  push:
+    branches:
+      - feature/pump-peak-watch-20261011
+  pull_request:
+    paths:
+      - main.py
+      - pump_peak_watch.py
+      - test_pump_peak_watch.py
+      - .github/workflows/pump-peak-watch-tests.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile main.py pump_peak_watch.py
+      - run: python -m unittest -v test_pump_peak_watch.py
