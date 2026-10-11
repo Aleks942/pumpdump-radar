@@ -4,6 +4,11 @@ on:
     branches:
       - research/daily-rise-before-reversal-20261011
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'pump_peak_research.py'
+      - 'test_pump_peak_research.py'
+      - '.github/workflows/pump-peak-research.yml'
 jobs:
   statistics:
     runs-on: ubuntu-latest
