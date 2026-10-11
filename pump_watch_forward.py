@@ -18,6 +18,7 @@ MAX_LATE_SEC = 300
 BATCH = 250
 RETENTION = 30 * 86400
 _last_report = 0.0
+_last_cleanup = 0.0
 
 
 def _setup(db):
@@ -78,6 +79,7 @@ def observe(tickers, now=None):
     If the first available quote arrives too late, record MISSING rather
     than reporting a misleading point-in-time outcome.
     """
+    global _last_cleanup
     now = time.time() if now is None else float(now)
     quotes = _quotes(tickers)
     processed = 0
@@ -86,6 +88,15 @@ def observe(tickers, now=None):
     try:
         with closing(watch._db()) as db:
             _setup(db)
+            clean_now = now - _last_cleanup >= 3600
+            if clean_now:
+                # Delete only orphaned research outcomes after the watch
+                # alert retention policy expires. Never delete legacy data.
+                db.execute("""DELETE FROM pump_watch_forward
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM pump_watch_alerts a
+                        WHERE a.id = pump_watch_forward.alert_id
+                    )""")
             rows = _pending(db, now)
             for alert_id, symbol, level, ts, entry, minutes, due in rows:
                 quote = quotes.get(symbol)
@@ -114,6 +125,8 @@ def observe(tickers, now=None):
                           f"delay_sec={now-due:.0f} model=observed_quote_no_orders",
                           flush=True)
             db.commit()
+            if clean_now:
+                _last_cleanup = now
         if processed:
             print(f"[PUMP_WATCH_FORWARD_BATCH] processed={processed} "
                   f"ok={ok} missing={missed}", flush=True)
