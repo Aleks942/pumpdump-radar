@@ -45,8 +45,16 @@ def _setup(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS pump_watch_alerts (
         id INTEGER PRIMARY KEY, symbol TEXT NOT NULL,
         ts REAL NOT NULL, level INTEGER NOT NULL,
-        rise_pct REAL NOT NULL, retrace_pct REAL NOT NULL
+        rise_pct REAL NOT NULL, retrace_pct REAL NOT NULL,
+        entry_price REAL, peak_price REAL
     )""")
+    # Existing production rows predate the observation journal: keep them
+    # untouched and without manufactured historical entry prices.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(pump_watch_alerts)")}
+    if "entry_price" not in columns:
+        conn.execute("ALTER TABLE pump_watch_alerts ADD COLUMN entry_price REAL")
+    if "peak_price" not in columns:
+        conn.execute("ALTER TABLE pump_watch_alerts ADD COLUMN peak_price REAL")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pump_watch_alert_ts ON pump_watch_alerts(ts)")
 
 
@@ -191,10 +199,13 @@ def acknowledge(event, sent, now=None):
                 conn.execute("""UPDATE pump_watch_state
                     SET notified=MAX(notified, ?), retry_after=0
                     WHERE symbol=?""",(event["level"],event["symbol"]))
+                # The quote was observed BEFORE Telegram ACK. All forward
+                # outcomes use this fixed recorded price, never a later peak.
                 conn.execute("""INSERT INTO pump_watch_alerts
-                    (symbol,ts,level,rise_pct,retrace_pct)
-                    VALUES (?,?,?,?,?)""",(event["symbol"],now,
-                        event["level"],event["rise"],event["retrace"]))
+                    (symbol,ts,level,rise_pct,retrace_pct,entry_price,peak_price)
+                    VALUES (?,?,?,?,?,?,?)""",(event["symbol"],now,
+                        event["level"],event["rise"],event["retrace"],
+                        float(event["price"]),float(event["peak"])))
             else:
                 conn.execute("""UPDATE pump_watch_state
                     SET retry_after=? WHERE symbol=?""",(now+300,event["symbol"]))
