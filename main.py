@@ -13,6 +13,7 @@ from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
+from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
@@ -1276,6 +1277,14 @@ while True:
     except Exception as watch_exc:
         print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
 
+    # Evaluate forward checkpoints from the same already-fetched ticker list.
+    # Research-only: NEVER modifies original signal decisions or orders.
+    try:
+        observe_watch_forward(tickers)
+        report_watch_forward()
+    except Exception as forward_exc:
+        print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
+              type(forward_exc).__name__, flush=True)
 
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")

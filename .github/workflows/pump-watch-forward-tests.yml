@@ -1,0 +1,23 @@
+name: Pump Watch forward outcome tests
+on:
+  push:
+    branches:
+      - feature/pump-watch-forward-validation-20261011
+  pull_request:
+    paths:
+      - main.py
+      - pump_peak_watch.py
+      - pump_watch_forward.py
+      - test_pump_watch_forward.py
+      - .github/workflows/pump-watch-forward-tests.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile main.py pump_peak_watch.py pump_watch_forward.py
+      - run: python -m unittest -v test_pump_watch_forward.py test_pump_peak_watch.py
