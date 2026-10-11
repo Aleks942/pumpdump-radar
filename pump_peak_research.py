@@ -18,7 +18,7 @@ import requests
 SYMBOLS = ("BTC ETH SOL XRP BNB DOGE ADA SUI AVAX LINK TRX DOT LTC BCH XLM "
            "HBAR TON NEAR UNI AAVE ARB OP INJ SEI PEPE WIF BONK ENA ZEC "
            "APT FIL ATOM ICP TIA PUMP PENGU FARTCOIN").split()
-URL = "https://www.okx.com/api/v5/market/history-candles"
+URL = "https://www.okx.com/api/v5/market/candles"
 BYBIT_URL = "https://api.bybit.com/v5/market/kline"
 HOUR_MS = 3600000
 BAR = "1H"
@@ -54,8 +54,9 @@ def fetch_bybit(symbol, now=None, session=None):
     return [(t,*result[t]) for t in sorted(result)]
 
 def fetch_any(symbol):
-    # Single 1,000-bar request to Bybit instead of many OKX pages.
-    return fetch_bybit(symbol)
+    # Latest 1,440 hourly candles suffice for our 30-day plus lookback window.
+    # Serial OKX requests avoid shared GitHub-runner rate limits.
+    return fetch_history(symbol)
 
 def fetch_history(symbol, now=None, session=None):
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -65,12 +66,17 @@ def fetch_history(symbol, now=None, session=None):
     cursor = None
     data = {}
     session = session or requests.Session()
-    for page in range(11):
-        params = {"instId": f"{symbol}-USDT-SWAP", "bar": BAR, "limit": "100"}
+    for page in range(5):
+        params = {"instId": f"{symbol}-USDT-SWAP", "bar": BAR, "limit": "300"}
         if cursor is not None:
             params["after"] = str(cursor)
-        response = session.get(URL, params=params, timeout=12)
+        for attempt in range(5):
+            response = session.get(URL, params=params, timeout=12)
+            if response.status_code != 429:
+                break
+            time.sleep(min(20, 2 ** (attempt+1)))
         response.raise_for_status()
+        time.sleep(1.0)
         body = response.json()
         if body.get("code") != "0":
             raise ValueError(str(body.get("msg") or body.get("code"))[:100])
@@ -171,7 +177,7 @@ def report(history):
 def main():
     data={}
     errors={}
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         futures={pool.submit(fetch_any, symbol):symbol for symbol in SYMBOLS}
         for fut in as_completed(futures):
             symbol=futures[fut]
