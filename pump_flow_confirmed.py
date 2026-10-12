@@ -42,6 +42,11 @@ def send_confirmed(signal, send_message, format_message):
             if status == "PENDING":
                 continue
             if status == "CONFIRMED":
+                # Require a fresh result tied to this observation, never a stale cache.
+                finished = float(result.json().get("finished_at") or 0)
+                if not (now <= finished <= time.time() and finished - now <= 70):
+                    print("[PUMP_FLOW] STALE_RESULT", symbol, flush=True)
+                    return
                 text = format_message(signal)
                 text += "\n\n🟢 Order Flow: подтверждено (Bybit, поток сделок)."
                 send_message(text, symbol=symbol)
