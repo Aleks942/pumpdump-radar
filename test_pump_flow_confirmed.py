@@ -2,7 +2,7 @@
 import time
 import unittest
 from unittest.mock import patch
-from pump_flow_confirmed import send_confirmed, _slots
+from pump_flow_confirmed import send_confirmed, dispatch, _slots, _inflight, _inflight_lock
 
 
 class FakeResponse:
@@ -79,6 +79,18 @@ class ConfirmedDeliveryTests(unittest.TestCase):
                            on_sent=lambda signal: recorded.append(signal["symbol"]))
         self.assertEqual(recorded, [])
         self.assertEqual(self.sent, [])
+
+
+    def test_same_symbol_is_not_dispatched_twice(self):
+        with patch("pump_flow_confirmed.threading.Thread") as mock_thread:
+            try:
+                self.assertTrue(dispatch(self.signal, lambda *a, **k: True, str))
+                self.assertFalse(dispatch(self.signal, lambda *a, **k: True, str))
+                mock_thread.assert_called_once()
+            finally:
+                with _inflight_lock:
+                    _inflight.discard("XRPUSDT")
+                _slots.release()
 
 
 if __name__ == "__main__":
