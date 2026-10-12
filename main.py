@@ -1418,9 +1418,15 @@ while True:
             tracker_direction = None
 
         if os.getenv("PUMP_FLOW_MODE", "OFF").upper() == "ENFORCE":
-            # Telegram delivery and statistical registration must both wait for Flow.
+            # Reserve duplicate suppression only after successful Telegram delivery.
+            if previous_signal_state is None:
+                signal_memory.pop(signal["symbol"], None)
+            else:
+                signal_memory[signal["symbol"]] = previous_signal_state
+
             def record_confirmed_flow(confirmed, tracked_dir=tracker_direction,
                                       tracked_pattern=pattern):
+                should_send_signal(confirmed)
                 if tracked_dir:
                     created = create_entry_tracker(
                         confirmed["symbol"], tracked_pattern, tracked_dir,
