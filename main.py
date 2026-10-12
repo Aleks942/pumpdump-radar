@@ -1418,9 +1418,30 @@ while True:
             tracker_direction = None
 
         if os.getenv("PUMP_FLOW_MODE", "OFF").upper() == "ENFORCE":
-            # Do not send the legacy alert. Flow must confirm first.
-            dispatch_confirmed_flow(signal, send_telegram, build_short_message)
-            print("[PUMP_FLOW] QUEUED_FOR_CONFIRMATION", signal["symbol"], flush=True)
+            # Telegram delivery and statistical registration must both wait for Flow.
+            def record_confirmed_flow(confirmed, tracked_dir=tracker_direction,
+                                      tracked_pattern=pattern):
+                if tracked_dir:
+                    created = create_entry_tracker(
+                        confirmed["symbol"], tracked_pattern, tracked_dir,
+                        confirmed["price"],
+                        entry_time=confirmed["entry_observed_at"],
+                        context=confirmed,
+                    )
+                    if not created:
+                        print("[ENTRY_ALREADY_TRACKED]", confirmed["symbol"], flush=True)
+                register_signal(confirmed)
+                print("[PUMP_FLOW_CONFIRMED_RECORDED]", confirmed["symbol"], flush=True)
+
+            queued = dispatch_confirmed_flow(
+                signal, send_telegram, build_short_message,
+                on_sent=record_confirmed_flow,
+            )
+            if queued:
+                print("[PUMP_FLOW] QUEUED_FOR_CONFIRMATION",
+                      signal["symbol"], flush=True)
+            else:
+                print("[PUMP_FLOW] NOT_QUEUED", signal["symbol"], flush=True)
             continue
 
         sent = send_telegram(
