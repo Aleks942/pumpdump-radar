@@ -74,3 +74,31 @@ def pending_candidates(now=None, db_path=None, limit=20):
             WHERE status='PENDING' AND expires_at>=?
             ORDER BY id DESC LIMIT ?""", (now, max(1, min(int(limit), 100)))).fetchall()
     return [json.loads(row[0]) for row in rows]
+
+
+def deliver_candidate(signal, now=None):
+    """Best-effort HTTPS delivery; never gates the PumpDump scan."""
+    import requests
+    url = os.getenv("PUMP_FLOW_URL", "").strip()
+    token = os.getenv("PUMP_FLOW_SHARED_TOKEN", "")
+    if not url or not token or not url.startswith("https://"):
+        return False, "NOT_CONFIGURED"
+    now = time.time() if now is None else float(now)
+    symbol = str(signal.get("symbol") or "").upper()
+    side = {"UP": "LONG", "DOWN": "SHORT"}.get(
+        str((signal.get("decision") or {}).get("direction") or ""))
+    if not side or not symbol.endswith("USDT"):
+        return False, "INVALID_SIGNAL"
+    try:
+        price = float(signal.get("price"))
+        if not math.isfinite(price) or price <= 0:
+            return False, "INVALID_PRICE"
+        payload = {"schema": 1, "source": "pumpdump-radar",
+                   "symbol": symbol, "side": side, "price": price,
+                   "observed_at": now, "expires_at": now + TTL_SECONDS,
+                   "pattern": str((signal.get("decision") or {}).get("pattern") or "")[:80]}
+        response = requests.post(url, json=payload,
+                                 headers={"X-Pump-Flow-Token": token}, timeout=2.5)
+        return response.status_code == 202, str(response.status_code)
+    except Exception as exc:
+        return False, type(exc).__name__
