@@ -130,6 +130,11 @@ def _db():
         net_pct REAL,
         evaluated_ts REAL
     )""")
+    # Existing databases predate signal-time reference prices. Do not backfill
+    # from later quotes: that would silently introduce look-ahead bias.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(candidates)")}
+    if "entry_price" not in cols:
+        conn.execute("ALTER TABLE candidates ADD COLUMN entry_price REAL")
     conn.execute("""CREATE INDEX IF NOT EXISTS candidate_pending
         ON candidates (status, ts)""")
     conn.execute("""CREATE INDEX IF NOT EXISTS candidate_cohort
@@ -207,9 +212,16 @@ def consider(signal, now=None):
                 WHERE symbol=? AND side=? AND ts>?""",
                 (symbol,side,now-MIN_INDEPENDENT_SEC)).fetchone()[0]
             if last is None:
+                try:
+                    entry_price = float(signal.get("price"))
+                    if not math.isfinite(entry_price) or entry_price <= 0:
+                        entry_price = None
+                except (ValueError, TypeError, OverflowError):
+                    entry_price = None
                 conn.execute("""INSERT INTO candidates
-                    (ts,symbol,pattern,side,trend) VALUES (?,?,?,?,?)""",
-                    (now,symbol,pattern,side,trend))
+                    (ts,symbol,pattern,side,trend,entry_price)
+                    VALUES (?,?,?,?,?,?)""",
+                    (now,symbol,pattern,side,trend,entry_price))
             conn.commit()
         print(f"[TREND_EDGE] {symbol} pattern={pattern} side={side} trend={trend} "
               f"n={edge['n']} wins={edge['wins']} days={edge['days']} "
