@@ -5,6 +5,8 @@ import threading
 import requests
 
 _slots = threading.BoundedSemaphore(2)
+_inflight = set()
+_inflight_lock = threading.Lock()
 
 
 def send_confirmed(signal, send_message, format_message, on_sent=None):
@@ -62,14 +64,30 @@ def send_confirmed(signal, send_message, format_message, on_sent=None):
     except Exception as exc:
         print("[PUMP_FLOW] ERROR", type(exc).__name__, flush=True)
     finally:
+        with _inflight_lock:
+            _inflight.discard(str(signal.get("symbol") or "").upper())
         _slots.release()
 
 
 def dispatch(signal, send_message, format_message, on_sent=None):
-    if not _slots.acquire(blocking=False):
-        print("[PUMP_FLOW] BUSY", signal.get("symbol"), flush=True)
+    symbol = str(signal.get("symbol") or "").upper()
+    if not symbol:
         return False
-    threading.Thread(target=send_confirmed,
-                     args=(dict(signal), send_message, format_message, on_sent),
-                     daemon=True).start()
-    return True
+    with _inflight_lock:
+        if symbol in _inflight:
+            print("[PUMP_FLOW] ALREADY_PENDING", symbol, flush=True)
+            return False
+        if not _slots.acquire(blocking=False):
+            print("[PUMP_FLOW] BUSY", symbol, flush=True)
+            return False
+        _inflight.add(symbol)
+    try:
+        threading.Thread(target=send_confirmed,
+                         args=(dict(signal), send_message, format_message, on_sent),
+                         daemon=True).start()
+        return True
+    except Exception:
+        with _inflight_lock:
+            _inflight.discard(symbol)
+        _slots.release()
+        raise
