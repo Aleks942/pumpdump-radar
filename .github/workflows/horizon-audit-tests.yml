@@ -1,0 +1,23 @@
+name: PumpDump 48h bounded outcome audit
+on:
+  push:
+    branches:
+      - feature/48h-bounded-outcome-audit-20261012
+  pull_request:
+    paths:
+      - main.py
+      - horizon_audit.py
+      - test_horizon_audit.py
+      - .github/workflows/horizon-audit-tests.yml
+jobs:
+  audit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests
+      - run: python -m py_compile main.py horizon_audit.py trend_probability_gate.py
+      - run: python -m unittest -v test_horizon_audit.py test_trend_probability_gate.py
