@@ -80,7 +80,7 @@ def _side_from_candles(rows, frame_seconds, now):
             or any(
         round(stamps[i] - stamps[i-1]) != frame_seconds
         for i in range(len(stamps)-56, len(stamps))
-    ):
+    )):
         return "UNKNOWN"
     closes = [parsed[s] for s in stamps[-90:]]
     fast = _ema(closes, 20)
