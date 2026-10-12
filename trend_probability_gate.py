@@ -76,7 +76,8 @@ def _side_from_candles(rows, frame_seconds, now):
         except (ValueError, TypeError, IndexError, OverflowError):
             continue
     stamps = sorted(parsed)
-    if len(stamps) < 57 or any(
+    if (len(stamps) < 57 or now - stamps[-1] > 2*frame_seconds + 120
+            or any(
         round(stamps[i] - stamps[i-1]) != frame_seconds
         for i in range(len(stamps)-56, len(stamps))
     ):
@@ -226,7 +227,7 @@ def consider(signal, now=None):
 
 def _evaluate_rows(rows, ts):
     """Next full minute; require a complete 30m path with closed 1m bars."""
-    first = math.ceil(ts/60) * 60
+    first = (math.floor(ts/60) + 1) * 60
     bars = {}
     for row in rows:
         try:
