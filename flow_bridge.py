@@ -102,3 +102,39 @@ def deliver_candidate(signal, now=None):
         return response.status_code == 202, str(response.status_code)
     except Exception as exc:
         return False, type(exc).__name__
+
+
+def probe_bridge():
+    """Authenticated, read-only connectivity test; no candidates or Telegram."""
+    import requests
+
+    mode = os.getenv("PUMP_FLOW_MODE", "OFF").strip().upper()
+    url = os.getenv("PUMP_FLOW_URL", "").strip()
+    token = os.getenv("PUMP_FLOW_SHARED_TOKEN", "")
+    if mode not in ("RESEARCH", "ENFORCE"):
+        print("[PUMP_FLOW_PROBE] SKIP mode=OFF", flush=True)
+        return False
+    if not url.startswith("https://") or not url.endswith("/api/pump-candidate") or not token:
+        print("[PUMP_FLOW_PROBE] NOT_CONFIGURED", flush=True)
+        return False
+
+    result_url = url.rsplit("/", 1)[0] + "/pump-result"
+    try:
+        # Impossible historic key: valid authorization returns NOT_FOUND without
+        # queuing work, subscribing to Bybit, or sending any user notification.
+        response = requests.get(
+            result_url,
+            headers={"X-Pump-Flow-Token": token},
+            params={"symbol": "PROBEUSDT", "observed_at": "0"},
+            timeout=5,
+        )
+        result_status = (response.json().get("status")
+                         if response.status_code == 200 else None)
+        ok = response.status_code == 200 and result_status == "NOT_FOUND"
+        print("[PUMP_FLOW_PROBE]", "OK" if ok else "FAILED",
+              "http=", response.status_code,
+              "result=", result_status or "NONE", flush=True)
+        return ok
+    except Exception as exc:
+        print("[PUMP_FLOW_PROBE] ERROR", type(exc).__name__, flush=True)
+        return False
