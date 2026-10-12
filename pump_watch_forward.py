@@ -1,4 +1,4 @@
-"""Forward-only price observations of confirmed Pump Watch Telegram alerts.
+"""Forward-only price observations of confirmed or silent Pump Watch events.
 
 Uses OKX tickers ALREADY retrieved by the Radar scan. No HTTP requests,
 orders, signal changes, background threads, or look-ahead data.
@@ -145,14 +145,15 @@ def summary(now=None):
         with closing(watch._db()) as db:
             _setup(db)
             rows = db.execute("""SELECT a.level, o.horizon_min, o.status,
-                    o.down_pct, a.symbol, CAST(a.ts / 86400 AS INTEGER)
+                    o.down_pct, a.symbol, CAST(a.ts / 86400 AS INTEGER),
+                    a.delivered
                 FROM pump_watch_forward o
                 JOIN pump_watch_alerts a ON a.id=o.alert_id
                 WHERE a.ts >= ? AND o.horizon_min IN (5,10,30,60,120)""",
                 (now - RETENTION,)).fetchall()
         grouped = {}
-        for level, horizon, status, value, symbol, day in rows:
-            key = (level, horizon)
+        for level, horizon, status, value, symbol, day, delivered in rows:
+            key = (int(delivered), level, horizon)
             entry = grouped.setdefault(key, {"down":[],"missing":0,
                                             "symbols":set(),"days":set()})
             if status == "OK" and value is not None:
@@ -161,13 +162,15 @@ def summary(now=None):
                 entry["days"].add(day)
             else:
                 entry["missing"] += 1
-        for level in (1,2,3):
+        for delivered in (1, 0):
+          for level in (1,2,3):
             for minutes in HORIZONS:
-                item = grouped.get((level,minutes), {})
+                item = grouped.get((delivered,level,minutes), {})
                 drops = item.get("down",[])
                 n = len(drops)
                 n_missing = item.get("missing",0)
                 result.append({
+                    "cohort": "DELIVERED" if delivered else "SILENT",
                     "level":level, "horizon_min":minutes,
                     "n":n, "missing":n_missing,
                     "symbols":len(item.get("symbols",set())),
@@ -198,7 +201,7 @@ def hourly_report(now=None):
         if r["n"] == 0 and r["missing"] == 0:
             continue
         n = r["n"]
-        print(f"[PUMP_WATCH_EDGE] level={r['level']} "
+        print(f"[PUMP_WATCH_EDGE] cohort={r['cohort']} level={r['level']} "
               f"horizon={r['horizon_min']}m n={n} "
               f"missing={r['missing']} symbols={r['symbols']} "
               f"days={r['days']} avg_down={r['mean_down_pct']}% "

@@ -14,6 +14,7 @@ from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
+from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
@@ -44,6 +45,13 @@ from market_memory import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+# Strict-by-default: no unverified market commentary in Telegram.
+# LEGACY is an explicit manual rollback setting, not the default.
+TELEGRAM_POLICY = os.getenv("TELEGRAM_POLICY", "CONFIRMED_ONLY").strip().upper()
+if TELEGRAM_POLICY not in ("CONFIRMED_ONLY", "LEGACY"):
+    TELEGRAM_POLICY = "CONFIRMED_ONLY"
+print(f"[TELEGRAM_POLICY] {TELEGRAM_POLICY} "
+      "strict_first_touch_probability_gate=true", flush=True)
 
 
 PUMP_THRESHOLD_20M = float(os.getenv("PUMP_THRESHOLD_20M", 6))
@@ -1212,7 +1220,8 @@ test_binance()
 test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
-send_telegram("🚀 PumpDump Radar V2 ONLINE")
+if TELEGRAM_POLICY == "LEGACY":
+    send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
 start_liquidation_streams()
 
@@ -1243,6 +1252,8 @@ while True:
         print_exit_research()
         print_factor_edge()
         report_forward_oi()
+        if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+            report_trend_study()
         _last_edge_report_mono = time.monotonic()
 
     print("[SCAN] scanning market...")
@@ -1257,7 +1268,7 @@ while True:
         for watch_event in watch_events:
             oi_watch = None
             futures_imbalance = None
-            if watch_event["level"] >= 2:
+            if watch_event["level"] >= 2 and TELEGRAM_POLICY == "LEGACY":
                 try:
                     oi_watch = get_oi_5m(watch_event["symbol"])
                     flow_watch = get_futures_windows(watch_event["symbol"]).get("5m") or {}
@@ -1266,14 +1277,21 @@ while True:
                 except Exception as watch_context_exc:
                     print("[PUMP_WATCH_CONTEXT_ERROR]",
                           type(watch_context_exc).__name__, flush=True)
-            watch_sent = send_telegram(
-                pump_peak_message(watch_event, oi_watch, futures_imbalance),
-                symbol=watch_event["symbol"],
-            )
-            ack_pump_peak(watch_event, watch_sent)
-            print("[PUMP_WATCH_NOTIFY]", watch_event["symbol"],
-                  "level=", watch_event["level"],
-                  "sent=", watch_sent is True, flush=True)
+            if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+                # Silent samples remain observable in SQLite. Do not turn a
+                # possible dump into a trading confirmation.
+                ack_pump_peak(watch_event, False, research_only=True)
+                print("[PUMP_WATCH_RESEARCH_ONLY]", watch_event["symbol"],
+                      "level=", watch_event["level"], flush=True)
+            else:
+                watch_sent = send_telegram(
+                    pump_peak_message(watch_event, oi_watch, futures_imbalance),
+                    symbol=watch_event["symbol"],
+                )
+                ack_pump_peak(watch_event, watch_sent)
+                print("[PUMP_WATCH_NOTIFY]", watch_event["symbol"],
+                      "level=", watch_event["level"],
+                      "sent=", watch_sent is True, flush=True)
     except Exception as watch_exc:
         print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
 
@@ -1282,6 +1300,8 @@ while True:
     try:
         observe_watch_forward(tickers)
         report_watch_forward()
+        if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+            advance_trend_study()
     except Exception as forward_exc:
         print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
               type(forward_exc).__name__, flush=True)
@@ -1352,6 +1372,13 @@ while True:
         )
     
         signals += 1
+
+        if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+            verified, reason = confirm_trend_edge(signal)
+            if not verified:
+                print("[TRADE_ALERT_SUPPRESSED]", signal["symbol"],
+                      "reason=", reason, flush=True)
+                continue
 
         previous_signal_state = signal_memory.get(signal["symbol"])
         if previous_signal_state is not None:
