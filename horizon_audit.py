@@ -8,6 +8,7 @@ verdicts are explicitly observational and NEVER authorize live alerts.
 """
 import math
 import sqlite3
+from contextlib import closing
 import time
 
 import requests
@@ -81,7 +82,7 @@ def record(signal, now=None):
     except (TypeError, ValueError, OverflowError, AttributeError):
         stamp = now
     try:
-        with _conn() as db:
+        with closing(_conn()) as db:
             seen = db.execute("""SELECT 1 FROM horizon_cases
                 WHERE symbol=? AND side=? AND ts>=? LIMIT 1""",
                 (symbol,side,stamp-MIN_INDEPENDENT_SEC)).fetchone()
@@ -163,9 +164,10 @@ def advance(now=None):
     global _last_request, _last_cleanup
     now = time.time() if now is None else float(now)
     try:
-        with _conn() as db:
+        with closing(_conn()) as db:
             if now - _last_cleanup >= 3600:
                 _cleanup(db, now)
+                db.commit()
                 _last_cleanup = now
             tasks = db.execute("""WITH horizons(h) AS
                 (VALUES(1),(4),(24),(48))
@@ -230,7 +232,7 @@ def hourly_report(now=None):
         return
     _last_report=now
     try:
-        with _conn() as db:
+        with closing(_conn()) as db:
             rows=db.execute("""SELECT horizon_h,status,COUNT(*)
                 FROM horizon_outcomes GROUP BY horizon_h,status
                 ORDER BY horizon_h,status""").fetchall()
