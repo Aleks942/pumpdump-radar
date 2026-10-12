@@ -3,11 +3,14 @@ on:
   push:
     branches:
       - feature/pump-watch-forward-validation-20261011
+      - feature/trend-strength-research-gate-20261012
   pull_request:
     paths:
       - main.py
       - pump_peak_watch.py
       - pump_watch_forward.py
+      - trend_probability_gate.py
+      - test_trend_probability_gate.py
       - test_pump_watch_forward.py
       - .github/workflows/pump-watch-forward-tests.yml
 jobs:
@@ -19,5 +22,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m py_compile main.py pump_peak_watch.py pump_watch_forward.py
-      - run: python -m unittest -v test_pump_watch_forward.py test_pump_peak_watch.py
+      - run: python -m pip install requests
+      - run: python -m py_compile main.py pump_peak_watch.py pump_watch_forward.py trend_probability_gate.py
+      - run: python -m unittest -v test_pump_watch_forward.py test_pump_peak_watch.py test_trend_probability_gate.py
