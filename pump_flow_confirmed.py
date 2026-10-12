@@ -7,7 +7,7 @@ import requests
 _slots = threading.BoundedSemaphore(2)
 
 
-def send_confirmed(signal, send_message, format_message):
+def send_confirmed(signal, send_message, format_message, on_sent=None):
     """Fail closed; no Telegram message unless Flow confirms within TTL."""
     try:
         base = os.getenv("PUMP_FLOW_URL", "").strip()
@@ -49,7 +49,12 @@ def send_confirmed(signal, send_message, format_message):
                     return
                 text = format_message(signal)
                 text += "\n\n🟢 Order Flow: подтверждено (Bybit, поток сделок)."
-                send_message(text, symbol=symbol)
+                sent = send_message(text, symbol=symbol)
+                if sent is True:
+                    if on_sent is not None:
+                        on_sent(signal)
+                else:
+                    print("[PUMP_FLOW] TELEGRAM_NOT_DELIVERED", symbol, flush=True)
             else:
                 print("[PUMP_FLOW] NO_ALERT", symbol, status, flush=True)
             return
@@ -60,11 +65,11 @@ def send_confirmed(signal, send_message, format_message):
         _slots.release()
 
 
-def dispatch(signal, send_message, format_message):
+def dispatch(signal, send_message, format_message, on_sent=None):
     if not _slots.acquire(blocking=False):
         print("[PUMP_FLOW] BUSY", signal.get("symbol"), flush=True)
         return False
     threading.Thread(target=send_confirmed,
-                     args=(dict(signal), send_message, format_message),
+                     args=(dict(signal), send_message, format_message, on_sent),
                      daemon=True).start()
     return True
