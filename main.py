@@ -1220,7 +1220,8 @@ test_binance()
 test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
-send_telegram("🚀 PumpDump Radar V2 ONLINE")
+if TELEGRAM_POLICY == "LEGACY":
+    send_telegram("🚀 PumpDump Radar V2 ONLINE")
 
 start_liquidation_streams()
 
@@ -1267,7 +1268,7 @@ while True:
         for watch_event in watch_events:
             oi_watch = None
             futures_imbalance = None
-            if watch_event["level"] >= 2:
+            if watch_event["level"] >= 2 and TELEGRAM_POLICY == "LEGACY":
                 try:
                     oi_watch = get_oi_5m(watch_event["symbol"])
                     flow_watch = get_futures_windows(watch_event["symbol"]).get("5m") or {}
