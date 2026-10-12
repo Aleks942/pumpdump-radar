@@ -15,6 +15,7 @@ from telegram_builder import build_short_message
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
+from deferred_horizon_audit import advance as advance_deferred_study, hourly_report as report_deferred_study
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
@@ -1302,6 +1303,10 @@ while True:
         report_watch_forward()
         if TELEGRAM_POLICY == "CONFIRMED_ONLY":
             advance_trend_study()
+            # Read historical closed candles only at due checkpoints,
+            # bounded to two small REST requests per scan.
+            advance_deferred_study()
+            report_deferred_study()
     except Exception as forward_exc:
         print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
               type(forward_exc).__name__, flush=True)
