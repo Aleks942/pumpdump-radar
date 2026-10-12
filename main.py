@@ -16,6 +16,7 @@ from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pum
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
+from flow_bridge import enqueue_candidate as enqueue_flow_candidate
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
@@ -1361,6 +1362,11 @@ while True:
             no_signal += 1
             continue
     
+        try:
+            enqueue_flow_candidate(signal)
+        except Exception as exc:
+            print("[FLOW_BRIDGE_ERROR]", type(exc).__name__, flush=True)
+
         print(
             "[SIGNAL READY]",
             signal["symbol"],
