@@ -46,7 +46,8 @@ def _setup(conn):
         id INTEGER PRIMARY KEY, symbol TEXT NOT NULL,
         ts REAL NOT NULL, level INTEGER NOT NULL,
         rise_pct REAL NOT NULL, retrace_pct REAL NOT NULL,
-        entry_price REAL, peak_price REAL
+        entry_price REAL, peak_price REAL,
+        delivered INTEGER NOT NULL DEFAULT 1
     )""")
     # Existing production rows predate the observation journal: keep them
     # untouched and without manufactured historical entry prices.
@@ -55,6 +56,8 @@ def _setup(conn):
         conn.execute("ALTER TABLE pump_watch_alerts ADD COLUMN entry_price REAL")
     if "peak_price" not in columns:
         conn.execute("ALTER TABLE pump_watch_alerts ADD COLUMN peak_price REAL")
+    if "delivered" not in columns:
+        conn.execute("ALTER TABLE pump_watch_alerts ADD COLUMN delivered INTEGER NOT NULL DEFAULT 1")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pump_watch_alert_ts ON pump_watch_alerts(ts)")
 
 
@@ -189,23 +192,28 @@ def observe(tickers, now=None):
         return []
 
 
-def acknowledge(event, sent, now=None):
-    """Advance notification stage only on confirmed Telegram delivery."""
+def acknowledge(event, sent, now=None, research_only=False):
+    """Advance a watch stage after ACK, or store silent research observations.
+
+    Silent rows are explicitly marked delivered=0; legacy accepted
+    notifications remain delivered=1. Failed Telegram sends retain backoff.
+    """
     now = time.time() if now is None else float(now)
     try:
         with closing(_db()) as conn:
             _setup(conn)
-            if sent is True:
+            if sent is True or research_only:
                 conn.execute("""UPDATE pump_watch_state
                     SET notified=MAX(notified, ?), retry_after=0
                     WHERE symbol=?""",(event["level"],event["symbol"]))
-                # The quote was observed BEFORE Telegram ACK. All forward
-                # outcomes use this fixed recorded price, never a later peak.
+                # Observed before Telegram ACK (or intentionally silent);
+                # forward outcomes use this fixed price, never later peaks.
                 conn.execute("""INSERT INTO pump_watch_alerts
-                    (symbol,ts,level,rise_pct,retrace_pct,entry_price,peak_price)
-                    VALUES (?,?,?,?,?,?,?)""",(event["symbol"],now,
+                    (symbol,ts,level,rise_pct,retrace_pct,entry_price,peak_price,delivered)
+                    VALUES (?,?,?,?,?,?,?,?)""",(event["symbol"],now,
                         event["level"],event["rise"],event["retrace"],
-                        float(event["price"]),float(event["peak"])))
+                        float(event["price"]),float(event["peak"]),
+                        0 if research_only else 1))
             else:
                 conn.execute("""UPDATE pump_watch_state
                     SET retry_after=? WHERE symbol=?""",(now+300,event["symbol"]))
