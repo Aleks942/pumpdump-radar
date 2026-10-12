@@ -45,5 +45,41 @@ class ConfirmedDeliveryTests(unittest.TestCase):
         self.assertEqual(self.sent, [])
 
 
+    def test_confirmed_registers_only_after_successful_telegram(self):
+        env = {"PUMP_FLOW_URL": "https://example.org/api/pump-candidate",
+               "PUMP_FLOW_SHARED_TOKEN": "test"}
+        recorded = []
+        def send_ok(text, symbol):
+            self.sent.append((text, symbol))
+            return True
+        with patch.dict("os.environ", env), \
+             patch("requests.post", return_value=FakeResponse()), \
+             patch("requests.get", return_value=FakeResponse(
+                 200, {"status": "CONFIRMED", "finished_at": 1000.0})), \
+             patch("time.time", return_value=1000.0), \
+             patch("time.sleep", return_value=None):
+            _slots.acquire()
+            send_confirmed(self.signal, send_ok, str,
+                           on_sent=lambda signal: recorded.append(signal["symbol"]))
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(recorded, ["XRPUSDT"])
+
+    def test_failed_telegram_does_not_register(self):
+        env = {"PUMP_FLOW_URL": "https://example.org/api/pump-candidate",
+               "PUMP_FLOW_SHARED_TOKEN": "test"}
+        recorded = []
+        with patch.dict("os.environ", env), \
+             patch("requests.post", return_value=FakeResponse()), \
+             patch("requests.get", return_value=FakeResponse(
+                 200, {"status": "CONFIRMED", "finished_at": 1000.0})), \
+             patch("time.time", return_value=1000.0), \
+             patch("time.sleep", return_value=None):
+            _slots.acquire()
+            send_confirmed(self.signal, lambda text, symbol: False, str,
+                           on_sent=lambda signal: recorded.append(signal["symbol"]))
+        self.assertEqual(recorded, [])
+        self.assertEqual(self.sent, [])
+
+
 if __name__ == "__main__":
     unittest.main()
