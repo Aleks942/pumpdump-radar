@@ -16,7 +16,9 @@ from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pum
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
-from flow_bridge import enqueue_candidate as enqueue_flow_candidate, deliver_candidate as deliver_flow_candidate
+from flow_bridge import (enqueue_candidate as enqueue_flow_candidate,
+                         deliver_candidate as deliver_flow_candidate,
+                         probe_bridge)
 from pump_flow_confirmed import dispatch as dispatch_confirmed_flow
 from trade_flow_collector_v3 import get_futures_windows
 from okx_trade_stream_v3 import run_stream_forever
@@ -1197,6 +1199,9 @@ def should_send_signal(signal):
     return False
 
 print("🚀 PumpDump Radar V2 started")
+
+# Read-only verification of credentials and network path. No trading signals.
+threading.Thread(target=probe_bridge, name="pump-flow-probe", daemon=True).start()
 
 initialize_market_memory()
 print("========== INIT DONE ==========", flush=True)
