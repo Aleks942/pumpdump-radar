@@ -77,7 +77,7 @@ class PumpWatchTests(unittest.TestCase):
 
     def test_microprice_requires_healthy_spread(self):
         low_price = ticker(price=0.005, opening=0.004,
-                           high=0.006, vol=3_000_000_000)
+                           high=0.0055, vol=3_000_000_000)
         self.assertEqual(watch.observe([low_price], now=self.now), [])
         low_price["bidPx"] = "0.004999"
         low_price["askPx"] = "0.005001"
