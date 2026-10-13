@@ -181,5 +181,139 @@ class SingleInstrumentPriceRefreshTests(unittest.TestCase):
         self.get.assert_not_called()
 
 
+class MarketWatchNotificationTests(unittest.TestCase):
+    """Isolated market-watch tests; never import main.py with live workers."""
+
+    def setUp(self):
+        import ast
+        import math
+        from html import escape
+        from pathlib import Path
+        from unittest.mock import Mock
+
+        source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        parser = ast.parse(source)
+        fn = [n for n in parser.body if isinstance(n, ast.FunctionDef)
+              and n.name == "maybe_send_market_watch"]
+        self.assertEqual(len(fn), 1)
+        calls = []
+        self.calls = calls
+        self.sender_result = True
+
+        def send(text, symbol="SYSTEM"):
+            calls.append((symbol, text))
+            return self.sender_result
+
+        builder_source = Path(__file__).with_name("telegram_builder.py").read_text(
+            encoding="utf-8")
+        builder_tree = ast.parse(builder_source)
+        builder_functions = [
+            n for n in builder_tree.body if isinstance(n, ast.FunctionDef)
+            and n.name in ("number", "build_market_watch_message")
+        ]
+        builder_ns = {
+            "math": math, "escape": escape,
+            "PATTERN_NAMES": {
+                "NEW_LONG_BUILDUP": "Набор лонгов",
+                "NEW_SHORT_BUILDUP": "Набор шортов",
+            },
+        }
+        exec(compile(ast.fix_missing_locations(ast.Module(
+            body=builder_functions, type_ignores=[])), "watch_builder", "exec"),
+            builder_ns)
+        self.builder = builder_ns["build_market_watch_message"]
+        self.ns = {
+            "math": math, "time": __import__("time"),
+            "send_telegram": send,
+            "build_market_watch_message": self.builder,
+            "print": lambda *args, **kwargs: None,
+            "_MARKET_WATCH_SPACING_SEC": 1200,
+            "_MARKET_WATCH_SYMBOL_SEC": 7200,
+            "_MARKET_WATCH_DAILY_MAX": 12,
+            "_market_watch_delivery": {
+                "day": None, "count": 0, "last_sent": None,
+                "symbols": {}, "retry_after": 0.0,
+            },
+        }
+        exec(compile(ast.fix_missing_locations(ast.Module(
+            body=fn, type_ignores=[])), "watch_sender", "exec"), self.ns)
+        self.notify = self.ns["maybe_send_market_watch"]
+        self.t0 = 1791892800.0  # UTC noon; 12 spaced alerts remain same day
+
+    def sample(self, symbol="ETHUSDT", direction="UP"):
+        kind, pattern, pct = (
+            ("PUMP", "NEW_LONG_BUILDUP", 2.3) if direction == "UP"
+            else ("DUMP", "NEW_SHORT_BUILDUP", -2.3))
+        return {
+            "symbol": symbol, "type": kind, "price": 0.0012534,
+            "window": "5m", "change": pct, "oi_change": 0.8,
+            "futures_flow": {"imbalance_pct": 30},
+            "spot_cvd": {"cvd_percent": 12},
+            "decision": {"direction": direction, "pattern": pattern},
+        }
+
+    def test_existing_pattern_sends_plain_observation(self):
+        self.assertTrue(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0))
+        symbol, text = self.calls[0]
+        self.assertEqual(symbol, "ETHUSDT")
+        self.assertIn("🚀 ПАМП — НАБЛЮДЕНИЕ", text)
+        self.assertIn("Цена: 0.0012534 USDT", text)
+        self.assertIn("НЕ сигнал для входа", text)
+        self.assertNotIn("ПОДТВЕРЖДЁННЫЙ СИГНАЛ", text)
+        self.assertNotIn("вход подтверждён", text)
+        self.assertEqual(self.ns["_market_watch_delivery"]["count"], 1)
+
+    def test_downtrend_watch_mentions_unsupported_trade(self):
+        text = self.builder(self.sample("BTCUSDT", "DOWN"), "TREND_NOT_ALIGNED")
+        self.assertIn("🔻 ДАМП — НАБЛЮДЕНИЕ", text)
+        self.assertIn("Старший тренд не подтверждает направление", text)
+
+    def test_invalid_signal_and_html_escape(self):
+        self.assertFalse(self.notify(
+            {"symbol": "BTCUSDT", "decision": None}, "EDGE_UNPROVEN",
+            now=self.t0))
+        self.assertFalse(self.notify(
+            {"symbol": "BTCUSDT", "decision": {"direction": "DOWN"},
+             "type": "PUMP"}, "EDGE_UNPROVEN", now=self.t0))
+        self.assertEqual(self.calls, [])
+        message = self.builder(self.sample("X<b>USDT"), "EDGE_UNPROVEN")
+        self.assertIn("X&lt;b&gt;USDT", message)
+        self.assertNotIn("X<b>USDT", message)
+
+    def test_global_spacing_and_symbol_dedup(self):
+        self.assertTrue(self.notify(self.sample(), "EDGE_UNPROVEN", now=self.t0))
+        self.assertFalse(self.notify(
+            self.sample("BTCUSDT"), "EDGE_UNPROVEN", now=self.t0+1199))
+        self.assertFalse(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0+1201))
+        self.assertTrue(self.notify(
+            self.sample("BTCUSDT"), "EDGE_UNPROVEN", now=self.t0+1201))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_daily_limit(self):
+        for i in range(12):
+            self.assertTrue(self.notify(
+                self.sample(f"T{i}USDT"), "EDGE_UNPROVEN",
+                now=self.t0+i*1201))
+        self.assertFalse(self.notify(
+            self.sample("OTHERUSDT"), "EDGE_UNPROVEN",
+            now=self.t0+12*1201))
+        self.assertEqual(len(self.calls), 12)
+
+    def test_failed_delivery_does_not_consume_budget(self):
+        self.sender_result = False
+        self.assertFalse(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0))
+        self.assertEqual(self.ns["_market_watch_delivery"]["count"], 0)
+        self.assertFalse(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0+250))
+        self.sender_result = True
+        self.assertTrue(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0+301))
+        self.assertEqual(self.ns["_market_watch_delivery"]["count"], 1)
+        self.assertEqual(len(self.calls), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
