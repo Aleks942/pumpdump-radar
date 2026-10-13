@@ -7,6 +7,7 @@ import math
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import observe as observe_movers
+from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
 from pump_factor_report import print_factor_edge
@@ -1284,7 +1285,10 @@ while True:
     # Zero-extra-API market-wide discovery of early PUMP and DUMP candidates.
     # Never sends Telegram and never changes the trade-confirmation gates.
     try:
-        observe_movers(tickers)
+        mover_rows = observe_movers(tickers)
+        # Identical ticker batch: 5/15/30m quote markouts; NO extra API calls.
+        observe_mover_forward(mover_rows)
+        report_mover_forward()
     except Exception as mover_exc:
         print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
 
