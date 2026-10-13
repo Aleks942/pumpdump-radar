@@ -68,5 +68,21 @@ class PumpWatchTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM pump_watch_alerts").fetchone()[0],1)
 
 
+    def test_liquid_btc_base_volume_below_old_raw_threshold(self):
+        # The old code rejected 100k base units as <10m;
+        # at a $110 quote that is about 11m USDT notional.
+        rows = self.observe(110, vol=100_000)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["level"], 1)
+
+    def test_microprice_requires_healthy_spread(self):
+        low_price = ticker(price=0.005, opening=0.004,
+                           high=0.006, vol=3_000_000_000)
+        self.assertEqual(watch.observe([low_price], now=self.now), [])
+        low_price["bidPx"] = "0.004999"
+        low_price["askPx"] = "0.005001"
+        self.assertEqual(len(watch.observe([low_price], now=self.now)), 1)
+
+
 if __name__=="__main__":
     unittest.main()
