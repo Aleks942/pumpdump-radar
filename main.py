@@ -14,7 +14,7 @@ from pump_factor_report import print_factor_edge
 from pump_forward_oi import register_forward_oi, report_forward_oi
 from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
-from telegram_builder import build_short_message
+from telegram_builder import build_short_message, build_market_watch_message
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
@@ -85,6 +85,66 @@ symbol_states = {}
 OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
+
+# Bounded, information-only notifications of already-validated PUMP/DUMP
+# patterns. They do not influence trade approval, signal_memory or trackers.
+_MARKET_WATCH_SPACING_SEC = 20 * 60
+_MARKET_WATCH_SYMBOL_SEC = 2 * 3600
+_MARKET_WATCH_DAILY_MAX = 12
+_market_watch_delivery = {
+    "day": None, "count": 0, "last_sent": None,
+    "symbols": {}, "retry_after": 0.0,
+}
+
+
+def maybe_send_market_watch(signal, reason, now=None):
+    """Notify about a market move, never about a proven trading opportunity.
+
+    Only called on an existing fully detected and freshly priced signal.
+    Reserve frequency budget AFTER Telegram confirms successful delivery.
+    """
+    now = time.time() if now is None else float(now)
+    if not math.isfinite(now):
+        return False
+    symbol = signal.get("symbol")
+    side = signal.get("decision", {}).get("direction")
+    kind = signal.get("type")
+    if (not isinstance(symbol, str) or not symbol.endswith("USDT")
+            or (kind, side) not in (("PUMP", "UP"), ("DUMP", "DOWN"))):
+        return False
+    day = int(now // 86400)
+    state = _market_watch_delivery
+    if day != state["day"]:
+        state["day"], state["count"] = day, 0
+    if state["count"] >= _MARKET_WATCH_DAILY_MAX:
+        return False
+    if now < state["retry_after"]:
+        return False
+    previous = state["last_sent"]
+    if previous is not None and now - previous < _MARKET_WATCH_SPACING_SEC:
+        return False
+    key = (symbol, side)
+    if now - state["symbols"].get(key, -float("inf")) < _MARKET_WATCH_SYMBOL_SEC:
+        return False
+    try:
+        message = build_market_watch_message(signal, reason)
+        accepted = send_telegram(message, symbol=symbol)
+    except Exception as exc:
+        print("[PUMP_INFO_ERROR]", symbol, type(exc).__name__, flush=True)
+        accepted = False
+    if accepted is not True:
+        state["retry_after"] = now + 300
+        print("[PUMP_INFO_SEND_FAILED]", symbol, flush=True)
+        return False
+    state["last_sent"] = now
+    state["symbols"][key] = now
+    state["count"] += 1
+    print("[PUMP_INFO_SENT]", symbol, "type=", kind,
+          "count_today=", state["count"],
+          "trade_approved=false informational_only=true", flush=True)
+    return True
+
+
 ENTRY_TRACKER = {}
 ENTRY_TRACKER_LOCK = threading.Lock()
 ENTRY_TRACKER_INTERVAL = 15
@@ -1418,6 +1478,9 @@ while True:
             if reason in ("EDGE_UNPROVEN", "CONFIRMED"):
                 record_horizon_case(signal)
             if not verified:
+                # Market movement notices are deliberately separate from
+                # the strict trading-probability gate, with their own budget.
+                maybe_send_market_watch(signal, reason)
                 print("[TRADE_ALERT_SUPPRESSED]", signal["symbol"],
                       "reason=", reason, flush=True)
                 continue
