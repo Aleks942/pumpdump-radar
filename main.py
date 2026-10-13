@@ -6,7 +6,8 @@ import threading
 import math
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
-from mover_discovery import observe as observe_movers, select_threshold_moves
+from mover_discovery import (observe as observe_movers, inspect_price_quotes,
+                             select_threshold_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -1358,7 +1359,7 @@ while True:
     # Reuse PUMP_THRESHOLD_5M / DUMP_THRESHOLD_5M from Railway Variables.
     try:
         for market_move in select_threshold_moves(
-            mover_rows,
+            inspect_price_quotes(tickers),
             TIME_WINDOWS["5m"]["pump"],
             -TIME_WINDOWS["5m"]["dump"],
         ):
