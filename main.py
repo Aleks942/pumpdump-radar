@@ -6,7 +6,8 @@ import threading
 import math
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
-from mover_discovery import observe as observe_movers
+from mover_discovery import (observe as observe_movers, inspect_price_quotes,
+                             select_threshold_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -86,8 +87,8 @@ OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
 
-# Bounded, information-only notifications of already-validated PUMP/DUMP
-# patterns. They do not influence trade approval, signal_memory or trackers.
+# Bounded, information-only price-threshold notifications. They do not
+# influence trade approval, signal_memory or entry trackers.
 _MARKET_WATCH_SPACING_SEC = 20 * 60
 _MARKET_WATCH_SYMBOL_SEC = 2 * 3600
 _MARKET_WATCH_DAILY_MAX = 12
@@ -100,7 +101,7 @@ _market_watch_delivery = {
 def maybe_send_market_watch(signal, reason, now=None):
     """Notify about a market move, never about a proven trading opportunity.
 
-    Only called on an existing fully detected and freshly priced signal.
+    Only called on a real, chronologically sampled 5m market move.
     Reserve frequency budget AFTER Telegram confirms successful delivery.
     """
     now = time.time() if now is None else float(now)
@@ -1343,8 +1344,8 @@ while True:
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
 
-    # Zero-extra-API market-wide discovery of early PUMP and DUMP candidates.
-    # Never sends Telegram and never changes the trade-confirmation gates.
+    # Read the existing market-wide ticker history with zero extra HTTP calls.
+    mover_rows = []
     try:
         mover_rows = observe_movers(tickers)
         # Identical ticker batch: 5/15/30m quote markouts; NO extra API calls.
@@ -1352,6 +1353,19 @@ while True:
         report_mover_forward()
     except Exception as mover_exc:
         print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
+
+    # Ordinary PUMP/DUMP notifications are price-only, independent of the
+    # OI/CVD/pattern/trend/profitability checks for a tradable signal.
+    # Reuse PUMP_THRESHOLD_5M / DUMP_THRESHOLD_5M from Railway Variables.
+    try:
+        for market_move in select_threshold_moves(
+            inspect_price_quotes(tickers),
+            TIME_WINDOWS["5m"]["pump"],
+            -TIME_WINDOWS["5m"]["dump"],
+        ):
+            maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
+    except Exception as info_exc:
+        print("[PUMP_PRICE_INFO_ERROR]", type(info_exc).__name__, flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.
@@ -1478,9 +1492,8 @@ while True:
             if reason in ("EDGE_UNPROVEN", "CONFIRMED"):
                 record_horizon_case(signal)
             if not verified:
-                # Market movement notices are deliberately separate from
-                # the strict trading-probability gate, with their own budget.
-                maybe_send_market_watch(signal, reason)
+                # No separate message here: price-only market watch runs
+                # above, preventing duplicates and preserving this strict gate.
                 print("[TRADE_ALERT_SUPPRESSED]", signal["symbol"],
                       "reason=", reason, flush=True)
                 continue

@@ -204,6 +204,23 @@ def build_market_watch_message(signal, reason):
             return "нет данных"
         return f"{value:.8f}".rstrip("0").rstrip(".")
 
+    if reason == "PRICE_THRESHOLD":
+        symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
+        age_sec = float(signal.get("sample_age_sec"))
+        if not math.isfinite(age_sec) or not 240 <= age_sec <= 420:
+            raise ValueError("Invalid quote sampling age")
+        return "\n".join((
+            heading,
+            f"🪙 {symbol} | OKX SWAP",
+            f"Цена: {price_text(signal.get('price'))} USDT",
+            f"Движение: {number(signal.get('change'), signed=True, suffix='%')}",
+            f"Период наблюдения: около 5 минут ({age_sec/60:.1f} мин)",
+            "",
+            "ℹ️ Порог цены из Railway Variables достигнут.",
+            "⚠️ НЕ сигнал для входа. OI, CVD и тренд здесь не проверялись.",
+            "Резкое движение может продолжиться или развернуться.",
+        ))
+
     reason_text = {
         "EDGE_UNPROVEN": "Статистическое преимущество входа пока не доказано",
         "TREND_NOT_ALIGNED": "Старший тренд не подтверждает направление",

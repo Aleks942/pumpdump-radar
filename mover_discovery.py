@@ -122,3 +122,100 @@ def observe(tickers, now=None):
             flush=True,
         )
     return records
+
+
+
+def inspect_price_quotes(tickers, now=None):
+    """Independently sample all finite positive OKX swap prices for alerts.
+
+    Unlike research inspect(), requires no 24h volume/open/high/low, spread
+    or liquidity metadata. Shares the same bounded chronological quote
+    history, so adding notices never makes extra market HTTP requests.
+    """
+    now = time.time() if now is None else float(now)
+    if not math.isfinite(now):
+        return []
+    out = []
+    for ticker in tickers or ():
+        if not isinstance(ticker, dict):
+            continue
+        inst = ticker.get("instId")
+        if not isinstance(inst, str) or not inst.endswith("-USDT-SWAP"):
+            continue
+        price = positive_float(ticker.get("last"))
+        if price is None:
+            continue
+        symbol = inst[:-10] + "USDT"
+        records = _history.setdefault(symbol, deque(maxlen=MAX_HISTORY_PER_SYMBOL))
+        while records and now - records[0][0] > HISTORY_SECONDS:
+            records.popleft()
+        if not records or now - records[-1][0] >= SAMPLE_STEP_SECONDS:
+            records.append((now, price))
+        older = [(at, px) for at, px in records if 240 <= now - at <= 420]
+        reference = min(older, key=lambda r: abs(now - r[0] - 300)) if older else None
+        change5 = 100 * (price / reference[1] - 1) if reference else None
+        out.append({
+            "symbol": symbol,
+            "price": price,
+            "change5": change5,
+            "sample_age_sec": now - reference[0] if reference else None,
+        })
+
+    if len(_history) > MAX_SYMBOLS:
+        live = {row["symbol"] for row in out}
+        for old in list(_history):
+            if old not in live:
+                _history.pop(old, None)
+            if len(_history) <= MAX_SYMBOLS:
+                break
+        while len(_history) > MAX_SYMBOLS:
+            _history.pop(next(iter(_history)))
+    return out
+
+def select_threshold_moves(rows, pump_threshold, dump_threshold):
+    """Price-only Telegram candidates from chronologically sampled OKX quotes.
+
+    Neither liquidity, spread, OI, CVD nor pattern recognition is a gate here.
+    Existing trade entry rules are not affected. A missing roughly-5m history
+    cannot be converted into a fabricated price change.
+    """
+    try:
+        pump = float(pump_threshold)
+        dump = float(dump_threshold)
+    except (ValueError, TypeError, OverflowError):
+        return []
+    if not (math.isfinite(pump) and pump > 0 and
+            math.isfinite(dump) and dump > 0):
+        return []
+
+    candidates = []
+    for row in rows or ():
+        if not isinstance(row, dict):
+            continue
+        symbol = row.get("symbol")
+        if (not isinstance(symbol, str) or not symbol.endswith("USDT")
+                or len(symbol) <= 4):
+            continue
+        try:
+            move = float(row.get("change5"))
+            price = float(row.get("price"))
+            age = float(row.get("sample_age_sec"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if (not all(math.isfinite(v) for v in (move, price, age))
+                or price <= 0 or not 240 <= age <= 420):
+            continue
+        if move >= pump:
+            kind, direction = "PUMP", "UP"
+        elif move <= -dump:
+            kind, direction = "DUMP", "DOWN"
+        else:
+            continue
+        candidates.append({
+            "symbol": symbol, "type": kind,
+            "decision": {"direction": direction},
+            "price": price, "change": move, "window": "~5m",
+            "sample_age_sec": age,
+        })
+    # Limited Telegram budget goes to the largest observed movements first.
+    return sorted(candidates, key=lambda r: abs(r["change"]), reverse=True)
