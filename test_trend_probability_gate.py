@@ -149,6 +149,45 @@ class TrendStudyTests(unittest.TestCase):
             failed=gate._edge(db,PATTERN,"LONG","UP",NOW)
             self.assertFalse(failed["approved"])
 
+    def test_forward_regime_report_separates_aligned_from_flat_h4(self):
+        with gate._db() as db:
+            events = [
+                ("DOWN", "SHORT", "DONE", "TP_FIRST", 1.28),
+                ("DOWN", "SHORT", "DONE", "TIME_EXIT", -0.15),
+                ("DOWN_H4_FLAT", "SHORT", "DONE", "SL_FIRST", -1.22),
+                ("DOWN_H4_FLAT", "SHORT", "PENDING", None, None),
+            ]
+            for k, (trend, side, status, verdict, net) in enumerate(events):
+                ts = NOW - 2*86400 + k*5400
+                db.execute("""INSERT INTO candidates
+                    (ts,symbol,pattern,side,trend,status,verdict,net_pct,evaluated_ts)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (ts, "COIN"+str(k)+"USDT", PATTERN, side,
+                     trend, status, verdict, net,
+                     ts+1800 if status=="DONE" else None))
+            db.commit()
+            stats = gate.regime_quality_snapshot(db)
+            self.assertEqual(len(stats), 2)
+            by_regime = {row["regime"]:row for row in stats}
+            aligned = by_regime["H1_H4_ALIGNED"]
+            flat = by_regime["H1_H4_FLAT"]
+            self.assertEqual((aligned["seen"],aligned["done"],aligned["tp"],
+                              aligned["time_exit"],aligned["positive"]),
+                             (2,2,1,1,1))
+            self.assertAlmostEqual(aligned["mean_net"],(1.28-0.15)/2)
+            self.assertEqual((flat["seen"],flat["done"],flat["pending"],
+                              flat["sl"],flat["positive"]),(2,1,1,1,0))
+            self.assertAlmostEqual(flat["mean_net"], -1.22)
+            from contextlib import redirect_stdout
+            from io import StringIO
+            text = StringIO()
+            with redirect_stdout(text):
+                gate.report_regime_quality(db)
+            output = text.getvalue()
+            self.assertIn("regime=H1_H4_FLAT", output)
+            self.assertIn("no_trade_approval=true", output)
+            self.assertIn("pooled_patterns=true", output)
+
     def test_silent_watch_still_persists_and_isolated_from_delivered(self):
         event=watch.observe([quote(110)],now=NOW)[0]
         watch.acknowledge(event,False,now=NOW,research_only=True)
