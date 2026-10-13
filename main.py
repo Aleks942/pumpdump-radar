@@ -711,32 +711,33 @@ def refresh_signal_price(signal):
     import math
 
     try:
+        # Fetch just the selected swap, rather than downloading every
+        # market ticker again for each signal. The fresh quote is still
+        # mandatory, and any invalid response fails closed.
+        target = signal["symbol"]
+        if (not isinstance(target, str) or not target.endswith("USDT")
+                or len(target) <= 4):
+            raise ValueError("Invalid target symbol")
+        instrument = f"{target[:-4]}-USDT-SWAP"
         response = requests.get(
-            "https://www.okx.com/api/v5/market/tickers",
-            params={"instType": "SWAP"},
+            "https://www.okx.com/api/v5/market/ticker",
+            params={"instId": instrument},
             timeout=10,
         )
         response.raise_for_status()
         data = response.json()
         observed_at = datetime.now(UTC)
 
-        if data.get("code") != "0":
+        if not isinstance(data, dict) or data.get("code") != "0":
             raise ValueError("OKX returned an error")
 
-        target = signal["symbol"]
-        fresh_price = None
-
-        for ticker in data.get("data", []):
-            instrument = str(ticker.get("instId") or "")
-
-            if not instrument.endswith("-USDT-SWAP"):
-                continue
-
-            symbol = instrument.replace("-USDT-SWAP", "USDT")
-
-            if symbol == target:
-                fresh_price = float(ticker.get("last") or 0)
-                break
+        tickers = data.get("data")
+        if not isinstance(tickers, list) or len(tickers) != 1:
+            raise ValueError("No unique fresh ticker")
+        ticker = tickers[0]
+        if not isinstance(ticker, dict) or ticker.get("instId") != instrument:
+            raise ValueError("Ticker instrument mismatch")
+        fresh_price = float(ticker.get("last") or 0)
 
         if (
             fresh_price is None
