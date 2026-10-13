@@ -238,7 +238,7 @@ class MarketWatchNotificationTests(unittest.TestCase):
         exec(compile(ast.fix_missing_locations(ast.Module(
             body=fn, type_ignores=[])), "watch_sender", "exec"), self.ns)
         self.notify = self.ns["maybe_send_market_watch"]
-        self.t0 = 1791921600.0
+        self.t0 = 1791892800.0  # UTC noon; 12 spaced alerts remain same day
 
     def sample(self, symbol="ETHUSDT", direction="UP"):
         kind, pattern, pct = (
