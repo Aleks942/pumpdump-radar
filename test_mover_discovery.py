@@ -315,5 +315,94 @@ class MarketWatchNotificationTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
 
 
+class PriceOnlyMarketWatchTests(unittest.TestCase):
+    def row(self, symbol, change, *, age=300, price=100, liquid=False):
+        return {
+            "symbol": symbol, "change5": change,
+            "sample_age_sec": age, "price": price,
+            "eligible_research": liquid, "spread_bps": 999,
+            "quote_usdt_approx": 1,
+        }
+
+    def test_thresholds_are_inclusive_for_both_directions(self):
+        rows = [
+            self.row("UPUSDT", 1.5),
+            self.row("DOWNUSDT", -1.5),
+            self.row("QUIETUSDT", 1.49),
+            self.row("PUSHUSDT", 7.0),
+        ]
+        out = mover.select_threshold_moves(rows, 1.5, 1.5)
+        self.assertEqual([r["symbol"] for r in out],
+                         ["PUSHUSDT", "UPUSDT", "DOWNUSDT"])
+        self.assertEqual([r["type"] for r in out],
+                         ["PUMP", "PUMP", "DUMP"])
+        self.assertEqual(out[1]["decision"]["direction"], "UP")
+        self.assertEqual(out[2]["decision"]["direction"], "DOWN")
+        self.assertEqual(out[2]["change"], -1.5)
+
+    def test_user_can_change_existing_threshold_variables(self):
+        rows = [
+            self.row("UPUSDT", 1.8), self.row("DOWNUSDT", -1.8),
+        ]
+        self.assertEqual(len(mover.select_threshold_moves(rows, 1.5, 1.5)), 2)
+        self.assertEqual(mover.select_threshold_moves(rows, 2.0, 2.0), [])
+
+    def test_no_extra_liquidity_oi_cvd_or_pattern_gate(self):
+        row = self.row("ANYUSDT", -2.2, price=0.00000012)
+        self.assertEqual(row["eligible_research"], False)
+        selected = mover.select_threshold_moves([row], 1.5, 1.5)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["type"], "DUMP")
+        self.assertEqual(selected[0]["price"], 0.00000012)
+        self.assertNotIn("spot_cvd", selected[0])
+        self.assertNotIn("aggregated_oi", selected[0])
+
+    def test_invalid_data_and_missing_history_fail_closed(self):
+        rows = [
+            self.row("EARLYUSDT", 5, age=120),
+            self.row("LATEUSDT", -4, age=450),
+            self.row("NANUSDT", math.nan),
+            self.row("INFUSDT", math.inf),
+            self.row("ZEROPRICEUSDT", 3, price=0),
+            self.row("EURUSD", 4),
+            self.row("BADUSDT", 4, age=None),
+            self.row("GOODUSDT", 2.0, age=420),
+        ]
+        got = mover.select_threshold_moves(rows, 1.5, 1.5)
+        self.assertEqual([r["symbol"] for r in got], ["GOODUSDT"])
+        for bad in (0, -1, float("nan"), float("inf"), None):
+            self.assertEqual(mover.select_threshold_moves(rows, bad, 1.5), [])
+            self.assertEqual(mover.select_threshold_moves(rows, 1.5, bad), [])
+
+    def test_existing_notification_format_and_delivery_are_separate_from_trading(self):
+        import ast
+        from html import escape
+        from pathlib import Path
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+        import telegram_builder as builder
+
+        rows = [self.row("BTCUSDT", 2.3, age=300)]
+        selected = mover.select_threshold_moves(rows, 1.5, 1.5)
+        self.assertEqual(len(selected), 1)
+        msg = builder.build_market_watch_message(
+            selected[0], "PRICE_THRESHOLD")
+        self.assertIn("ПАМП — НАБЛЮДЕНИЕ", msg)
+        self.assertIn("Движение: +2.30%", msg)
+        self.assertIn("Период наблюдения: около 5 минут", msg)
+        self.assertIn("НЕ сигнал для входа", msg)
+        self.assertNotIn("ПОДТВЕРЖДЁННЫЙ СИГНАЛ", msg)
+        self.assertNotIn("Полный паттерн", msg)
+        self.assertNotIn("OI 5м:", msg)
+
+    def test_main_wires_price_candidates_once_before_trading_gate(self):
+        from pathlib import Path
+        source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_THRESHOLD")'), 1)
+        self.assertNotIn("maybe_send_market_watch(signal, reason)", source)
+        self.assertIn('TIME_WINDOWS["5m"]["pump"]', source)
+        self.assertIn('-TIME_WINDOWS["5m"]["dump"]', source)
+
+
 if __name__ == "__main__":
     unittest.main()
