@@ -181,3 +181,54 @@ def build_short_message(signal):
     )
 
     return message
+
+
+def build_market_watch_message(signal, reason):
+    """Inform about a real observed PUMP/DUMP; never imply an approved entry."""
+    decision = signal.get("decision") or {}
+    direction = decision.get("direction")
+    move_type = signal.get("type")
+    if (move_type, direction) == ("PUMP", "UP"):
+        heading = "🚀 ПАМП — НАБЛЮДЕНИЕ"
+    elif (move_type, direction) == ("DUMP", "DOWN"):
+        heading = "🔻 ДАМП — НАБЛЮДЕНИЕ"
+    else:
+        raise ValueError("Inconsistent pump/dump direction")
+
+    def price_text(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return "нет данных"
+        if not math.isfinite(value) or value <= 0:
+            return "нет данных"
+        return f"{value:.8f}".rstrip("0").rstrip(".")
+
+    reason_text = {
+        "EDGE_UNPROVEN": "Статистическое преимущество входа пока не доказано",
+        "TREND_NOT_ALIGNED": "Старший тренд не подтверждает направление",
+        "RESEARCH_UNAVAILABLE": "Проверка качества входа сейчас недоступна",
+    }.get(reason, "Торговый вход не подтверждён")
+
+    futures = signal.get("futures_flow") or {}
+    spot = signal.get("spot_cvd") or {}
+    pattern = decision.get("pattern") or "NONE"
+    pattern_name = escape(PATTERN_NAMES.get(pattern, "Наблюдаемое движение"))
+    symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
+    timeframe = escape(str(signal.get("window") or "5m"))
+
+    return "\n".join((
+        heading,
+        f"🪙 {symbol} | OKX SWAP",
+        f"Цена: {price_text(signal.get('price'))} USDT",
+        f"Движение за {timeframe}: {number(signal.get('change'), signed=True, suffix='%')}",
+        "",
+        f"🧩 {pattern_name}",
+        f"OI 5м: {number(signal.get('oi_change'), signed=True, suffix='%')}",
+        f"Фьючерсный дисбаланс: {number(futures.get('imbalance_pct'), signed=True, suffix='%')}",
+        f"Spot CVD: {number(spot.get('cvd_percent'), signed=True, suffix='%')}",
+        "",
+        f"⚠️ {escape(reason_text)}.",
+        "Это оповещение о движении рынка, НЕ сигнал для входа.",
+        "Рост или падение могут быстро смениться откатом.",
+    ))
