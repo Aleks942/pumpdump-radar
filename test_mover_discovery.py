@@ -11,8 +11,8 @@ from ticker_metrics import approx_quote_volume_usdt, spread_bps
 
 def ticker(symbol="BTC", price=50_000, volume_base=300,
            opening=48_000, high=53_000, low=47_000, bid=None, ask=None):
-    bid = price * 0.9999 if bid is None else bid
-    ask = price * 1.0001 if ask is None else ask
+    bid = float(price) * 0.9999 if bid is None else bid
+    ask = float(price) * 1.0001 if ask is None else ask
     return {
         "instId": f"{symbol}-USDT-SWAP",
         "last": str(price),
