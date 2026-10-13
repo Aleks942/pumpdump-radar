@@ -10,6 +10,7 @@ import time
 from collections import deque
 from contextlib import closing
 from html import escape
+from ticker_metrics import approx_quote_volume_usdt, spread_bps
 
 DB_PATH = os.getenv("PUMP_WATCH_DB", "/data/pump_watch.sqlite3")
 PUMP_THRESHOLD = 10.0
@@ -100,9 +101,15 @@ def _ticker(ticker):
     price = _number(ticker.get("last"))
     opening = _number(ticker.get("open24h"))
     high = _number(ticker.get("high24h"))
-    volume = _number(ticker.get("volCcy24h"))
+    # The ticker's derivatives volCcy24h is in base currency; normalize it.
+    volume = approx_quote_volume_usdt(ticker)
     if not all((price,opening,high,volume)) or high < price:
         return None
+    # Low-priced pairs must have a safe bid/ask spread even in research.
+    if price < 0.01:
+        spread = spread_bps(ticker)
+        if spread is None or spread > 40.0:
+            return None
     return (symbol.replace("-USDT-SWAP", "USDT"), price, opening, high, volume)
 
 
@@ -132,7 +139,7 @@ def observe(tickers, now=None):
                 if parsed is None:
                     continue
                 symbol, price, opening, high, volume = parsed
-                if price < 0.01 or volume < MIN_VOLUME:
+                if volume < MIN_VOLUME:
                     continue
                 historical_pct, history_low, history_peak = _roll_prices(symbol, price, now)
                 # The 24h opening quote precedes its high; it is not a

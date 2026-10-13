@@ -5,6 +5,8 @@ import random
 import threading
 import math
 import requests
+from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from mover_discovery import observe as observe_movers
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
 from pump_factor_report import print_factor_edge
@@ -772,12 +774,21 @@ def analyze(ticker):
 
         price = float(ticker["last"])
 
-        if price < 0.01:
+        if not math.isfinite(price) or price <= 0:
             return None
 
-        volume_24h = float(ticker["volCcy24h"])
+        # Tiny-priced contracts are allowed only with a healthy live spread.
+        # They previously failed a hard price floor even when highly liquid.
+        if price < 0.01:
+            spread = spread_bps(ticker)
+            if spread is None or spread > 40.0:
+                return None
 
-        if volume_24h < MIN_VOLUME_24H:
+        # OKX swap volCcy24h is BASE currency, not USDT turnover.
+        # Use a conservative approx USDT notional for liquidity screening.
+        volume_24h = approx_quote_volume_usdt(ticker)
+
+        if volume_24h is None or volume_24h < MIN_VOLUME_24H:
             return None
 
     except Exception as e:
@@ -1269,6 +1280,13 @@ while True:
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
+
+    # Zero-extra-API market-wide discovery of early PUMP and DUMP candidates.
+    # Never sends Telegram and never changes the trade-confirmation gates.
+    try:
+        observe_movers(tickers)
+    except Exception as mover_exc:
+        print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.
