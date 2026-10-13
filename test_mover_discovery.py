@@ -104,5 +104,82 @@ class MoverResearchTests(unittest.TestCase):
         self.assertEqual(rows, [])
 
 
+class SingleInstrumentPriceRefreshTests(unittest.TestCase):
+    """Run only this function from main.py: importing main starts bot workers."""
+
+    def setUp(self):
+        import ast
+        import datetime
+        from pathlib import Path
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+
+        source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        functions = [n for n in tree.body
+                     if isinstance(n, ast.FunctionDef)
+                     and n.name == "refresh_signal_price"]
+        self.assertEqual(len(functions), 1)
+        isolated = ast.fix_missing_locations(
+            ast.Module(body=functions, type_ignores=[]))
+        self.get = Mock()
+        namespace = {
+            "requests": SimpleNamespace(get=self.get),
+            "datetime": datetime.datetime,
+            "UTC": datetime.timezone.utc,
+            "print": lambda *args, **kwargs: None,
+        }
+        exec(compile(isolated, "isolated_refresh", "exec"), namespace)
+        self.refresh = namespace["refresh_signal_price"]
+
+    def test_refreshes_only_the_selected_contract(self):
+        from unittest.mock import Mock
+        response = Mock()
+        response.json.return_value = {"code": "0", "data": [
+            {"instId": "BTC-USDT-SWAP", "last": "83456.7"},
+        ]}
+        self.get.return_value = response
+        signal = {"symbol": "BTCUSDT", "price": 83300}
+        self.assertTrue(self.refresh(signal))
+        self.assertEqual(signal["price"], 83456.7)
+        self.assertIsNotNone(signal["entry_observed_at"])
+        self.get.assert_called_once_with(
+            "https://www.okx.com/api/v5/market/ticker",
+            params={"instId": "BTC-USDT-SWAP"},
+            timeout=10,
+        )
+
+    def test_invalid_or_mismatched_ticker_cannot_refresh_signal(self):
+        from unittest.mock import Mock
+        samples = [
+            {"code": "500", "data": []},
+            {"code": "0", "data": []},
+            {"code": "0", "data": [
+                {"instId": "ETH-USDT-SWAP", "last": "83456.7"}]},
+            {"code": "0", "data": [
+                {"instId": "BTC-USDT-SWAP", "last": "nan"}]},
+            {"code": "0", "data": [
+                {"instId": "BTC-USDT-SWAP", "last": "0"}]},
+            {"code": "0", "data": [
+                {"instId": "BTC-USDT-SWAP", "last": "83456"},
+                {"instId": "BTC-USDT-SWAP", "last": "83457"}]},
+        ]
+        for payload in samples:
+            with self.subTest(payload=payload):
+                self.get.reset_mock()
+                response = Mock()
+                response.json.return_value = payload
+                self.get.return_value = response
+                original = {"symbol": "BTCUSDT", "price": 83300}
+                self.assertFalse(self.refresh(original))
+                self.assertEqual(original, {"symbol": "BTCUSDT", "price": 83300})
+                self.get.assert_called_once()
+
+    def test_invalid_symbol_does_not_call_exchange(self):
+        signal = {"symbol": "BTC-EUR", "price": 83300}
+        self.assertFalse(self.refresh(signal))
+        self.get.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
