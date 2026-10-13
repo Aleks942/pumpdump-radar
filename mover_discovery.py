@@ -122,3 +122,52 @@ def observe(tickers, now=None):
             flush=True,
         )
     return records
+
+
+def select_threshold_moves(rows, pump_threshold, dump_threshold):
+    """Price-only Telegram candidates from chronologically sampled OKX quotes.
+
+    Neither liquidity, spread, OI, CVD nor pattern recognition is a gate here.
+    Existing trade entry rules are not affected. A missing roughly-5m history
+    cannot be converted into a fabricated price change.
+    """
+    try:
+        pump = float(pump_threshold)
+        dump = float(dump_threshold)
+    except (ValueError, TypeError, OverflowError):
+        return []
+    if not (math.isfinite(pump) and pump > 0 and
+            math.isfinite(dump) and dump > 0):
+        return []
+
+    candidates = []
+    for row in rows or ():
+        if not isinstance(row, dict):
+            continue
+        symbol = row.get("symbol")
+        if (not isinstance(symbol, str) or not symbol.endswith("USDT")
+                or len(symbol) <= 4):
+            continue
+        try:
+            move = float(row.get("change5"))
+            price = float(row.get("price"))
+            age = float(row.get("sample_age_sec"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if (not all(math.isfinite(v) for v in (move, price, age))
+                or price <= 0 or not 240 <= age <= 420):
+            continue
+        if move >= pump:
+            kind, direction = "PUMP", "UP"
+        elif move <= -dump:
+            kind, direction = "DUMP", "DOWN"
+        else:
+            continue
+        candidates.append({
+            "symbol": symbol, "type": kind,
+            "decision": {"direction": direction},
+            "price": price, "change": move, "window": "~5m",
+            "sample_age_sec": age,
+        })
+    # Limited Telegram budget goes to the largest observed movements first.
+    return sorted(candidates, key=lambda r: abs(r["change"]), reverse=True)
