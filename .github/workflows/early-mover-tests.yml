@@ -1,0 +1,24 @@
+name: PumpDump early movers and correct volume checks
+on:
+  pull_request:
+    paths:
+      - 'main.py'
+      - 'ticker_metrics.py'
+      - 'mover_discovery.py'
+      - 'pump_peak_watch.py'
+      - 'test_mover_discovery.py'
+      - 'test_pump_peak_watch.py'
+      - '.github/workflows/early-mover-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile main.py ticker_metrics.py mover_discovery.py pump_peak_watch.py test_mover_discovery.py test_pump_peak_watch.py
+      - run: python -m unittest -v test_mover_discovery test_pump_peak_watch
