@@ -107,7 +107,7 @@ def maybe_send_market_watch(signal, reason, now=None):
     if not math.isfinite(now):
         return False
     symbol = signal.get("symbol")
-    side = signal.get("decision", {}).get("direction")
+    side = (signal.get("decision") or {}).get("direction")
     kind = signal.get("type")
     if (not isinstance(symbol, str) or not symbol.endswith("USDT")
             or (kind, side) not in (("PUMP", "UP"), ("DUMP", "DOWN"))):
