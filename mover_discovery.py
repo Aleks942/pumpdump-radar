@@ -124,6 +124,54 @@ def observe(tickers, now=None):
     return records
 
 
+
+def inspect_price_quotes(tickers, now=None):
+    """Independently sample all finite positive OKX swap prices for alerts.
+
+    Unlike research inspect(), requires no 24h volume/open/high/low, spread
+    or liquidity metadata. Shares the same bounded chronological quote
+    history, so adding notices never makes extra market HTTP requests.
+    """
+    now = time.time() if now is None else float(now)
+    if not math.isfinite(now):
+        return []
+    out = []
+    for ticker in tickers or ():
+        if not isinstance(ticker, dict):
+            continue
+        inst = ticker.get("instId")
+        if not isinstance(inst, str) or not inst.endswith("-USDT-SWAP"):
+            continue
+        price = positive_float(ticker.get("last"))
+        if price is None:
+            continue
+        symbol = inst[:-10] + "USDT"
+        records = _history.setdefault(symbol, deque(maxlen=MAX_HISTORY_PER_SYMBOL))
+        while records and now - records[0][0] > HISTORY_SECONDS:
+            records.popleft()
+        if not records or now - records[-1][0] >= SAMPLE_STEP_SECONDS:
+            records.append((now, price))
+        older = [(at, px) for at, px in records if 240 <= now - at <= 420]
+        reference = min(older, key=lambda r: abs(now - r[0] - 300)) if older else None
+        change5 = 100 * (price / reference[1] - 1) if reference else None
+        out.append({
+            "symbol": symbol,
+            "price": price,
+            "change5": change5,
+            "sample_age_sec": now - reference[0] if reference else None,
+        })
+
+    if len(_history) > MAX_SYMBOLS:
+        live = {row["symbol"] for row in out}
+        for old in list(_history):
+            if old not in live:
+                _history.pop(old, None)
+            if len(_history) <= MAX_SYMBOLS:
+                break
+        while len(_history) > MAX_SYMBOLS:
+            _history.pop(next(iter(_history)))
+    return out
+
 def select_threshold_moves(rows, pump_threshold, dump_threshold):
     """Price-only Telegram candidates from chronologically sampled OKX quotes.
 
