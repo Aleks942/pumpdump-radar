@@ -378,14 +378,22 @@ class PriceOnlyMarketWatchTests(unittest.TestCase):
         import ast
         from html import escape
         from pathlib import Path
-        from unittest.mock import Mock
-        from types import SimpleNamespace
-        import telegram_builder as builder
+
+        # Extract pure message formatter to avoid importing live bot modules.
+        source = Path(__file__).with_name("telegram_builder.py").read_text(
+            encoding="utf-8")
+        tree = ast.parse(source)
+        pure = [node for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name in ("number", "build_market_watch_message")]
+        ns = {"math": math, "escape": escape, "PATTERN_NAMES": {}}
+        exec(compile(ast.fix_missing_locations(
+            ast.Module(body=pure, type_ignores=[])), "test_formatter", "exec"), ns)
 
         rows = [self.row("BTCUSDT", 2.3, age=300)]
         selected = mover.select_threshold_moves(rows, 1.5, 1.5)
         self.assertEqual(len(selected), 1)
-        msg = builder.build_market_watch_message(
+        msg = ns["build_market_watch_message"](
             selected[0], "PRICE_THRESHOLD")
         self.assertIn("ПАМП — НАБЛЮДЕНИЕ", msg)
         self.assertIn("Движение: +2.30%", msg)
