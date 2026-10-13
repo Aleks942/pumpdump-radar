@@ -324,6 +324,32 @@ class PriceOnlyMarketWatchTests(unittest.TestCase):
             "quote_usdt_approx": 1,
         }
 
+    def test_raw_ticker_price_move_needs_no_volume_or_oi_metadata(self):
+        with patch.object(mover, "_history", {}):
+            sample = {"instId": "ABC-USDT-SWAP", "last": "100"}
+            self.assertEqual(
+                mover.inspect_price_quotes([sample], now=1000)[0]["change5"],
+                None,
+            )
+            sample["last"] = "101.8"
+            rows = mover.inspect_price_quotes([sample], now=1300)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["symbol"], "ABCUSDT")
+            self.assertAlmostEqual(rows[0]["change5"], 1.8)
+            self.assertEqual(rows[0]["sample_age_sec"], 300)
+            self.assertEqual(len(mover.select_threshold_moves(rows, 1.5, 1.5)), 1)
+
+    def test_invalid_raw_quotes_never_create_signal(self):
+        with patch.object(mover, "_history", {}):
+            rows = mover.inspect_price_quotes([
+                {"instId": "BTC-USDT-SWAP", "last": "nan"},
+                {"instId": "ETH-USDT-SWAP", "last": "0"},
+                {"instId": "X-USD-SWAP", "last": "100"},
+                {"instId": "LTC-USDT-SWAP", "last": "bad"},
+            ], now=1000)
+            self.assertEqual(rows, [])
+            self.assertEqual(mover.select_threshold_moves(rows, 1.5, 1.5), [])
+
     def test_thresholds_are_inclusive_for_both_directions(self):
         rows = [
             self.row("UPUSDT", 1.5),
@@ -408,6 +434,7 @@ class PriceOnlyMarketWatchTests(unittest.TestCase):
         source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
         self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_THRESHOLD")'), 1)
         self.assertNotIn("maybe_send_market_watch(signal, reason)", source)
+        self.assertIn('inspect_price_quotes(tickers)', source)
         self.assertIn('TIME_WINDOWS["5m"]["pump"]', source)
         self.assertIn('-TIME_WINDOWS["5m"]["dump"]', source)
 
