@@ -64,6 +64,39 @@ class TrendStudyTests(unittest.TestCase):
             self.assertEqual(gate.trend_status("TESTUSDT",NOW),"UNKNOWN")
         self.assertEqual(gate._side_from_candles([],3600,NOW),"UNKNOWN")
 
+    def test_h1_with_flat_h4_stays_separate_and_requires_proven_edge(self):
+        self.assertEqual((gate.MIN_N, gate.MIN_DAYS, gate.MIN_SYMBOLS),
+                         (80, 5, 15))
+        with patch.object(gate, "_okx", side_effect=lambda symbol,bar,limit:
+                          history(NOW, 3600 if bar == "1H" else 14400,
+                                  direction=1 if bar == "1H" else 0)):
+            self.assertEqual(gate.trend_status("TESTUSDT", NOW), "UP_H4_FLAT")
+
+        with patch.object(gate, "trend_status", return_value="UP_H4_FLAT"):
+            self.assertEqual(gate.consider(sample(), NOW),
+                             (False, "EDGE_UNPROVEN"))
+        with gate._db() as db:
+            self.assertEqual(db.execute(
+                "SELECT trend FROM candidates").fetchone()[0], "UP_H4_FLAT")
+            # Even perfect STRICT-mode historical wins cannot qualify the
+            # new flat-H4 cohort without its own out-of-sample observations.
+            for k in range(90):
+                ts = NOW - 15*86400 + k*3*3600
+                db.execute("""INSERT INTO candidates
+                    (ts,symbol,pattern,side,trend,status,verdict,net_pct,evaluated_ts)
+                    VALUES (?,?,?,?,?,'DONE','TP_FIRST',1.28,?)""",
+                    (ts, "COIN"+str(k%25)+"USDT",
+                     PATTERN, "LONG", "UP", ts+1800))
+            db.commit()
+            self.assertTrue(gate._edge(db, PATTERN, "LONG", "UP", NOW)["approved"])
+            self.assertFalse(gate._edge(
+                db, PATTERN, "LONG", "UP_H4_FLAT", NOW)["approved"])
+        gate._trend_cache.clear()
+        with patch.object(gate, "_okx", side_effect=lambda symbol,bar,limit:
+                          history(NOW, 3600 if bar == "1H" else 14400,
+                                  direction=1 if bar == "1H" else -1)):
+            self.assertEqual(gate.trend_status("TESTUSDT", NOW), "UNKNOWN")
+
     def test_first_touch_stop_prioritized_over_ambiguous_target(self):
         start=math.floor(NOW/60)*60+60
         path=[]

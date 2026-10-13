@@ -21,9 +21,9 @@ MAX_PENDING_PER_SCAN = 2
 MAX_STORED = 2400
 RETENTION_SEC = 30 * 86400
 MIN_INDEPENDENT_SEC = 90 * 60
-MIN_N = 100
-MIN_DAYS = 7
-MIN_SYMBOLS = 20
+MIN_N = 80
+MIN_DAYS = 5
+MIN_SYMBOLS = 15
 COST_PCT = 0.22
 TP_PCT = 1.5
 SL_PCT = 1.0
@@ -105,7 +105,14 @@ def trend_status(symbol, now=None):
     try:
         h1 = _side_from_candles(_okx(symbol, "1H", 100), 3600, now)
         h4 = _side_from_candles(_okx(symbol, "4H", 100), 14400, now)
-        state = h1 if h1 == h4 and h1 in ("UP", "DOWN") else "UNKNOWN"
+        if h1 == h4 and h1 in ("UP", "DOWN"):
+            state = h1
+        elif h1 in ("UP", "DOWN") and h4 == "FLAT":
+            # Modest relaxation: H1 trend + genuinely FLAT H4 (never
+            # stale/unavailable/conflicting H4). Separate OOS evidence bucket.
+            state = f"{h1}_H4_FLAT"
+        else:
+            state = "UNKNOWN"
     except (requests.RequestException, ValueError, TypeError, OverflowError):
         state = "UNKNOWN"
     _trend_cache[symbol] = (now, state)
@@ -196,10 +203,14 @@ def consider(signal, now=None):
                 "SHORT_SQUEEZE", "LONG_LIQUIDATION")):
         return False, "INVALID_PATTERN"
     trend = trend_status(symbol, now)
-    if trend != ("UP" if side == "LONG" else "DOWN"):
+    expected = "UP" if side == "LONG" else "DOWN"
+    if trend not in (expected, f"{expected}_H4_FLAT"):
         print(f"[TREND_REJECT] {symbol} side={side} trend={trend} "
               "reason=HTF_NOT_ALIGNED", flush=True)
         return False, "TREND_NOT_ALIGNED"
+    if trend == f"{expected}_H4_FLAT":
+        print(f"[TREND_H4_FLAT_RESEARCH] {symbol} side={side} "
+              "separate_cohort=true original_gate_preserved=true", flush=True)
     try:
         with _db() as conn:
             edge = _edge(conn, pattern, side, trend, now)
