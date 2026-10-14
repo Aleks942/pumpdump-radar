@@ -218,6 +218,12 @@ def observe(tickers, now=None, db_path=None, flow_sender=None,
     if not math.isfinite(now):
         return []
     prices = _quote_rows(tickers)
+    # Evict old observation buffers, including delisted/long-absent assets.
+    if len(_prices) > 500:
+        for old_symbol in list(_prices):
+            recent = _prices[old_symbol]
+            if not recent or now-recent[-1][0] > PRICE_LOOKBACK:
+                _prices.pop(old_symbol, None)
     emitted, needs_flow = [], []
     with sqlite3.connect(db_path, timeout=5) as db:
         db.row_factory = sqlite3.Row
