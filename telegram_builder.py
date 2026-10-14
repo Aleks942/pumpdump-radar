@@ -204,6 +204,28 @@ def build_market_watch_message(signal, reason):
             return "нет данных"
         return f"{value:.8f}".rstrip("0").rstrip(".")
 
+    if reason == "PRICE_CONTINUATION":
+        symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
+        elapsed = float(signal.get("confirmation_seconds"))
+        follow = float(signal.get("followthrough_pct"))
+        trigger = float(signal.get("trigger_change"))
+        if (not all(math.isfinite(x) for x in (elapsed, follow, trigger))
+                or not 60 <= elapsed <= 210 or follow < 0.2):
+            raise ValueError("Invalid continuation evidence")
+        direction_word = "Рост" if move_type == "PUMP" else "Падение"
+        return "\n".join((
+            f"{heading} — ПРОДОЛЖЕНИЕ",
+            f"🪙 {symbol} | OKX SWAP",
+            f"Текущая цена: {price_text(signal.get('price'))} USDT",
+            f"Первый импульс (~5м): {number(trigger, signed=True, suffix='%')}",
+            f"За следующие {elapsed/60:.1f} мин: движение продолжилось ещё на {follow:.2f}%",
+            f"{direction_word} проверено по нескольким последовательным котировкам.",
+            "",
+            "✅ Устойчивость краткосрочного движения подтверждена наблюдениями.",
+            "⚠️ НЕ сигнал для входа. Продолжение не гарантирует дальнейшего движения.",
+            "OI, CVD и статистическое преимущество сделки здесь не подтверждались.",
+        ))
+
     if reason == "PRICE_THRESHOLD":
         symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
         age_sec = float(signal.get("sample_age_sec"))

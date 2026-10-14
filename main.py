@@ -7,7 +7,7 @@ import math
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import (observe as observe_movers, inspect_price_quotes,
-                             select_threshold_moves)
+                             select_continuing_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -1354,18 +1354,18 @@ while True:
     except Exception as mover_exc:
         print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
 
-    # Ordinary PUMP/DUMP notifications are price-only, independent of the
-    # OI/CVD/pattern/trend/profitability checks for a tradable signal.
-    # Reuse PUMP_THRESHOLD_5M / DUMP_THRESHOLD_5M from Railway Variables.
+    # Early informational notices now require price follow-through AFTER
+    # crossing the user-controlled 5m threshold. No OI/CVD requests, no
+    # changes to the independent strict trade entry gate.
     try:
-        for market_move in select_threshold_moves(
+        for market_move in select_continuing_moves(
             inspect_price_quotes(tickers),
             TIME_WINDOWS["5m"]["pump"],
             -TIME_WINDOWS["5m"]["dump"],
         ):
-            maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
+            maybe_send_market_watch(market_move, "PRICE_CONTINUATION")
     except Exception as info_exc:
-        print("[PUMP_PRICE_INFO_ERROR]", type(info_exc).__name__, flush=True)
+        print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.

@@ -219,3 +219,141 @@ def select_threshold_moves(rows, pump_threshold, dump_threshold):
         })
     # Limited Telegram budget goes to the largest observed movements first.
     return sorted(candidates, key=lambda r: abs(r["change"]), reverse=True)
+
+
+# Lightweight continuation tracking for informational notices only. This
+# doesn't modify research cohorts or the strict trading-signal path.
+_CONTINUATION_MIN_SECONDS = 60
+_CONTINUATION_MAX_SECONDS = 210
+_CONTINUATION_STEP_PCT = 0.05
+_CONTINUATION_TOTAL_PCT = 0.20
+_CONTINUATION_MAX_RETRACE_PCT = 0.35
+_CONTINUATION_MAX_EXTENSION_PCT = 1.50
+_continuation_pending = {}
+
+
+def select_continuing_moves(rows, pump_threshold, dump_threshold, now=None):
+    """Emit ONLY a sustained follow-through after a configurable 5m move.
+
+    Require two fresh consecutive directional advances over >=60 seconds,
+    at least 0.2% extra movement since the threshold was first observed,
+    no 0.35% reversal and no >1.5% late chase. All values are sampled
+    quotes, NOT execution prices or evidence of future profitability.
+    """
+    now = time.time() if now is None else float(now)
+    if not math.isfinite(now):
+        return []
+    try:
+        pump = float(pump_threshold)
+        dump = float(dump_threshold)
+    except (TypeError, ValueError, OverflowError):
+        return []
+    if not (math.isfinite(pump) and pump > 0 and
+            math.isfinite(dump) and dump > 0):
+        return []
+
+    # Select the first crossing with the existing, user-controlled thresholds.
+    threshold_now = {r["symbol"]: r for r in
+                     select_threshold_moves(rows, pump, dump)}
+    # Expire absent/old observations; never build permanent state.
+    for symbol, state in list(_continuation_pending.items()):
+        if now - state["first_ts"] > 600:
+            del _continuation_pending[symbol]
+
+    ready = []
+    for row in rows or ():
+        if not isinstance(row, dict):
+            continue
+        symbol = row.get("symbol")
+        if (not isinstance(symbol, str) or not symbol.endswith("USDT")
+                or len(symbol) <= 4):
+            continue
+        try:
+            price = float(row.get("price"))
+            move = float(row.get("change5"))
+            age = float(row.get("sample_age_sec"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if (not all(math.isfinite(v) for v in (price, move, age))
+                or price <= 0 or not 240 <= age <= 420):
+            continue
+
+        initial = threshold_now.get(symbol)
+        old = _continuation_pending.get(symbol)
+        if old is not None and old["status"] != "PENDING":
+            # Require the previous 5m threshold condition to clear
+            # before the same symbol can be armed again.
+            if initial is None:
+                del _continuation_pending[symbol]
+                old = None
+            elif initial["type"] != old["type"]:
+                old = None
+            else:
+                continue
+
+        if old is None:
+            if initial is None:
+                continue
+            _continuation_pending[symbol] = {
+                "type": initial["type"],
+                "first_ts": now,
+                "first_price": price,
+                "trigger_change": initial["change"],
+                "last_ts": now,
+                "last_price": price,
+                "steps": 0,
+                "best_follow": 0.0,
+                "status": "PENDING",
+            }
+            continue
+
+        if initial is not None and initial["type"] != old["type"]:
+            # Never confirm a bullish start with bearish follow-through.
+            _continuation_pending[symbol] = {
+                "type": initial["type"],
+                "first_ts": now, "first_price": price,
+                "trigger_change": initial["change"],
+                "last_ts": now, "last_price": price,
+                "steps": 0, "best_follow": 0.0, "status": "PENDING",
+            }
+            continue
+
+        elapsed = now - old["first_ts"]
+        if elapsed > _CONTINUATION_MAX_SECONDS:
+            old["status"] = "EXPIRED"
+            continue
+        if now - old["last_ts"] < SAMPLE_STEP_SECONDS:
+            continue
+
+        sign = 1 if old["type"] == "PUMP" else -1
+        follow = sign * (price / old["first_price"] - 1) * 100
+        step = sign * (price / old["last_price"] - 1) * 100
+        old["last_ts"], old["last_price"] = now, price
+        if (follow < -_CONTINUATION_MAX_RETRACE_PCT or
+                old["best_follow"] - follow > _CONTINUATION_MAX_RETRACE_PCT or
+                follow > _CONTINUATION_MAX_EXTENSION_PCT):
+            old["status"] = "FAILED"
+            continue
+        old["best_follow"] = max(old["best_follow"], follow)
+        old["steps"] = old["steps"] + 1 if step >= _CONTINUATION_STEP_PCT else 0
+
+        if (elapsed >= _CONTINUATION_MIN_SECONDS and
+                follow >= _CONTINUATION_TOTAL_PCT and old["steps"] >= 2):
+            old["status"] = "CONFIRMED"
+            ready.append({
+                "symbol": symbol, "type": old["type"],
+                "decision": {"direction": "UP" if sign == 1 else "DOWN"},
+                "price": price,
+                "change": move,
+                "trigger_change": old["trigger_change"],
+                "followthrough_pct": follow,
+                "confirmation_seconds": elapsed,
+                "window": "~5m", "sample_age_sec": age,
+            })
+
+    if len(_continuation_pending) > MAX_SYMBOLS:
+        for symbol, _ in sorted(
+                _continuation_pending.items(),
+                key=lambda item: item[1]["first_ts"])[:len(_continuation_pending)-MAX_SYMBOLS]:
+            _continuation_pending.pop(symbol, None)
+    return sorted(ready, key=lambda r: r["followthrough_pct"], reverse=True)
