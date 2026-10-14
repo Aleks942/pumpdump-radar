@@ -476,7 +476,7 @@ def observe_outcomes(tickers, now=None, db_path=None):
                 quote = quotes.get(symbol)
                 lag = now-target
                 if lag<=MAX_MARKOUT_LAG_SEC and quote is not None:
-                    gross = 100*(entry/quote-1)  # Percent P&L on a short is (entry-exit)/entry, not entry/exit-1.
+                    # Percent short P&L uses original entry notional.
                     gross = 100*(entry-quote)/entry
                     net = gross-ASSUMED_ROUNDTRIP_COST_PCT
                     db.execute("""INSERT INTO pump_cycle_outcomes
