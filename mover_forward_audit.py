@@ -10,6 +10,8 @@ import math
 import os
 import sqlite3
 import time
+from collections import defaultdict
+from statistics import mean, median
 
 DB_PATH = os.getenv("MOVER_FORWARD_DB", "/data/mover_forward.sqlite3")
 HORIZONS = (5, 15, 30)
@@ -37,6 +39,20 @@ def _connect():
         entry REAL NOT NULL, spread_bps REAL NOT NULL
     )""")
     db.execute("CREATE INDEX IF NOT EXISTS mover_recent ON mover_cases(symbol,side,ts)")
+    # Add bounded in-flight excursion observations to the existing journal.
+    # Legacy rows have NULL path_samples and must never acquire invented
+    # extrema/timing history from prices observed after their entry.
+    columns = {row[1] for row in db.execute("PRAGMA table_info(mover_cases)")}
+    for name, datatype in (
+        ("path_max_favor", "REAL"),
+        ("path_max_adverse", "REAL"),
+        ("path_best_sec", "REAL"),
+        ("path_last_ts", "REAL"),
+        ("path_max_gap", "REAL"),
+        ("path_samples", "INTEGER"),
+    ):
+        if name not in columns:
+            db.execute(f"ALTER TABLE mover_cases ADD COLUMN {name} {datatype}")
     db.execute("""CREATE TABLE IF NOT EXISTS mover_outcomes (
         case_id INTEGER NOT NULL, horizon_min INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'PENDING',
@@ -144,6 +160,36 @@ def observe(rows, now=None):
                       "observed_quote_only=true not_tp_sl_first_touch=true "
                       "no_orders=true", flush=True)
 
+            # Observe directional max favorable/adverse excursions for 30m.
+            # Every point comes from THIS scan's existing market ticker batch.
+            # Observations are never reconstructed backwards after a restart.
+            path_rows = db.execute("""SELECT id,ts,symbol,side,entry,
+                    path_max_favor,path_max_adverse,path_best_sec,
+                    path_last_ts,path_max_gap,path_samples
+                FROM mover_cases
+                WHERE path_samples IS NOT NULL AND ts<=? AND ts+1800>=?
+                  AND path_last_ts<?
+                ORDER BY ts LIMIT ?""", (now,now,now,MAX_EVENTS)).fetchall()
+            for (case_id, start, symbol, side, entry, best, worst,
+                 best_sec, last_ts, max_gap, samples) in path_rows:
+                px = quotes.get(symbol)
+                if px is None:
+                    continue
+                direction = 1 if side == "LONG" else -1
+                excursion = direction*(px/entry-1)*100
+                gap = now-last_ts
+                if not (math.isfinite(excursion) and gap > 0):
+                    continue
+                new_best = max(best, excursion)
+                new_worst = max(worst, -excursion)
+                new_best_sec = now-start if excursion > best else best_sec
+                db.execute("""UPDATE mover_cases SET
+                    path_max_favor=?,path_max_adverse=?,path_best_sec=?,
+                    path_last_ts=?,path_max_gap=?,path_samples=?
+                    WHERE id=?""",
+                    (new_best,new_worst,new_best_sec,now,
+                     max(max_gap,gap),samples+1,case_id))
+
             # Strongest in-band changes first. Selection is deliberately
             # research-only; MAX_NEW_PER_SCAN introduces selection bias.
             new = 0
@@ -157,9 +203,11 @@ def observe(rows, now=None):
                 if found:
                     continue
                 cur=db.execute("""INSERT INTO mover_cases
-                    (ts,symbol,side,band,change5,entry,spread_bps)
-                    VALUES (?,?,?,?,?,?,?)""",
-                    (now,symbol,side,band,pct,price,spread))
+                    (ts,symbol,side,band,change5,entry,spread_bps,
+                     path_max_favor,path_max_adverse,path_best_sec,
+                     path_last_ts,path_max_gap,path_samples)
+                    VALUES (?,?,?,?,?,?,?,0,0,0,?,0,1)""",
+                    (now,symbol,side,band,pct,price,spread,now))
                 db.executemany("""INSERT INTO mover_outcomes (case_id,horizon_min)
                     VALUES (?,?)""",[(cur.lastrowid,h) for h in HORIZONS])
                 new += 1
@@ -199,6 +247,38 @@ def quality_snapshot(db):
              mean_net,mean_lag,days,symbols) in data]
 
 
+def path_quality_snapshot(db, now):
+    """Complete sampled paths only; maxima are quote-sampled LOWER bounds.
+
+    Exclude old rows (NULL fields), paths without enough observations,
+    histories with long gaps and unfinished 30m windows.
+    """
+    grouped = defaultdict(list)
+    rows = db.execute("""SELECT side,band,path_max_favor,path_max_adverse,
+            path_best_sec,symbol,CAST(ts/86400 AS INTEGER)
+        FROM mover_cases
+        WHERE ts<=? AND path_samples>=10
+          AND path_last_ts-ts>=1650 AND path_max_gap<=180
+          AND path_max_favor IS NOT NULL AND path_best_sec IS NOT NULL
+        ORDER BY side,band""", (now-1800,)).fetchall()
+    for side,band,favor,adverse,peak_sec,symbol,day in rows:
+        grouped[(side,band)].append(
+            (float(favor),float(adverse),float(peak_sec)/60,symbol,day))
+    result = []
+    for (side,band),sample in sorted(grouped.items()):
+        result.append({
+            "side":side,"band":band,"n":len(sample),
+            "days":len({x[4] for x in sample}),
+            "symbols":len({x[3] for x in sample}),
+            "mean_max_favor":mean(x[0] for x in sample),
+            "median_max_favor":median(x[0] for x in sample),
+            "median_peak_min":median(x[2] for x in sample),
+            "median_max_adverse":median(x[1] for x in sample),
+            "reach_1pct":sum(x[0]>=1 for x in sample),
+        })
+    return result
+
+
 def report(now=None):
     global _last_report
     now=time.time() if now is None else float(now)
@@ -208,6 +288,7 @@ def report(now=None):
         with _connect() as db:
             n=db.execute("SELECT COUNT(*) FROM mover_cases").fetchone()[0]
             stats=quality_snapshot(db)
+            path_stats=path_quality_snapshot(db, now)
         print(f"[MOVER_FWD_SUMMARY] cases={n} cohorts={len(stats)} "
               "research_only=true no_trade_approval=true "
               "execution_not_proven=true",flush=True)
@@ -222,6 +303,19 @@ def report(now=None):
                   f'days={row["days"]} symbols={row["symbols"]} '
                   'quote_only=true cost_pct=0.22 '
                   'descriptive_only=true no_trade_approval=true',flush=True)
+        # Pure diagnostics: does not change entry thresholds or Telegram.
+        for row in path_stats:
+            print(f'[MOVER_PATH_QUALITY] side={row["side"]} '
+                  f'band={row["band"]} n={row["n"]} days={row["days"]} '
+                  f'symbols={row["symbols"]} '
+                  f'mean_max_favor={row["mean_max_favor"]:+.3f}% '
+                  f'median_max_favor={row["median_max_favor"]:+.3f}% '
+                  f'median_time_to_peak_min={row["median_peak_min"]:.1f} '
+                  f'median_max_adverse={row["median_max_adverse"]:+.3f}% '
+                  f'ever_reached_plus_1pct={row["reach_1pct"]} '
+                  'sampled_quotes_only=true coverage_gaps_max_180s=true '
+                  'not_actual_intrabar_extrema=true no_trade_approval=true',
+                  flush=True)
         _last_report=now
     except (sqlite3.Error,OSError) as exc:
         print(f"[MOVER_FWD_ERROR] stage=report kind={type(exc).__name__}",
