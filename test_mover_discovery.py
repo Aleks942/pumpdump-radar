@@ -794,10 +794,15 @@ class PublicExchangeContextTests(unittest.TestCase):
             self.assertIn("bybit_account_ratio",row[2])
             self.assertIn("research_only",row[2])
 
-    def test_original_alert_path_kept_and_exchange_context_only_after_ack(self):
+    def test_public_context_independent_of_telegram_budget(self):
         from pathlib import Path
         code=Path(__file__).with_name("main.py").read_text(encoding="utf-8")
         self.assertEqual(code.count("schedule_public_exchange_context(symbol, observed_at=now)"),1)
+        sender = code[code.index("def maybe_send_market_watch("):code.index("\n\nENTRY_TRACKER =")]
+        self.assertLess(sender.index("schedule_public_exchange_context(symbol, observed_at=now)"),
+                        sender.index("if state[\"count\"] >= _MARKET_WATCH_DAILY_MAX:"))
+        self.assertLess(sender.index("schedule_public_exchange_context(symbol, observed_at=now)"),
+                        sender.index("if accepted is not True:"))
         self.assertIn("if accepted is not True:",code)
         self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
         self.assertIn("schedule_coinglass_context(symbol, observed_at=now)",code)
