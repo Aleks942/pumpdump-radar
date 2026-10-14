@@ -9,6 +9,7 @@ from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import (observe as observe_movers, inspect_price_quotes,
                              select_continuing_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
+from pump_lifecycle import observe as observe_pump_lifecycle
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
 from pump_factor_report import print_factor_edge
@@ -1377,8 +1378,12 @@ while True:
     # changes to the independent strict trade entry gate.
     early_continuations = []
     try:
+        quote_rows = inspect_price_quotes(tickers)
+        # Research-only lifecycle based on existing quotes. No extra HTTP,
+        # Telegram or effect on the strict trading decision.
+        observe_pump_lifecycle(quote_rows, TIME_WINDOWS["5m"]["pump"])
         early_continuations = select_continuing_moves(
-            inspect_price_quotes(tickers),
+            quote_rows,
             TIME_WINDOWS["5m"]["pump"],
             -TIME_WINDOWS["5m"]["dump"],
         )
