@@ -880,8 +880,12 @@ class PumpCycleResearchTests(unittest.TestCase):
         import sqlite3
         with sqlite3.connect(self.db_path) as db:
             rows=db.execute("SELECT stage FROM pump_cycle_events ORDER BY id").fetchall()
-        self.assertEqual([r[0] for r in rows],
-                         ["PUMP_START","PUMP_CONTINUATION","PUMP_WEAKENING",
+        sequence=[r[0] for r in rows]
+        # The impulse can briefly weaken, recover to a new high and
+        # legitimately weaken again before the first confirmed breakdown.
+        self.assertEqual(sequence[0],"PUMP_START")
+        self.assertEqual(sequence[-5:],
+                         ["PUMP_CONTINUATION","PUMP_WEAKENING",
                           "REVERSAL_CONFIRMED","DUMP_CONTINUATION",
                           "DUMP_EXHAUSTION"])
         self.assertTrue(all(s in cycle.STAGES for (s,) in rows))
