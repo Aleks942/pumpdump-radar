@@ -108,5 +108,84 @@ class MoverForwardTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM mover_outcomes WHERE status='DONE'").fetchone()[0],1)
 
 
+    def test_sampled_time_to_peak_and_adverse_move_by_direction(self):
+        audit.observe([mover("UPUSDT",1.5,100),
+                       mover("DOWNUSDT",-1.5,100)],1000)
+        for minute in range(1,31):
+            # Up peaks at minute 3, then gives some gain back.
+            up={1:101,2:103,3:104,4:102.5}.get(minute,102.5)
+            # Down bottoms at minute 3, then bounces.
+            down={1:99.5,2:98,3:97,4:98.5}.get(minute,98.5)
+            audit.observe([mover("UPUSDT",1.5,up),
+                           mover("DOWNUSDT",-1.5,down)],1000+60*minute)
+        with audit._connect() as db:
+            cases=db.execute("""SELECT side,path_max_favor,path_best_sec,
+                    path_max_adverse,path_samples,path_max_gap
+                    FROM mover_cases ORDER BY side""").fetchall()
+            self.assertEqual(len(cases),2)
+            by_side={r[0]:r[1:] for r in cases}
+            self.assertAlmostEqual(by_side["LONG"][0],4)
+            self.assertAlmostEqual(by_side["LONG"][1],180)
+            self.assertAlmostEqual(by_side["SHORT"][0],3)
+            self.assertAlmostEqual(by_side["SHORT"][1],180)
+            self.assertEqual(by_side["SHORT"][3],31)
+            self.assertEqual(by_side["LONG"][4],60)
+            summary=audit.path_quality_snapshot(db,2800)
+            self.assertEqual(len(summary),2)
+            self.assertEqual({r["side"] for r in summary},{"LONG","SHORT"})
+            self.assertTrue(all(r["n"]==1 and r["median_peak_min"]==3
+                                for r in summary))
+            self.assertAlmostEqual(next(r["mean_max_favor"] for r in summary
+                                if r["side"]=="LONG"),4)
+
+    def test_gappy_history_excluded_from_peak_statistics(self):
+        audit.observe([mover("GAPUSDT",1.5,100)],1000)
+        audit.observe([mover("GAPUSDT",1.5,110)],1300)
+        audit.observe([mover("GAPUSDT",1.5,120)],2800)
+        with audit._connect() as db:
+            self.assertEqual(audit.path_quality_snapshot(db,2800),[])
+            gap=db.execute("SELECT path_max_gap FROM mover_cases").fetchone()[0]
+            self.assertGreater(gap,180)
+
+    def test_legacy_rows_not_retroactively_labeled_with_future_quotes(self):
+        import sqlite3
+        with sqlite3.connect(audit.DB_PATH) as db:
+            db.execute("""CREATE TABLE mover_cases (
+                id INTEGER PRIMARY KEY,ts REAL NOT NULL,symbol TEXT NOT NULL,
+                side TEXT NOT NULL,band TEXT NOT NULL,change5 REAL NOT NULL,
+                entry REAL NOT NULL,spread_bps REAL NOT NULL)""")
+            db.execute("""INSERT INTO mover_cases
+                (ts,symbol,side,band,change5,entry,spread_bps)
+                VALUES (1000,'OLDUSDT','LONG','1_TO_2P5',1.5,100,2)""")
+        with audit._connect() as db:
+            names={r[1] for r in db.execute("PRAGMA table_info(mover_cases)")}
+            self.assertIn("path_samples",names)
+            self.assertIsNone(db.execute(
+                "SELECT path_samples FROM mover_cases").fetchone()[0])
+        audit.observe([mover("OLDUSDT",1.6,120)],1600)
+        with audit._connect() as db:
+            self.assertIsNone(db.execute(
+                "SELECT path_samples FROM mover_cases WHERE id=1").fetchone()[0])
+            self.assertEqual(audit.path_quality_snapshot(db,2800),[])
+
+    def test_old_forward_quality_metrics_remain_unchanged(self):
+        audit.observe([mover("STABLEUSDT",1.5,100)],1000)
+        for minute in range(1,31):
+            audit.observe([mover("STABLEUSDT",1.5,101)],1000+60*minute)
+        with audit._connect() as db:
+            markouts=audit.quality_snapshot(db)
+            self.assertEqual({r["horizon"] for r in markouts},{5,15,30})
+            self.assertTrue(all(r["done"]==1 for r in markouts))
+            self.assertTrue(all(abs(r["mean_net"]-0.78)<1e-8
+                                for r in markouts))
+        buffer=io.StringIO()
+        with redirect_stdout(buffer):
+            audit.report(2800)
+        logs=buffer.getvalue()
+        self.assertIn("[MOVER_PATH_QUALITY]",logs)
+        self.assertIn("median_time_to_peak_min=",logs)
+        self.assertIn("no_trade_approval=true",logs)
+
+
 if __name__ == "__main__":
     unittest.main()
