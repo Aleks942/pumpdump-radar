@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import mover_discovery as mover
 import coinglass_context as cg
+import public_exchange_context as public_data
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 
 
@@ -645,6 +646,161 @@ class CoinGlassResearchTests(unittest.TestCase):
             self.assertEqual(cg._closed_rows(data, now), expected)
         self.assertIsNone(cg._metric(
             "aggregated_oi", [(now-1800, {"close":"nan"})]))
+
+class PublicExchangeContextTests(unittest.TestCase):
+    NOW = 1800000000.0
+    TS = int((NOW - 300) * 1000)
+
+    def response(self, body, code=200):
+        class Result:
+            def __init__(self, body, code):
+                self.status_code = code
+                self.body = body
+            def json(self):
+                return self.body
+        return Result(body, code)
+
+    def record(self, api_key=""):
+        now = self.NOW
+        last = self.TS
+        earlier = last-300000
+        requests_seen = []
+        def request(url, params, headers, timeout):
+            requests_seen.append((url, params, headers, timeout))
+            self.assertEqual(params["symbol"], "GRASSUSDT")
+            self.assertEqual(timeout, 3)
+            if url.endswith("/globalLongShortAccountRatio"):
+                return self.response([{"symbol": "GRASSUSDT", "timestamp": last,
+                    "longAccount":"0.61", "shortAccount":"0.39"}])
+            if url.endswith("/takerlongshortRatio"):
+                return self.response([{"timestamp": earlier,
+                    "buyVol":"120", "sellVol":"80"}])
+            if url.endswith("/openInterestHist"):
+                return self.response([
+                    {"symbol":"GRASSUSDT","timestamp":earlier,
+                     "sumOpenInterest":"2000","sumOpenInterestValue":"2500000"},
+                    {"symbol":"GRASSUSDT","timestamp":last,
+                     "sumOpenInterest":"1800","sumOpenInterestValue":"2400000"}])
+            if url.endswith("/premiumIndex"):
+                return self.response({"symbol":"GRASSUSDT","time":int(now*1000),
+                    "lastFundingRate":"0.0001","nextFundingTime":int((now+1000)*1000)})
+            if url.endswith("/account-ratio"):
+                return self.response({"retCode":0,"result":{"list":[{
+                    "symbol":"GRASSUSDT","buyRatio":"0.58",
+                    "sellRatio":"0.42","timestamp":str(last)}]}})
+            if url.endswith("/v5/market/open-interest"):
+                return self.response({"retCode":0,"result":{"list":[
+                    {"symbol":"GRASSUSDT","singleOpenInterest":"900",
+                     "timestamp":str(last)},
+                    {"symbol":"GRASSUSDT","singleOpenInterest":"1000",
+                     "timestamp":str(earlier)}]}})
+            if "topLongShort" in url:
+                self.assertEqual(headers.get("X-MBX-APIKEY"), "abc123")
+                return self.response([{"symbol":"GRASSUSDT",
+                    "longAccount":"0.65","shortAccount":"0.35",
+                    "timestamp":last}])
+            self.fail("Unexpected public endpoint: "+url)
+        with patch.dict("os.environ", {"BINANCE_MARKET_API_KEY":api_key}):
+            result = public_data.collect("GRASSUSDT", observed_at=now,
+                                         request_get=request)
+        return result, requests_seen
+
+    def test_all_six_open_endpoints_plus_optional_two(self):
+        result, sent = self.record()
+        self.assertEqual(len(sent), 6)
+        self.assertEqual(len(result["metrics"]), 6)
+        self.assertEqual(result["status"], "PARTIAL")
+        self.assertEqual(result["unavailable"]["binance_top_accounts"],
+                         "BINANCE_MARKET_API_KEY_NOT_CONFIGURED")
+        self.assertEqual(result["metrics"]["binance_global_account_ratio"][
+                         "values"]["long_share"], 0.61)
+        self.assertEqual(result["metrics"]["binance_taker_buy_sell"][
+                         "values"]["delta_ratio"], 0.2)
+        self.assertEqual(result["metrics"]["binance_oi_history"][
+                         "values"]["oi_change_pct_5m"], -10)
+        self.assertEqual(result["metrics"]["bybit_oi_history"][
+                         "values"]["oi_change_pct_5m"], -10)
+        self.assertAlmostEqual(result["metrics"]["binance_funding"][
+                               "values"]["last_funding_rate_fraction"], 0.0001)
+        self.assertTrue(result["not_coinglass_net_new_positions"])
+        self.assertFalse(result["trade_approved"])
+        result2, sent2 = self.record(api_key="abc123")
+        self.assertEqual(result2["status"], "OK")
+        self.assertEqual(len(sent2), 8)
+        self.assertEqual(result2["metrics"]["binance_top_positions"][
+                         "values"]["metric_kind"], "top_trader_position_share")
+
+    def test_missing_and_future_bars_cannot_invent_data(self):
+        now = self.NOW
+        bad = [
+            {"timestamp":int((now-3500)*1000),"symbol":"GRASSUSDT",
+             "longAccount":"0.8","shortAccount":"0.2"},
+            {"timestamp":int((now+800)*1000),"symbol":"GRASSUSDT",
+             "longAccount":"0.8","shortAccount":"0.2"},
+            {"timestamp":self.TS,"symbol":"BTCUSDT",
+             "longAccount":"0.8","shortAccount":"0.2"},
+            {"timestamp":self.TS,"symbol":"GRASSUSDT",
+             "longAccount":"nan","shortAccount":"0.2"},
+            {"timestamp":self.TS,"symbol":"GRASSUSDT",
+             "longAccount":"0.7","shortAccount":"0.1"},
+        ]
+        for row in bad:
+            self.assertIsNone(public_data._select_metric(
+                "binance_global_account_ratio","binance_series",
+                [row],"GRASSUSDT",now))
+        # Binance taker timestamps are bar start; still-forming 5m bar ignored.
+        current = {"timestamp":int((now-100)*1000),"buyVol":"900","sellVol":"1"}
+        self.assertIsNone(public_data._select_metric(
+            "binance_taker_buy_sell","binance_series",
+            [current],"GRASSUSDT",now))
+        self.assertIsNone(public_data._select_metric(
+            "bybit_account_ratio","bybit_series",
+            {"retCode":10001,"result":{"list":[{"timestamp":self.TS}]}},
+            "GRASSUSDT", now))
+        self.assertEqual(public_data.collect("GRASS/USDT")["status"],
+                         "INVALID_SYMBOL")
+
+    def test_rate_limit_does_not_trigger_more_queries_on_same_exchange(self):
+        calls=[]
+        def request(url, params, headers, timeout):
+            calls.append(url)
+            return self.response({}, 429) if "fapi.binance.com" in url else self.response(
+                {"retCode":0,"result":{"list":[]}})
+        result=public_data.collect("GRASSUSDT", observed_at=self.NOW,
+                                   request_get=request,binance_key="")
+        self.assertEqual(len(calls), 3)  # 1 Binance + 2 Bybit
+        self.assertEqual(result["status"], "UNAVAILABLE")
+        self.assertEqual(result["unavailable"]["binance_taker_buy_sell"],
+                         "EXCHANGE_RATE_LIMITED")
+
+    def test_store_isolated_research_rows_only(self):
+        import tempfile
+        import sqlite3
+        from pathlib import Path
+        result,_=self.record()
+        with tempfile.TemporaryDirectory() as d:
+            with patch.dict("os.environ",{
+                    "MARKET_MEMORY_DB":str(Path(d)/"memory.sqlite3")}):
+                public_data._save(result)
+                with sqlite3.connect(Path(d)/"memory.sqlite3") as db:
+                    row=db.execute("""SELECT symbol,triggered_at,
+                        payload_json FROM public_derivatives_context""").fetchone()
+                    self.assertEqual(db.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE name='market_signals'").fetchone(),None)
+            self.assertEqual(row[0], "GRASSUSDT")
+            self.assertEqual(row[1], self.NOW)
+            self.assertIn("bybit_account_ratio",row[2])
+            self.assertIn("research_only",row[2])
+
+    def test_original_alert_path_kept_and_exchange_context_only_after_ack(self):
+        from pathlib import Path
+        code=Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        self.assertEqual(code.count("schedule_public_exchange_context(symbol, observed_at=now)"),1)
+        self.assertIn("if accepted is not True:",code)
+        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
+        self.assertIn("schedule_coinglass_context(symbol, observed_at=now)",code)
+
 
 if __name__ == "__main__":
     unittest.main()
