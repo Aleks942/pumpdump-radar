@@ -285,6 +285,7 @@ def select_continuing_moves(rows, pump_threshold, dump_threshold, now=None):
             # before the same symbol can be armed again.
             if initial is None:
                 del _continuation_pending[symbol]
+                old = None
             elif initial["type"] != old["type"]:
                 old = None
             else:
