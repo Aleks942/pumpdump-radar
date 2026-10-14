@@ -61,6 +61,12 @@ def _init(db):
     )""")
     db.execute("CREATE INDEX IF NOT EXISTS idx_cycle_event_symbol_at "
                "ON pump_cycle_events(symbol,at)")
+    db.execute("""CREATE TABLE IF NOT EXISTS pump_cycle_outcomes (
+        event_id INTEGER NOT NULL, horizon_sec INTEGER NOT NULL,
+        status TEXT NOT NULL, sampled_at REAL, lag_sec REAL,
+        quote_price REAL, gross_short_pct REAL, net_short_pct REAL,
+        PRIMARY KEY(event_id,horizon_sec)
+    )""")
 
 
 def _swing_support(points, peak_at):
@@ -426,3 +432,112 @@ def observe(tickers, now=None, db_path=None, flow_sender=None,
               "reason=",reason,"research_only=true no_trade_approval=true",
               flush=True)
     return emitted
+
+
+# Research forward markouts are point-in-time sampled quotes, NOT exact
+# intra-candle TP/SL first touches or executable trade fills.
+OUTCOME_HORIZONS = (300, 900, 1800)
+MAX_MARKOUT_LAG_SEC = 120
+ASSUMED_ROUNDTRIP_COST_PCT = 0.22
+_last_cycle_quality_report = None
+
+
+def observe_outcomes(tickers, now=None, db_path=None):
+    """Auditable forward markouts after genuine stage-4 events.
+
+    At most one snapshot near each horizon. If none exists in the permitted
+    interval, record MISSING rather than synthesizing an exit price.
+    """
+    now = time.time() if now is None else float(now)
+    db_path = DB_PATH if db_path is None else db_path
+    if not math.isfinite(now):
+        return []
+    quotes = _quote_rows(tickers)
+    finished = []
+    with sqlite3.connect(db_path, timeout=5) as db:
+        _init(db)
+        cases = db.execute("""SELECT id,symbol,at,price
+            FROM pump_cycle_events WHERE stage='REVERSAL_CONFIRMED'
+                AND at>=? AND at<=?
+            ORDER BY id DESC LIMIT 2000""",
+            (now-10*86400, now)).fetchall()
+        for ident,symbol,start,entry in cases:
+            if not math.isfinite(entry) or entry<=0:
+                continue
+            for horizon in OUTCOME_HORIZONS:
+                target = start+horizon
+                if now<target:
+                    continue
+                already = db.execute("""SELECT 1 FROM pump_cycle_outcomes
+                    WHERE event_id=? AND horizon_sec=?""",
+                    (ident,horizon)).fetchone()
+                if already:
+                    continue
+                quote = quotes.get(symbol)
+                lag = now-target
+                if lag<=MAX_MARKOUT_LAG_SEC and quote is not None:
+                    gross = 100*(entry/quote-1)  # Percent P&L on a short is (entry-exit)/entry, not entry/exit-1.
+                    gross = 100*(entry-quote)/entry
+                    net = gross-ASSUMED_ROUNDTRIP_COST_PCT
+                    db.execute("""INSERT INTO pump_cycle_outcomes
+                        (event_id,horizon_sec,status,sampled_at,lag_sec,
+                         quote_price,gross_short_pct,net_short_pct)
+                        VALUES (?,?, 'DONE',?,?,?,?,?)""",
+                        (ident,horizon,now,lag,quote,round(gross,6),round(net,6)))
+                    finished.append((symbol,horizon,round(net,4),"DONE"))
+                elif lag>MAX_MARKOUT_LAG_SEC:
+                    db.execute("""INSERT INTO pump_cycle_outcomes
+                        (event_id,horizon_sec,status,lag_sec)
+                        VALUES (?,?,'MISSING',?)""",
+                        (ident,horizon,lag))
+                    finished.append((symbol,horizon,None,"MISSING"))
+        db.execute("""DELETE FROM pump_cycle_outcomes WHERE event_id IN (
+            SELECT id FROM pump_cycle_events WHERE at<?
+        )""",(now-10*86400,))
+    for symbol,horizon,net,status in finished[:12]:
+        print("[PUMP_CYCLE_OUTCOME]", symbol,
+              "horizon=",horizon//60,"min status=",status,
+              "net_short_pct=",net,
+              "sampled_quotes_only=true roundtrip_assumption_pct=0.22",
+              "no_orders=true no_trade_approval=true",flush=True)
+    return finished
+
+
+def report_outcomes(now=None, db_path=None):
+    """Hourly group-level evaluation, not an automatic trading approval."""
+    global _last_cycle_quality_report
+    now = time.time() if now is None else float(now)
+    if _last_cycle_quality_report is not None and (
+            now-_last_cycle_quality_report < 3600):
+        return []
+    _last_cycle_quality_report = now
+    db_path = DB_PATH if db_path is None else db_path
+    results = []
+    try:
+        with sqlite3.connect(db_path, timeout=4) as db:
+            _init(db)
+            rows = db.execute("""SELECT o.horizon_sec,
+                  count(*) AS samples,
+                  sum(CASE WHEN o.status='DONE' THEN 1 ELSE 0 END),
+                  count(DISTINCT CASE WHEN o.status='DONE' THEN c.symbol END),
+                  count(DISTINCT CASE WHEN o.status='DONE'
+                    THEN CAST(c.at/86400 AS INTEGER) END),
+                  avg(CASE WHEN o.status='DONE' THEN o.net_short_pct END),
+                  sum(CASE WHEN o.status='DONE' AND o.net_short_pct>0
+                    THEN 1 ELSE 0 END)
+                FROM pump_cycle_outcomes o
+                JOIN pump_cycle_events c ON c.id=o.event_id
+                GROUP BY o.horizon_sec ORDER BY o.horizon_sec""").fetchall()
+        for horizon,total,done,symbols,days,mean_net,positive in rows:
+            result = {"horizon_min":horizon//60,"total":total,
+                      "done":done or 0,"symbols":symbols or 0,
+                      "days":days or 0,"mean_net":mean_net,
+                      "positive":positive or 0}
+            results.append(result)
+            print("[PUMP_CYCLE_QUALITY]",result,
+                  "research_only=true future_leakage=false",
+                  "sampled_quotes_only=true not_first_touch=true",
+                  "no_trade_approval=true",flush=True)
+    except Exception as exc:
+        print("[PUMP_CYCLE_QUALITY_ERROR]",type(exc).__name__,flush=True)
+    return results
