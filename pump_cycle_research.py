@@ -14,7 +14,6 @@ import threading
 import time
 from collections import defaultdict, deque
 
-import requests
 
 DB_PATH = os.getenv("PUMP_WATCH_DB", "/data/pump_watch.sqlite3")
 OBS_INTERVAL = 25
@@ -167,6 +166,7 @@ def _dispatch_flow(symbol, price, now, db_path):
 
     def worker():
         try:
+            import requests
             observed = time.time()
             payload = {"schema": 1, "source": "pumpdump-radar",
                        "symbol": symbol, "side": "SHORT", "price": price,
@@ -259,8 +259,6 @@ def observe(tickers, now=None, db_path=None, flow_sender=None):
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                     (symbol,now,now,state["stage"],state["peak"],now,
                      price,now,price,price,now))
-                _transition(db, state, "PUMP_START", price, now,
-                            "FIRST_WATCH", [])  # initial is already persisted
                 db.execute("""INSERT INTO pump_cycle_events
                     (symbol,at,stage,price,peak,reason)
                     VALUES (?,?,?,?,?,?)""",
