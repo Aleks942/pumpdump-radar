@@ -484,19 +484,19 @@ def observe_outcomes(tickers, now=None, db_path=None):
                          quote_price,gross_short_pct,net_short_pct)
                         VALUES (?,?, 'DONE',?,?,?,?,?)""",
                         (ident,horizon,now,lag,quote,round(gross,6),round(net,6)))
-                    finished.append((symbol,horizon,round(net,4),"DONE"))
+                    finished.append((symbol,horizon//60,round(net,4),"DONE"))
                 elif lag>MAX_MARKOUT_LAG_SEC:
                     db.execute("""INSERT INTO pump_cycle_outcomes
                         (event_id,horizon_sec,status,lag_sec)
                         VALUES (?,?,'MISSING',?)""",
                         (ident,horizon,lag))
-                    finished.append((symbol,horizon,None,"MISSING"))
+                    finished.append((symbol,horizon//60,None,"MISSING"))
         db.execute("""DELETE FROM pump_cycle_outcomes WHERE event_id IN (
             SELECT id FROM pump_cycle_events WHERE at<?
         )""",(now-10*86400,))
     for symbol,horizon,net,status in finished[:12]:
         print("[PUMP_CYCLE_OUTCOME]", symbol,
-              "horizon=",horizon//60,"min status=",status,
+              "horizon=",horizon,"min status=",status,
               "net_short_pct=",net,
               "sampled_quotes_only=true roundtrip_assumption_pct=0.22",
               "no_orders=true no_trade_approval=true",flush=True)
