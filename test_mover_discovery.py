@@ -432,11 +432,115 @@ class PriceOnlyMarketWatchTests(unittest.TestCase):
     def test_main_wires_price_candidates_once_before_trading_gate(self):
         from pathlib import Path
         source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
-        self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_THRESHOLD")'), 1)
+        self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_CONTINUATION")'), 1)
         self.assertNotIn("maybe_send_market_watch(signal, reason)", source)
         self.assertIn('inspect_price_quotes(tickers)', source)
         self.assertIn('TIME_WINDOWS["5m"]["pump"]', source)
         self.assertIn('-TIME_WINDOWS["5m"]["dump"]', source)
+
+
+class FollowThroughWatchTests(unittest.TestCase):
+    """A one-bar burst is NOT enough for a continuation notification."""
+
+    def setUp(self):
+        pending = patch.object(mover, "_continuation_pending", {})
+        pending.start()
+        self.addCleanup(pending.stop)
+        self.t0 = 1000.0
+
+    def row(self, price, move, symbol="ABCUSDT", age=300):
+        return {
+            "symbol": symbol, "price": price,
+            "change5": move, "sample_age_sec": age,
+        }
+
+    def check(self, price, move, dt, symbol="ABCUSDT",
+              pump=1.5, dump=1.5):
+        rows = [self.row(price, move, symbol=symbol)]
+        return mover.select_continuing_moves(
+            rows, pump, dump, now=self.t0+dt)
+
+    def test_pump_needs_two_separate_advances(self):
+        self.assertEqual(self.check(101.5, 1.5, 0), [])
+        self.assertEqual(self.check(101.62, 1.6, 60), [])
+        results = self.check(101.80, 1.8, 120)
+        self.assertEqual(len(results), 1)
+        s = results[0]
+        self.assertEqual(s["type"], "PUMP")
+        self.assertEqual(s["decision"]["direction"], "UP")
+        self.assertAlmostEqual(s["trigger_change"], 1.5)
+        self.assertGreater(s["followthrough_pct"], 0.2)
+        self.assertEqual(s["confirmation_seconds"], 120)
+        self.assertEqual(self.check(101.95, 1.95, 180), [])
+
+    def test_short_requires_continued_fall(self):
+        self.assertEqual(self.check(100, -1.5, 0, "DNUSDT"), [])
+        self.assertEqual(self.check(99.88, -1.6, 60, "DNUSDT"), [])
+        s = self.check(99.70, -1.8, 120, "DNUSDT")
+        self.assertEqual(len(s), 1)
+        self.assertEqual(s[0]["type"], "DUMP")
+        self.assertEqual(s[0]["decision"]["direction"], "DOWN")
+        self.assertGreater(s[0]["followthrough_pct"], 0.2)
+
+    def test_price_spike_then_retrace_is_rejected_even_if_it_recovers(self):
+        self.assertEqual(self.check(101.5, 1.5, 0), [])
+        self.assertEqual(self.check(100.5, 0.5, 60), [])
+        self.assertEqual(self.check(101.8, 1.8, 120), [])
+        self.assertEqual(self.check(102.0, 2.0, 180), [])
+
+    def test_flat_after_initial_spike_never_alerts(self):
+        self.assertEqual(self.check(101.5, 1.5, 0), [])
+        self.assertEqual(self.check(101.5, 1.5, 60), [])
+        self.assertEqual(self.check(101.5, 1.5, 120), [])
+        self.assertEqual(self.check(101.5, 1.5, 180), [])
+
+    def test_one_followup_step_is_not_enough(self):
+        self.check(101.5, 1.5, 0)
+        self.assertEqual(self.check(102.0, 2, 120), [])
+
+    def test_quick_late_chase_is_rejected(self):
+        self.check(101.5, 1.5, 0)
+        self.assertEqual(self.check(104, 4.0, 60), [])
+        self.assertEqual(self.check(104.2, 4.2, 120), [])
+
+    def test_threshold_change_remains_controlled_by_existing_variables(self):
+        self.assertEqual(self.check(101.5, 1.5, 0, pump=2), [])
+        self.assertEqual(self.check(101.62, 1.6, 60, pump=2), [])
+        self.assertEqual(self.check(101.8, 1.8, 120, pump=2), [])
+        self.assertEqual(self.check(101.8, 1.8, 180, pump=1.5), [])
+        self.assertEqual(self.check(101.94, 1.9, 240, pump=1.5), [])
+        self.assertEqual(len(self.check(102.08, 2.0, 300, pump=1.5)), 1)
+
+    def test_aged_or_invalid_quotes_do_not_confirm(self):
+        self.check(101.5, 1.5, 0)
+        self.assertEqual(self.check(101.65, 1.65, 60), [])
+        self.assertEqual(mover.select_continuing_moves(
+            [self.row(float("nan"), 2)], 1.5, 1.5, now=self.t0+120), [])
+        self.assertEqual(self.check(101.9, 2.0, 120, pump=-1), [])
+
+    def test_telegram_message_says_followthrough_not_guaranteed_profits(self):
+        import ast
+        from html import escape
+        from pathlib import Path
+        source = Path(__file__).with_name("telegram_builder.py").read_text(
+            encoding="utf-8")
+        tree = ast.parse(source)
+        pure = [node for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name in ("number", "build_market_watch_message")]
+        ns = {"math": math, "escape": escape, "PATTERN_NAMES": {}}
+        exec(compile(ast.fix_missing_locations(
+            ast.Module(body=pure, type_ignores=[])), "test_formatter", "exec"), ns)
+        self.check(101.5, 1.5, 0)
+        self.check(101.62, 1.6, 60)
+        [market_move] = self.check(101.8, 1.8, 120)
+        msg = ns["build_market_watch_message"](market_move, "PRICE_CONTINUATION")
+        self.assertIn("ПРОДОЛЖЕНИЕ", msg)
+        self.assertIn("Первый импульс", msg)
+        self.assertIn("следующие 2.0 мин", msg)
+        self.assertIn("НЕ сигнал для входа", msg)
+        self.assertIn("не гарантирует", msg)
+        self.assertNotIn("OI 5м:", msg)
 
 
 if __name__ == "__main__":
