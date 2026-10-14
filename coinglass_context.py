@@ -12,7 +12,6 @@ import sqlite3
 import threading
 import time
 
-import requests
 
 BASE = "https://open-api-v4.coinglass.com"
 INTERVAL = "30m"   # Startup API plan supports >=30m; 15m requires higher plan.
@@ -147,7 +146,9 @@ def collect(symbol, observed_at=None, request_get=None, api_key=None):
     observed_at = time.time() if observed_at is None else float(observed_at)
     if not math.isfinite(observed_at):
         return {"status": "INVALID_TIME"}
-    request_get = requests.get if request_get is None else request_get
+    if request_get is None:
+        import requests  # Optional runtime dependency; CI has no requests.
+        request_get = requests.get
     coin = symbol[:-4]
     header = {"CG-API-KEY": api_key, "accept": "application/json"}
     metrics = {}
@@ -177,8 +178,7 @@ def collect(symbol, observed_at=None, request_get=None, api_key=None):
                 unavailable[name] = "NO_VALID_CLOSED_BAR"
             else:
                 metrics[name] = metric
-        except (requests.RequestException, ValueError, TypeError,
-                KeyError, OverflowError):
+        except Exception:  # Any transport/schema error only disables this metric.
             unavailable[name] = "REQUEST_OR_SCHEMA_ERROR"
     return {
         "status": "PARTIAL" if metrics and unavailable else (
