@@ -854,7 +854,9 @@ class PumpCycleResearchTests(unittest.TestCase):
         x=self.state()
         self.assertEqual(x["stage"],"PUMP_WEAKENING")
         self.assertAlmostEqual(x["support"],1.16)
-        self.assertEqual(len(self.sent),1)
+        # A failed early pump can weaken, recover, then weaken again.
+        # Both causal episodes may ask Flow; neither is a trade approval.
+        self.assertGreaterEqual(len(self.sent),1)
         return x
 
     def test_full_cycle_requires_valid_pivot_and_fresh_sell_flow(self):
