@@ -929,6 +929,42 @@ class PumpCycleResearchTests(unittest.TestCase):
         self.point(1.07,6,falling=6)
         self.assertEqual(self.state()["stage"],"PUMP_WEAKENING")
 
+    def test_early_continuation_starts_cycle_below_ten_percent(self):
+        # No entry in the existing >10% Pump Watch table.
+        first = cycle.observe(
+            [{"instId":"GRASS-USDT-SWAP","last":"1.02"}],
+            now=self.t0,db_path=self.db_path,
+            seeded_pumps=[{"symbol":"GRASSUSDT","type":"PUMP",
+                           "price":1.02,"change":2.0}],
+            flow_sender=lambda *args: False)
+        self.assertEqual(first[0][1],"PUMP_START")
+        self.assertEqual(first[0][2],"EARLY_CONTINUATION_OBSERVED")
+        self.assertEqual(self.state()["seed_source"],"EARLY")
+        prices=[1.05,1.04,1.02,1.03,1.04,1.06,1.07,1.06,1.05]
+        for i,price in enumerate(prices,1):
+            cycle.observe(
+                [{"instId":"GRASS-USDT-SWAP","last":str(price)}],
+                now=self.t0+i*60,db_path=self.db_path,
+                flow_sender=lambda *args: False)
+        state=self.state()
+        self.assertEqual(state["stage"],"PUMP_WEAKENING")
+        self.assertAlmostEqual(state["support"],1.02)
+        self.assertEqual(state["initial_move_pct"],2.0)
+        self.assertLess(state["peak"],1.10)
+
+    def test_early_dump_cannot_seed_bullish_lifecycle(self):
+        events = cycle.observe(
+            [{"instId":"GRASS-USDT-SWAP","last":"1.02"}],
+            now=self.t0,db_path=self.db_path,
+            seeded_pumps=[{"symbol":"GRASSUSDT","type":"DUMP",
+                           "price":1.02,"change":-2.0}],
+            flow_sender=lambda *args:False)
+        self.assertEqual(events,[])
+        import sqlite3
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM pump_cycle_state").fetchone()[0],0)
+
     def test_missing_and_invalid_samples_do_not_change_state(self):
         self.point(1.20,0)
         self.point(float("nan"),1)
@@ -956,7 +992,7 @@ class PumpCycleResearchTests(unittest.TestCase):
     def test_trade_gate_and_telegram_not_touched(self):
         from pathlib import Path
         code=Path(__file__).with_name("main.py").read_text(encoding="utf-8")
-        self.assertEqual(code.count("observe_pump_cycle(tickers)"),1)
+        self.assertEqual(code.count("observe_pump_cycle(tickers, seeded_pumps=early_continuations)"),1)
         self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
         self.assertIn('if TELEGRAM_POLICY == "CONFIRMED_ONLY":',code)
         self.assertIn('confirm_trend_edge(signal)',code)
