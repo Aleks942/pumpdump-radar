@@ -6,6 +6,8 @@ on:
       - 'ticker_metrics.py'
       - 'mover_discovery.py'
       - 'mover_forward_audit.py'
+      - 'pump_lifecycle.py'
+      - 'test_pump_lifecycle.py'
       - 'test_mover_forward_audit.py'
       - 'pump_peak_watch.py'
       - 'test_mover_discovery.py'
@@ -22,5 +24,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m py_compile main.py ticker_metrics.py mover_discovery.py mover_forward_audit.py pump_peak_watch.py test_mover_discovery.py test_mover_forward_audit.py test_pump_peak_watch.py
-      - run: python -m unittest -v test_mover_discovery test_mover_forward_audit test_pump_peak_watch
+      - run: python -m py_compile main.py ticker_metrics.py mover_discovery.py mover_forward_audit.py pump_peak_watch.py pump_lifecycle.py test_pump_lifecycle.py test_mover_discovery.py test_mover_forward_audit.py test_pump_peak_watch.py
+      - run: python -m unittest -v test_mover_discovery test_mover_forward_audit test_pump_peak_watch test_pump_lifecycle
