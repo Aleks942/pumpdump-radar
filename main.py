@@ -17,6 +17,7 @@ from datetime import datetime, UTC
 from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message, build_market_watch_message
 from coinglass_context import schedule as schedule_coinglass_context
+from public_exchange_context import schedule as schedule_public_exchange_context
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
@@ -144,8 +145,14 @@ def maybe_send_market_watch(signal, reason, now=None):
     print("[PUMP_INFO_SENT]", symbol, "type=", kind,
           "count_today=", state["count"],
           "trade_approved=false informational_only=true", flush=True)
-    # CoinGlass is a separate optional AFTER-send research snapshot.
-    # No API key => no requests; this never changes the Telegram verdict.
+    # Both studies run after Telegram ACK, never as a condition for it.
+    # Public exchange context requires no account/secret key.
+    try:
+        schedule_public_exchange_context(symbol, observed_at=now)
+    except Exception as pub_exc:
+        print("[PUBLIC_DERIVATIVES_SCHEDULE_ERROR]",
+              symbol, type(pub_exc).__name__, flush=True)
+    # CoinGlass is still an optional separate data source.
     try:
         schedule_coinglass_context(symbol, observed_at=now)
     except Exception as cg_exc:
