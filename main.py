@@ -19,6 +19,7 @@ from telegram_builder import build_short_message, build_market_watch_message
 from coinglass_context import schedule as schedule_coinglass_context
 from public_exchange_context import schedule as schedule_public_exchange_context
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
+from pump_cycle_research import observe as observe_pump_cycle
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
@@ -1415,6 +1416,14 @@ while True:
                       "sent=", watch_sent is True, flush=True)
     except Exception as watch_exc:
         print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
+
+    # Research-only pump lifecycle: correlates observed chronological pivots
+    # with authenticated Bybit Flow sell pressure, never sends Telegram.
+    # Works from the same ticker batch and existing Pump Watch SQLite volume.
+    try:
+        observe_pump_cycle(tickers)
+    except Exception as cycle_exc:
+        print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
     # Evaluate forward checkpoints from the same already-fetched ticker list.
     # Research-only: NEVER modifies original signal decisions or orders.
