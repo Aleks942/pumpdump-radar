@@ -1373,12 +1373,14 @@ while True:
     # Early informational notices now require price follow-through AFTER
     # crossing the user-controlled 5m threshold. No OI/CVD requests, no
     # changes to the independent strict trade entry gate.
+    early_continuations = []
     try:
-        for market_move in select_continuing_moves(
+        early_continuations = select_continuing_moves(
             inspect_price_quotes(tickers),
             TIME_WINDOWS["5m"]["pump"],
             -TIME_WINDOWS["5m"]["dump"],
-        ):
+        )
+        for market_move in early_continuations:
             maybe_send_market_watch(market_move, "PRICE_CONTINUATION")
     except Exception as info_exc:
         print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
@@ -1421,7 +1423,7 @@ while True:
     # with authenticated Bybit Flow sell pressure, never sends Telegram.
     # Works from the same ticker batch and existing Pump Watch SQLite volume.
     try:
-        observe_pump_cycle(tickers)
+        observe_pump_cycle(tickers, seeded_pumps=early_continuations)
     except Exception as cycle_exc:
         print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
