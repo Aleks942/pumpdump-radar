@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import mover_discovery as mover
+import coinglass_context as cg
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 
 
@@ -542,6 +543,108 @@ class FollowThroughWatchTests(unittest.TestCase):
         self.assertIn("не гарантирует", msg)
         self.assertNotIn("OI 5м:", msg)
 
+
+class CoinGlassResearchTests(unittest.TestCase):
+    def fake(self, rows, status_code=200):
+        class Response:
+            def __init__(self, value, code):
+                self.value = value
+                self.status_code = code
+            def json(self):
+                return self.value
+        return Response({"code": "0", "data": rows}, status_code)
+
+    def test_no_key_means_zero_api_calls(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(cg.collect("GRASSUSDT")["status"], "NOT_CONFIGURED")
+            self.assertFalse(cg.schedule("GRASSUSDT"))
+        self.assertEqual(cg.collect("GRASS/USDT", api_key="key")["status"],
+                         "INVALID_SYMBOL")
+
+    def test_closed_candles_and_timestamp_units_only(self):
+        now = 1800000000.0
+        t1 = now-7200
+        t2 = now-5400
+        t3 = now-600  # still open, must be ignored
+        rows = [{"time": int(t1*1000), "close": "100"},
+                {"time": int(t2*1000), "close": "90"},
+                {"time": int(t3*1000), "close": "500"}]
+        bars = cg._closed_rows(self.fake(rows).json(), now)
+        self.assertEqual(len(bars), 2)
+        metric = cg._metric("aggregated_oi", bars)
+        self.assertEqual(metric["oi_close_source_units"], 90)
+        self.assertAlmostEqual(metric["oi_change_pct_30m"], -10)
+
+    def test_cvd_and_net_position_are_distinct_provenance(self):
+        now = 1800000000.0
+        rows = [
+            {"time": int((now-3600)*1000), "cum_vol_delta": "-300"},
+            {"time": int((now-1800)*1000), "cum_vol_delta": "-375"},
+        ]
+        bars = cg._closed_rows(self.fake(rows).json(), now)
+        metric = cg._metric("futures_cvd_binance", bars)
+        self.assertEqual(metric["cvd_cumulative_source_units"], -375)
+        self.assertEqual(metric["cvd_change_30m_source_units"], -75)
+        pos = cg._metric("net_position_v2_binance", [(
+            now-1800, {"net_long_change": -70, "net_short_change": 90})])
+        self.assertEqual(pos["net_long_change_source_units"], -70)
+        self.assertNotIn("net_longs_new", pos)
+
+    def test_partial_data_never_fill_missing_values(self):
+        now = 1800000000.0
+        t = int((now-1800)*1000)
+        calls = []
+        def request(url, headers, params, timeout):
+            calls.append((url, params, timeout))
+            self.assertEqual(headers["CG-API-KEY"], "secret")
+            if "open-interest" in url:
+                return self.fake([{"time": t, "close": "23000000"}])
+            if "liquidation" in url:
+                return self.fake([{"time": t, "aggregated_long_liquidation_usd": 50,
+                                   "aggregated_short_liquidation_usd": 40}])
+            return self.fake([])
+        result = cg.collect("GRASSUSDT", observed_at=now,
+                            request_get=request, api_key="secret")
+        self.assertEqual(result["status"], "PARTIAL")
+        self.assertEqual(len(calls), len(cg.ENDPOINTS))
+        self.assertEqual(calls[0][1]["symbol"], "GRASS")
+        self.assertEqual(calls[-1][1]["symbol"], "GRASSUSDT")
+        self.assertEqual(result["metrics"]["aggregated_oi"]["oi_close_source_units"],
+                         23000000)
+        self.assertEqual(result["metrics"]["liquidations_binance"][
+                         "long_liquidation_usd"], 50)
+        self.assertIn("futures_cvd_binance", result["unavailable"])
+        self.assertTrue(result["not_trading_confirmation"])
+
+    def test_record_in_existing_memory_database_no_trade_change(self):
+        import tempfile
+        import sqlite3
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.dict("os.environ",
+                            {"MARKET_MEMORY_DB": str(Path(temp) / "memory.db")}):
+                data = {"symbol": "GRASSUSDT", "observed_at": 1791980000,
+                        "retrieved_at": 1791980030, "status": "PARTIAL",
+                        "metrics": {}, "unavailable": {"spot_cvd_binance":"HTTP_403"}}
+                cg._save(data)
+                with sqlite3.connect(str(Path(temp) / "memory.db")) as db:
+                    saved = db.execute("SELECT symbol,payload_json FROM coinglass_context").fetchone()
+                self.assertEqual(saved[0], "GRASSUSDT")
+                self.assertIn("HTTP_403", saved[1])
+
+    def test_bad_http_or_wrong_api_schema_do_not_manufacture_signals(self):
+        now = 1800000000
+        t = int((now-1800)*1000)
+        bad = [
+            ({"code": "400", "data":[{"time":t,"close":1}]}, []),
+            ({"code":"0", "data":{"time":t,"close":1}}, []),
+            ({"code":"0", "data":[{"time":t,"close":"NaN"}]}, [(now-1800, {"time":t,"close":"NaN"})]),
+        ]
+        for data, expected in bad:
+            # Wrong shapes and non-success codes must never masquerade as quotes.
+            self.assertEqual(cg._closed_rows(data, now), expected)
+        self.assertIsNone(cg._metric(
+            "aggregated_oi", [(now-1800, {"close":"nan"})]))
 
 if __name__ == "__main__":
     unittest.main()
