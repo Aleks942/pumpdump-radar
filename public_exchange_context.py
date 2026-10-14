@@ -16,7 +16,6 @@ import sqlite3
 import threading
 import time
 
-import requests
 
 DB_DEFAULT = "market_memory.db"
 GLOBAL_COOLDOWN_SEC = 15 * 60
@@ -177,7 +176,9 @@ def collect(symbol, observed_at=None, request_get=None, binance_key=None):
     now = time.time() if observed_at is None else float(observed_at)
     if not math.isfinite(now):
         return {"status": "INVALID_TIME"}
-    request_get = requests.get if request_get is None else request_get
+    if request_get is None:
+        import requests
+        request_get = requests.get
     key = (os.getenv("BINANCE_MARKET_API_KEY", "")
            if binance_key is None else binance_key)
     results, unavailable = {}, {}
@@ -218,8 +219,7 @@ def collect(symbol, observed_at=None, request_get=None, binance_key=None):
                 unavailable[name] = "NO_VALID_RECENT_SAMPLE"
             else:
                 results[name] = metric
-        except (requests.RequestException, ValueError, TypeError,
-                OverflowError, KeyError):
+        except Exception:  # Per-source errors are unavailable, not trading signals.
             unavailable[name] = "HTTP_OR_SCHEMA_ERROR"
     status = "OK" if results and not unavailable else (
         "PARTIAL" if results else "UNAVAILABLE")
