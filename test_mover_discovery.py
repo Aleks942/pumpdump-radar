@@ -8,6 +8,7 @@ from unittest.mock import patch
 import mover_discovery as mover
 import coinglass_context as cg
 import public_exchange_context as public_data
+import pump_cycle_research as cycle
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 
 
@@ -800,6 +801,207 @@ class PublicExchangeContextTests(unittest.TestCase):
         self.assertIn("if accepted is not True:",code)
         self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
         self.assertIn("schedule_coinglass_context(symbol, observed_at=now)",code)
+
+
+class PumpCycleResearchTests(unittest.TestCase):
+    """Actual chronological sample chain, no exchange/API connections."""
+
+    def setUp(self):
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db_path = str(Path(self.temp.name)/"watch.db")
+        self.t0 = 1800000000.0
+        self.symbol = "GRASSUSDT"
+        self.sequence = []
+        self.sent = []
+        cycle._prices.clear()
+        cycle._flow_cooldown.clear()
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("""CREATE TABLE pump_watch_state (
+                symbol TEXT PRIMARY KEY, anchor REAL NOT NULL, peak REAL NOT NULL,
+                rise_pct REAL NOT NULL, falling INTEGER NOT NULL,
+                updated_at REAL NOT NULL)""")
+
+    def point(self, price, index, falling=0, side="GRASS"):
+        import sqlite3
+        at = self.t0+index*60
+        self.sequence.append((at, price))
+        peak = max(p for _,p in self.sequence)
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("""INSERT OR REPLACE INTO pump_watch_state
+                (symbol,anchor,peak,rise_pct,falling,updated_at)
+                VALUES (?,?,?,?,?,?)""",
+                (self.symbol,1,peak,(peak-1)*100,falling,at))
+        return cycle.observe(
+            [{"instId":side+"-USDT-SWAP", "last":str(price)}],
+            now=at, db_path=self.db_path,
+            flow_sender=lambda sym, px, ts, path: (
+                self.sent.append((sym,px,ts,path)) or True))
+
+    def state(self):
+        import sqlite3
+        with sqlite3.connect(self.db_path) as db:
+            db.row_factory=sqlite3.Row
+            return dict(db.execute("SELECT * FROM pump_cycle_state").fetchone())
+
+    def prepared(self):
+        seq=[1.17,1.21,1.19,1.16,1.18,1.20,1.23,1.26,1.24,1.19]
+        for i,price in enumerate(seq):
+            self.point(price,i,falling=2 if i==9 else 0)
+        x=self.state()
+        self.assertEqual(x["stage"],"PUMP_WEAKENING")
+        self.assertAlmostEqual(x["support"],1.16)
+        # A failed early pump can weaken, recover, then weaken again.
+        # Both causal episodes may ask Flow; neither is a trade approval.
+        self.assertGreaterEqual(len(self.sent),1)
+        return x
+
+    def test_full_cycle_requires_valid_pivot_and_fresh_sell_flow(self):
+        x=self.prepared()
+        at=self.t0+9*60+10
+        self.assertTrue(cycle._record_flow(
+            self.symbol,at,
+            {"status":"CONFIRMED","delta_ratio":-.42,
+             "finished_at":at+21,"evidence_event":"NONE"},
+            now=at+23,db_path=self.db_path))
+        self.point(1.155,10,falling=3)
+        e=self.point(1.15,11,falling=4)
+        self.assertEqual(self.state()["stage"],"REVERSAL_CONFIRMED")
+        self.assertTrue(any(stage=="TREND_BREAK_CANDIDATE" for _,stage,_ in e))
+        self.assertTrue(any(stage=="REVERSAL_CONFIRMED" for _,stage,_ in e))
+        self.point(1.128,12,falling=5)
+        self.assertEqual(self.state()["stage"],"DUMP_CONTINUATION")
+        self.point(1.10,13,falling=6)
+        self.point(1.122,14)
+        self.assertEqual(self.state()["stage"],"DUMP_EXHAUSTION")
+        import sqlite3
+        with sqlite3.connect(self.db_path) as db:
+            rows=db.execute("SELECT stage FROM pump_cycle_events ORDER BY id").fetchall()
+        sequence=[r[0] for r in rows]
+        # The impulse can briefly weaken, recover to a new high and
+        # legitimately weaken again before the first confirmed breakdown.
+        self.assertEqual(sequence[0],"PUMP_START")
+        self.assertEqual(sequence[-5:],
+                         ["PUMP_CONTINUATION","PUMP_WEAKENING",
+                          "REVERSAL_CONFIRMED","DUMP_CONTINUATION",
+                          "DUMP_EXHAUSTION"])
+        self.assertTrue(all(s in cycle.STAGES for (s,) in rows))
+
+    def test_absorption_and_positive_delta_do_not_approve_short(self):
+        self.prepared()
+        at=self.t0+9*60+10
+        self.assertTrue(cycle._record_flow(
+            self.symbol,at,
+            {"status":"CONTRADICTION","delta_ratio":.6,
+             "finished_at":at+21,
+             "evidence_event":"BUY_ABSORPTION_CANDIDATE"},
+            now=at+22,db_path=self.db_path))
+        self.point(1.155,10,falling=3)
+        self.point(1.15,11,falling=4)
+        x=self.state()
+        self.assertEqual(x["stage"],"PUMP_WEAKENING")
+        self.assertIsNotNone(x["break_price"])
+        self.assertEqual(x["flow_evidence"],"BUY_ABSORPTION_CANDIDATE")
+        self.assertGreater(x["flow_delta"],0)
+
+    def test_break_without_sell_flow_or_confirmed_pivot_stays_observation(self):
+        self.prepared()
+        self.point(1.15,10,falling=3)
+        self.point(1.13,11,falling=4)
+        self.assertEqual(self.state()["stage"],"PUMP_WEAKENING")
+        self.assertIsNotNone(self.state()["break_at"])
+
+    def test_reclaimed_high_invalidates_weakening_and_old_flow(self):
+        self.prepared()
+        at=self.t0+9*60+10
+        self.assertTrue(cycle._record_flow(
+            self.symbol,at,
+            {"status":"CONFIRMED","delta_ratio":-.4,"finished_at":at+20},
+            now=at+22,db_path=self.db_path))
+        e=self.point(1.28,10,falling=0)
+        self.assertEqual(self.state()["stage"],"PUMP_CONTINUATION")
+        self.assertIsNone(self.state()["flow_delta"])
+        self.assertIsNone(self.state()["support"])
+        self.assertTrue(any(s=="PUMP_CONTINUATION" for _,s,_ in e))
+
+    def test_no_invented_pivot_on_monotonic_dump(self):
+        for i,px in enumerate([1.25,1.24,1.23,1.20,1.17,1.12]):
+            self.point(px,i,falling=i)
+        self.assertEqual(self.state()["stage"],"PUMP_WEAKENING")
+        self.assertIsNone(self.state()["support"])
+        self.point(1.07,6,falling=6)
+        self.assertEqual(self.state()["stage"],"PUMP_WEAKENING")
+
+    def test_early_continuation_starts_cycle_below_ten_percent(self):
+        # No entry in the existing >10% Pump Watch table.
+        first = cycle.observe(
+            [{"instId":"GRASS-USDT-SWAP","last":"1.02"}],
+            now=self.t0,db_path=self.db_path,
+            seeded_pumps=[{"symbol":"GRASSUSDT","type":"PUMP",
+                           "price":1.02,"change":2.0}],
+            flow_sender=lambda *args: False)
+        self.assertEqual(first[0][1],"PUMP_START")
+        self.assertEqual(first[0][2],"EARLY_CONTINUATION_OBSERVED")
+        self.assertEqual(self.state()["seed_source"],"EARLY")
+        prices=[1.05,1.04,1.02,1.03,1.04,1.06,1.07,1.06,1.05]
+        for i,price in enumerate(prices,1):
+            cycle.observe(
+                [{"instId":"GRASS-USDT-SWAP","last":str(price)}],
+                now=self.t0+i*60,db_path=self.db_path,
+                flow_sender=lambda *args: False)
+        state=self.state()
+        self.assertEqual(state["stage"],"PUMP_WEAKENING")
+        self.assertAlmostEqual(state["support"],1.02)
+        self.assertEqual(state["initial_move_pct"],2.0)
+        self.assertLess(state["peak"],1.10)
+
+    def test_early_dump_cannot_seed_bullish_lifecycle(self):
+        events = cycle.observe(
+            [{"instId":"GRASS-USDT-SWAP","last":"1.02"}],
+            now=self.t0,db_path=self.db_path,
+            seeded_pumps=[{"symbol":"GRASSUSDT","type":"DUMP",
+                           "price":1.02,"change":-2.0}],
+            flow_sender=lambda *args:False)
+        self.assertEqual(events,[])
+        import sqlite3
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM pump_cycle_state").fetchone()[0],0)
+
+    def test_missing_and_invalid_samples_do_not_change_state(self):
+        self.point(1.20,0)
+        self.point(float("nan"),1)
+        self.assertEqual(self.state()["last_at"],self.t0)
+        self.assertEqual(cycle.observe(
+            [{"instId":"GRASS-USDT-SWAP","last":"1.25"}],
+            now=self.t0,db_path=self.db_path),[])
+        self.assertEqual(self.state()["stage"],"PUMP_START")
+
+    def test_malformed_or_stale_flow_result_rejected(self):
+        self.prepared()
+        at=self.t0+9*60+10
+        invalid=[
+            {"status":"PENDING","finished_at":at+22},
+            {"status":"CONFIRMED","delta_ratio":-.6,"finished_at":at+100},
+            {"status":"CONFIRMED","delta_ratio":-99,"finished_at":at+20},
+            {"status":"CONFIRMED","delta_ratio":-.5,"finished_at":at-1},
+            {"status":"CONFIRMED","delta_ratio":-.5,"finished_at":float("nan")},
+        ]
+        for res in invalid:
+            self.assertFalse(cycle._record_flow(
+                self.symbol,at,res,now=at+25,db_path=self.db_path))
+        self.assertIsNone(self.state()["flow_status"])
+
+    def test_trade_gate_and_telegram_not_touched(self):
+        from pathlib import Path
+        code=Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        self.assertEqual(code.count("observe_pump_cycle(tickers, seeded_pumps=early_continuations)"),1)
+        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
+        self.assertIn('if TELEGRAM_POLICY == "CONFIRMED_ONLY":',code)
+        self.assertIn('confirm_trend_edge(signal)',code)
 
 
 if __name__ == "__main__":
