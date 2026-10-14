@@ -1004,5 +1004,84 @@ class PumpCycleResearchTests(unittest.TestCase):
         self.assertIn('confirm_trend_edge(signal)',code)
 
 
+class PumpCycleOutcomeAuditTests(unittest.TestCase):
+    """Research markouts use only actual observed future quotes."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db_path=str(Path(self.temp.name)/"pump_cycle.db")
+        self.t0=1800000000.0
+        cycle._last_cycle_quality_report=None
+        self.create_case()
+
+    def create_case(self,price=1.20):
+        import sqlite3
+        with sqlite3.connect(self.db_path) as db:
+            cycle._init(db)
+            db.execute("""INSERT INTO pump_cycle_events
+              (symbol,at,stage,price,peak,reason)
+              VALUES (?,?,?,?,?,?)""",
+              ("GRASSUSDT",self.t0,"REVERSAL_CONFIRMED",
+               price,1.40,"PRICE_STRUCTURE_AND_FRESH_SELL_FLOW"))
+
+    def quote(self,price):
+        return [{"instId":"GRASS-USDT-SWAP","last":str(price)}]
+
+    def test_exact_horizon_markout_and_no_relabel_on_new_price(self):
+        import sqlite3
+        self.assertEqual(cycle.observe_outcomes(
+            self.quote(1.10),now=self.t0+299,db_path=self.db_path),[])
+        rows=cycle.observe_outcomes(
+            self.quote(1.18),now=self.t0+305,db_path=self.db_path)
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0][3],"DONE")
+        self.assertAlmostEqual(rows[0][2],(1.20-1.18)/1.20*100-0.22,
+                               places=4)
+        # Later better price cannot be substituted for the horizon snapshot.
+        self.assertEqual(cycle.observe_outcomes(
+            self.quote(.90),now=self.t0+330,db_path=self.db_path),[])
+        with sqlite3.connect(self.db_path) as db:
+            stored=db.execute("""SELECT sampled_at,quote_price,
+                net_short_pct FROM pump_cycle_outcomes WHERE horizon_sec=300"""
+                ).fetchone()
+        self.assertEqual(stored[0],self.t0+305)
+        self.assertEqual(stored[1],1.18)
+        self.assertAlmostEqual(stored[2],(1.20-1.18)/1.20*100-0.22,
+                               places=5)
+
+    def test_missing_sample_is_not_synthetic_winner(self):
+        import sqlite3
+        marks=cycle.observe_outcomes([],now=self.t0+450,db_path=self.db_path)
+        self.assertEqual(marks,[("GRASSUSDT",5,None,"MISSING")])
+        cycle.observe_outcomes(self.quote(.50),now=self.t0+480,
+                               db_path=self.db_path)
+        with sqlite3.connect(self.db_path) as db:
+            row=db.execute("""SELECT status,quote_price,net_short_pct
+                FROM pump_cycle_outcomes WHERE horizon_sec=300""").fetchone()
+        self.assertEqual(row,("MISSING",None,None))
+
+    def test_adverse_short_is_negative_after_costs(self):
+        import sqlite3
+        rows=cycle.observe_outcomes(self.quote(1.22),
+                                   now=self.t0+300,db_path=self.db_path)
+        self.assertLess(rows[0][2],-0.22)
+        report=cycle.report_outcomes(now=self.t0+301,db_path=self.db_path)
+        self.assertEqual(len(report),1)
+        self.assertEqual(report[0]["done"],1)
+        self.assertEqual(report[0]["symbols"],1)
+        self.assertEqual(report[0]["days"],1)
+        self.assertEqual(report[0]["positive"],0)
+
+    def test_at_30min_all_three_horizons_are_isolated(self):
+        results=cycle.observe_outcomes(self.quote(1.15),
+            now=self.t0+1800,db_path=self.db_path)
+        self.assertEqual([(h,s) for _,h,_,s in results],
+                         [(5,"MISSING"),(15,"MISSING"),(30,"DONE")])
+        self.assertGreater(results[-1][2],0)
+
+
 if __name__ == "__main__":
     unittest.main()
