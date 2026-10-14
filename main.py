@@ -119,6 +119,13 @@ def maybe_send_market_watch(signal, reason, now=None):
     if (not isinstance(symbol, str) or not symbol.endswith("USDT")
             or (kind, side) not in (("PUMP", "UP"), ("DUMP", "DOWN"))):
         return False
+    # Research collection is independent from Telegram's delivery budget.
+    # The collector has its own global/symbol rate limits and never sends alerts.
+    try:
+        schedule_public_exchange_context(symbol, observed_at=now)
+    except Exception as pub_exc:
+        print("[PUBLIC_DERIVATIVES_SCHEDULE_ERROR]",
+              symbol, type(pub_exc).__name__, flush=True)
     day = int(now // 86400)
     state = _market_watch_delivery
     if day != state["day"]:
@@ -149,14 +156,7 @@ def maybe_send_market_watch(signal, reason, now=None):
     print("[PUMP_INFO_SENT]", symbol, "type=", kind,
           "count_today=", state["count"],
           "trade_approved=false informational_only=true", flush=True)
-    # Both studies run after Telegram ACK, never as a condition for it.
-    # Public exchange context requires no account/secret key.
-    try:
-        schedule_public_exchange_context(symbol, observed_at=now)
-    except Exception as pub_exc:
-        print("[PUBLIC_DERIVATIVES_SCHEDULE_ERROR]",
-              symbol, type(pub_exc).__name__, flush=True)
-    # CoinGlass is still an optional separate data source.
+    # Optional CoinGlass study remains behind successful Telegram ACK.
     try:
         schedule_coinglass_context(symbol, observed_at=now)
     except Exception as cg_exc:
