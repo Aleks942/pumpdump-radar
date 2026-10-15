@@ -215,7 +215,7 @@ def build_market_watch_message(signal, reason):
         direction_word = "Рост" if move_type == "PUMP" else "Падение"
         return "\n".join((
             f"{heading} — ПРОДОЛЖЕНИЕ",
-            f"🪙 {symbol} | OKX SWAP",
+            f"🪙 {symbol} | {escape(str(signal.get('exchange') or 'OKX'))} SWAP",
             f"Текущая цена: {price_text(signal.get('price'))} USDT",
             f"Первый импульс (~5м): {number(trigger, signed=True, suffix='%')}",
             f"За следующие {elapsed/60:.1f} мин: движение продолжилось ещё на {follow:.2f}%",
@@ -233,7 +233,7 @@ def build_market_watch_message(signal, reason):
             raise ValueError("Invalid quote sampling age")
         return "\n".join((
             heading,
-            f"🪙 {symbol} | OKX SWAP",
+            f"🪙 {symbol} | {escape(str(signal.get('exchange') or 'OKX'))} SWAP",
             f"Цена: {price_text(signal.get('price'))} USDT",
             f"Движение: {number(signal.get('change'), signed=True, suffix='%')}",
             f"Период наблюдения: около 5 минут ({age_sec/60:.1f} мин)",
@@ -258,7 +258,7 @@ def build_market_watch_message(signal, reason):
 
     return "\n".join((
         heading,
-        f"🪙 {symbol} | OKX SWAP",
+        f"🪙 {symbol} | {escape(str(signal.get('exchange') or 'OKX'))} SWAP",
         f"Цена: {price_text(signal.get('price'))} USDT",
         f"Движение за {timeframe}: {number(signal.get('change'), signed=True, suffix='%')}",
         "",
