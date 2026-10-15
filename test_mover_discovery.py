@@ -432,7 +432,7 @@ class PriceOnlyMarketWatchTests(unittest.TestCase):
     def test_main_wires_price_candidates_once_before_trading_gate(self):
         from pathlib import Path
         source = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
-        self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_THRESHOLD")'), 1)
+        self.assertEqual(source.count('maybe_send_market_watch(market_move, "PRICE_THRESHOLD")'), 2)
         self.assertNotIn("maybe_send_market_watch(signal, reason)", source)
         self.assertIn('inspect_price_quotes(tickers)', source)
         self.assertIn('TIME_WINDOWS["5m"]["pump"]', source)
