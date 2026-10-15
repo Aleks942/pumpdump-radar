@@ -230,9 +230,9 @@ class MarketWatchNotificationTests(unittest.TestCase):
             "send_telegram": send,
             "build_market_watch_message": self.builder,
             "print": lambda *args, **kwargs: None,
-            "_MARKET_WATCH_SPACING_SEC": 1200,
-            "_MARKET_WATCH_SYMBOL_SEC": 7200,
-            "_MARKET_WATCH_DAILY_MAX": 12,
+            "_MARKET_WATCH_SPACING_SEC": 0,
+            "_MARKET_WATCH_SYMBOL_SEC": 600,
+            "_MARKET_WATCH_DAILY_MAX": None,
             "_market_watch_delivery": {
                 "day": None, "count": 0, "last_sent": None,
                 "symbols": {}, "retry_after": 0.0,
@@ -284,25 +284,22 @@ class MarketWatchNotificationTests(unittest.TestCase):
         self.assertIn("X&lt;b&gt;USDT", message)
         self.assertNotIn("X<b>USDT", message)
 
-    def test_global_spacing_and_symbol_dedup(self):
+    def test_no_global_spacing_and_same_symbol_dedup(self):
         self.assertTrue(self.notify(self.sample(), "EDGE_UNPROVEN", now=self.t0))
-        self.assertFalse(self.notify(
-            self.sample("BTCUSDT"), "EDGE_UNPROVEN", now=self.t0+1199))
-        self.assertFalse(self.notify(
-            self.sample(), "EDGE_UNPROVEN", now=self.t0+1201))
         self.assertTrue(self.notify(
-            self.sample("BTCUSDT"), "EDGE_UNPROVEN", now=self.t0+1201))
-        self.assertEqual(len(self.calls), 2)
+            self.sample("BTCUSDT"), "EDGE_UNPROVEN", now=self.t0))
+        self.assertFalse(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0+300))
+        self.assertTrue(self.notify(
+            self.sample(), "EDGE_UNPROVEN", now=self.t0+601))
+        self.assertEqual(len(self.calls), 3)
 
-    def test_daily_limit(self):
-        for i in range(12):
+    def test_no_daily_suppression_of_distinct_symbols(self):
+        for i in range(20):
             self.assertTrue(self.notify(
                 self.sample(f"T{i}USDT"), "EDGE_UNPROVEN",
-                now=self.t0+i*1201))
-        self.assertFalse(self.notify(
-            self.sample("OTHERUSDT"), "EDGE_UNPROVEN",
-            now=self.t0+12*1201))
-        self.assertEqual(len(self.calls), 12)
+                now=self.t0+i))
+        self.assertEqual(len(self.calls), 20)
 
     def test_failed_delivery_does_not_consume_budget(self):
         self.sender_result = False
