@@ -7,7 +7,7 @@ import math
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import (observe as observe_movers, inspect_price_quotes,
-                             select_continuing_moves)
+                             select_continuing_moves, select_threshold_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from pump_lifecycle import observe as observe_pump_lifecycle
 from pump_edge_report import print_candle_edge_report
@@ -119,13 +119,6 @@ def maybe_send_market_watch(signal, reason, now=None):
     if (not isinstance(symbol, str) or not symbol.endswith("USDT")
             or (kind, side) not in (("PUMP", "UP"), ("DUMP", "DOWN"))):
         return False
-    # Research collection is independent from Telegram's delivery budget.
-    # The collector has its own global/symbol rate limits and never sends alerts.
-    try:
-        schedule_public_exchange_context(symbol, observed_at=now)
-    except Exception as pub_exc:
-        print("[PUBLIC_DERIVATIVES_SCHEDULE_ERROR]",
-              symbol, type(pub_exc).__name__, flush=True)
     day = int(now // 86400)
     state = _market_watch_delivery
     if day != state["day"]:
@@ -1382,6 +1375,14 @@ while True:
         # Research-only lifecycle based on existing quotes. No extra HTTP,
         # Telegram or effect on the strict trading decision.
         observe_pump_lifecycle(quote_rows, TIME_WINDOWS["5m"]["pump"])
+        # Collect at the first observed threshold crossing, even if subsequent
+        # continuation fails or Telegram is rate-limited. The collector's own
+        # 15m global / 30m per-symbol throttles bound external requests.
+        first_moves = select_threshold_moves(
+            quote_rows, TIME_WINDOWS["5m"]["pump"],
+            -TIME_WINDOWS["5m"]["dump"])
+        if first_moves:
+            schedule_public_exchange_context(first_moves[0]["symbol"])
         early_continuations = select_continuing_moves(
             quote_rows,
             TIME_WINDOWS["5m"]["pump"],
