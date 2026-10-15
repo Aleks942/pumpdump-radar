@@ -95,9 +95,9 @@ signal_memory = {}
 
 # Bounded, information-only price-threshold notifications. They do not
 # influence trade approval, signal_memory or entry trackers.
-_MARKET_WATCH_SPACING_SEC = 20 * 60
-_MARKET_WATCH_SYMBOL_SEC = 2 * 3600
-_MARKET_WATCH_DAILY_MAX = 12
+_MARKET_WATCH_SPACING_SEC = 0  # No global suppression between different symbols
+_MARKET_WATCH_SYMBOL_SEC = 10 * 60  # Suppress duplicate sustained moves per symbol
+_MARKET_WATCH_DAILY_MAX = None  # No daily cap on distinct market moves
 _market_watch_delivery = {
     "day": None, "count": 0, "last_sent": None,
     "symbols": {}, "retry_after": 0.0,
@@ -123,8 +123,6 @@ def maybe_send_market_watch(signal, reason, now=None):
     state = _market_watch_delivery
     if day != state["day"]:
         state["day"], state["count"] = day, 0
-    if state["count"] >= _MARKET_WATCH_DAILY_MAX:
-        return False
     if now < state["retry_after"]:
         return False
     previous = state["last_sent"]
