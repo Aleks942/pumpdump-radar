@@ -9,6 +9,7 @@ from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import (observe as observe_movers, inspect_price_quotes,
                              select_continuing_moves, select_threshold_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
+from bybit_mover_watch import fetch as fetch_bybit_movers, sample as sample_bybit_movers
 from pump_lifecycle import observe as observe_pump_lifecycle
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -1393,6 +1394,23 @@ while True:
             maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
     except Exception as info_exc:
         print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
+
+    # Separate Bybit linear watch: does not alter OKX trade scanning.
+    # Same sender deduplicates cross-exchange symbol+direction observations.
+    try:
+        bybit_tickers = fetch_bybit_movers()
+        if bybit_tickers is not None:
+            bybit_quotes = sample_bybit_movers(bybit_tickers)
+            bybit_moves = select_threshold_moves(
+                bybit_quotes, TIME_WINDOWS["5m"]["pump"],
+                -TIME_WINDOWS["5m"]["dump"])
+            print("[BYBIT_WATCH] tickers=", len(bybit_tickers),
+                  "threshold_moves=", len(bybit_moves), flush=True)
+            for market_move in bybit_moves:
+                market_move["exchange"] = "Bybit"
+                maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
+    except Exception as bybit_exc:
+        print("[BYBIT_WATCH_ERROR]", type(bybit_exc).__name__, flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.
