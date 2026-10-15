@@ -1388,8 +1388,11 @@ while True:
             TIME_WINDOWS["5m"]["pump"],
             -TIME_WINDOWS["5m"]["dump"],
         )
-        for market_move in early_continuations:
-            maybe_send_market_watch(market_move, "PRICE_CONTINUATION")
+        # Ordinary informational PUMP/DUMP notifications follow the user's
+        # observed 5m percentage thresholds. The stronger continuation study
+        # remains separate and never gates these notices.
+        for market_move in first_moves:
+            maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
     except Exception as info_exc:
         print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
 
