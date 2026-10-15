@@ -805,8 +805,10 @@ class PublicExchangeContextTests(unittest.TestCase):
         self.assertLess(sampler.index("select_threshold_moves("),
                         sampler.index("schedule_public_exchange_context("))
         self.assertIn("if accepted is not True:",code)
-        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
+        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_THRESHOLD\")",code)
         self.assertIn("schedule_coinglass_context(symbol, observed_at=now)",code)
+        self.assertIn('for market_move in first_moves:', code)
+        self.assertNotIn('for market_move in early_continuations:\\n            maybe_send_market_watch(', code)
 
 
 class PumpCycleResearchTests(unittest.TestCase):
@@ -1005,7 +1007,7 @@ class PumpCycleResearchTests(unittest.TestCase):
         from pathlib import Path
         code=Path(__file__).with_name("main.py").read_text(encoding="utf-8")
         self.assertEqual(code.count("observe_pump_cycle(tickers, seeded_pumps=early_continuations)"),1)
-        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_CONTINUATION\")",code)
+        self.assertIn("maybe_send_market_watch(market_move, \"PRICE_THRESHOLD\")",code)
         self.assertIn('if TELEGRAM_POLICY == "CONFIRMED_ONLY":',code)
         self.assertIn('confirm_trend_edge(signal)',code)
 
