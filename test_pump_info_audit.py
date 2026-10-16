@@ -45,13 +45,16 @@ class InfoAuditTests(unittest.TestCase):
                              if h==30),5)
         # Some bybit symbols continue; dump on OKX falls further (correct).
         for j,window in enumerate(audit.WINDOWS):
+            # Only the 30m quote is observed on time. Earlier horizons
+            # are explicitly MISSING rather than invented from this quote.
             self.assertEqual(audit.observe_quotes(
-                quotes("Bybit",102,f"EX{j}USDT"),"Bybit",at+30*60+60),4)
+                quotes("Bybit",102,f"EX{j}USDT"),"Bybit",at+30*60+60),1)
         self.assertEqual(audit.observe_quotes(
-            quotes("OKX",97,"DUMPUSDT"),"OKX",at+30*60+60),4)
+            quotes("OKX",97,"DUMPUSDT"),"OKX",at+30*60+60),1)
         out=audit.summary()
         for window in audit.WINDOWS:
             self.assertEqual(out[(window,"PUMP",30)]["continued"],1)
+            self.assertEqual(out[(window,"PUMP",5)]["missing"],1)
         self.assertEqual(out[("20m","DUMP",30)]["continued"],1)
 
     def test_directional_reversal_and_small_flats(self):
