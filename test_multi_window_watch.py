@@ -77,9 +77,9 @@ class MultiWindowWatchTests(TestCase):
         self.assertEqual(len(watch.select_events(rows, THRESHOLDS)), 1)
         watch.mark_sent(first[0])
         self.assertEqual(watch.select_events(rows, THRESHOLDS), [])
-        rows = watch.sample_prices(okx(1.001), "OKX", now=1900)
+        rows = watch.sample_prices(okx(1.04), "OKX", now=2100)
         self.assertEqual(watch.select_events(rows, THRESHOLDS), [])
-        rows = watch.sample_prices(okx(1.08), "OKX", now=1930)
+        rows = watch.sample_prices(okx(1.145), "OKX", now=2250)
         self.assertEqual(len(watch.select_events(rows, THRESHOLDS)), 1)
 
     def test_cross_exchange_same_symbol_one_event(self):
