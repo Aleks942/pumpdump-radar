@@ -108,10 +108,11 @@ def record_delivered(event, reason, now=None):
         # Bounded retention; first delete children of expired/overflow alerts.
         old=now-RETENTION_SEC
         db.execute("""DELETE FROM info_markouts WHERE alert_id IN (
-            SELECT id FROM info_alerts WHERE sent_at<?
-            UNION
+            SELECT id FROM info_alerts WHERE sent_at<?)""",(old,))
+        db.execute("""DELETE FROM info_alerts WHERE sent_at<?""",(old,))
+        db.execute("""DELETE FROM info_markouts WHERE alert_id IN (
             SELECT id FROM info_alerts ORDER BY sent_at DESC
-            LIMIT -1 OFFSET ?)""",(old,MAX_EVENTS))
+            LIMIT -1 OFFSET ?)""",(MAX_EVENTS,))
         db.execute("""DELETE FROM info_alerts WHERE id NOT IN
             (SELECT DISTINCT alert_id FROM info_markouts)""")
     print(f"[PUMP_INFO_AUDIT_SAVED] symbol={symbol} exchange={exchange} "
