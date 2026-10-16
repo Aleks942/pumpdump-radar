@@ -229,14 +229,21 @@ def build_market_watch_message(signal, reason):
     if reason == "PRICE_THRESHOLD":
         symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
         age_sec = float(signal.get("sample_age_sec"))
-        if not math.isfinite(age_sec) or not 240 <= age_sec <= 420:
-            raise ValueError("Invalid quote sampling age")
+        window = str(signal.get("window") or "~5m").lstrip("~")
+        bounds = {
+            "5m": (240, 420), "10m": (480, 750),
+            "20m": (1050, 1350), "30m": (1650, 1950),
+        }
+        if (window not in bounds or not math.isfinite(age_sec)
+                or not bounds[window][0] <= age_sec <= bounds[window][1]):
+            raise ValueError("Invalid quote sampling age or window")
+        minutes = int(window[:-1])
         return "\n".join((
             heading,
             f"🪙 {symbol} | {escape(str(signal.get('exchange') or 'OKX'))} SWAP",
             f"Цена: {price_text(signal.get('price'))} USDT",
             f"Движение: {number(signal.get('change'), signed=True, suffix='%')}",
-            f"Период наблюдения: около 5 минут ({age_sec/60:.1f} мин)",
+            f"Период наблюдения: около {minutes} минут ({age_sec/60:.1f} мин)",
             "",
             "ℹ️ Порог цены из Railway Variables достигнут.",
             "⚠️ НЕ сигнал для входа. OI, CVD и тренд здесь не проверялись.",
