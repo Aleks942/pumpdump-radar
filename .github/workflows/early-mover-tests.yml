@@ -7,6 +7,8 @@ on:
       - 'mover_discovery.py'
       - 'bybit_mover_watch.py'
       - 'multi_window_watch.py'
+      - 'pump_info_audit.py'
+      - 'test_pump_info_audit.py'
       - 'test_multi_window_watch.py'
       - 'test_bybit_mover_watch.py'
       - 'telegram_builder.py'
@@ -29,5 +31,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m py_compile multi_window_watch.py test_multi_window_watch.py bybit_mover_watch.py test_bybit_mover_watch.py main.py ticker_metrics.py mover_discovery.py mover_forward_audit.py pump_peak_watch.py pump_lifecycle.py test_pump_lifecycle.py test_mover_discovery.py test_mover_forward_audit.py test_pump_peak_watch.py
-      - run: python -m unittest -v test_multi_window_watch test_bybit_mover_watch test_mover_discovery test_mover_forward_audit test_pump_peak_watch test_pump_lifecycle
+      - run: python -m py_compile pump_info_audit.py test_pump_info_audit.py multi_window_watch.py test_multi_window_watch.py bybit_mover_watch.py test_bybit_mover_watch.py main.py ticker_metrics.py mover_discovery.py mover_forward_audit.py pump_peak_watch.py pump_lifecycle.py test_pump_lifecycle.py test_mover_discovery.py test_mover_forward_audit.py test_pump_peak_watch.py
+      - run: python -m unittest -v test_pump_info_audit test_multi_window_watch test_bybit_mover_watch test_mover_discovery test_mover_forward_audit test_pump_peak_watch test_pump_lifecycle
