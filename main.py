@@ -10,6 +10,9 @@ from mover_discovery import (observe as observe_movers, inspect_price_quotes,
                              select_continuing_moves, select_threshold_moves)
 from mover_forward_audit import observe as observe_mover_forward, report as report_mover_forward
 from bybit_mover_watch import fetch as fetch_bybit_movers, sample as sample_bybit_movers
+from multi_window_watch import (sample_prices as sample_multi_window_prices,
+                                select_events as select_multi_window_events,
+                                mark_sent as mark_multi_window_sent)
 from pump_lifecycle import observe as observe_pump_lifecycle
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -129,7 +132,11 @@ def maybe_send_market_watch(signal, reason, now=None):
     previous = state["last_sent"]
     if previous is not None and now - previous < _MARKET_WATCH_SPACING_SEC:
         return False
-    key = (symbol, side)
+    # Independent thresholds are distinct informational events. Keep the
+    # 10-minute suppression WITHIN a period while allowing 10/20/30m alerts
+    # alongside a 5m alert for the same coin and direction.
+    period = str(signal.get("window") or "~5m").lstrip("~")
+    key = (symbol, side, period)
     if now - state["symbols"].get(key, -float("inf")) < _MARKET_WATCH_SYMBOL_SEC:
         return False
     try:
@@ -1395,12 +1402,24 @@ while True:
     except Exception as info_exc:
         print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
 
+    # The longer timeframes use separately sampled, real 10/20/30m quotes.
+    # This watch never affects the existing OKX/Bybit 5m notification path or
+    # strict OI/CVD/price entry logic.
+    try:
+        extended_okx_quotes = sample_multi_window_prices(tickers, "OKX")
+    except Exception as extended_exc:
+        print("[MULTI_WINDOW_OKX_ERROR]", type(extended_exc).__name__, flush=True)
+        extended_okx_quotes = []
+
+    extended_bybit_quotes = []
     # Separate Bybit linear watch: does not alter OKX trade scanning.
     # Same sender deduplicates cross-exchange symbol+direction observations.
     try:
         bybit_tickers = fetch_bybit_movers()
         if bybit_tickers is not None:
             bybit_quotes = sample_bybit_movers(bybit_tickers)
+            extended_bybit_quotes = sample_multi_window_prices(
+                bybit_tickers, "Bybit")
             bybit_moves = select_threshold_moves(
                 bybit_quotes, TIME_WINDOWS["5m"]["pump"],
                 -TIME_WINDOWS["5m"]["dump"])
@@ -1411,6 +1430,20 @@ while True:
                 maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
     except Exception as bybit_exc:
         print("[BYBIT_WATCH_ERROR]", type(bybit_exc).__name__, flush=True)
+
+    # Each longer period can notify independently even if 5m is quiet.
+    try:
+        extended_events = select_multi_window_events(
+            extended_okx_quotes + extended_bybit_quotes, TIME_WINDOWS)
+        print("[MULTI_WINDOW_WATCH] 10m_20m_30m_events=",
+              len(extended_events), "okx_quotes=", len(extended_okx_quotes),
+              "bybit_quotes=", len(extended_bybit_quotes), flush=True)
+        for event in extended_events:
+            if maybe_send_market_watch(event, "PRICE_THRESHOLD"):
+                mark_multi_window_sent(event)
+    except Exception as extended_exc:
+        print("[MULTI_WINDOW_WATCH_ERROR]", type(extended_exc).__name__,
+              flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.
