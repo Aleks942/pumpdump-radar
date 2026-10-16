@@ -80,7 +80,9 @@ class MultiWindowWatchTests(TestCase):
         rows = watch.sample_prices(okx(1.04), "OKX", now=2100)
         self.assertEqual(watch.select_events(rows, THRESHOLDS), [])
         rows = watch.sample_prices(okx(1.145), "OKX", now=2250)
-        self.assertEqual(len(watch.select_events(rows, THRESHOLDS)), 1)
+        # A fresh 10m crossing can coincide with a new 20m crossing.
+        self.assertIn("10m", [x["window"] for x in
+                              watch.select_events(rows, THRESHOLDS)])
 
     def test_cross_exchange_same_symbol_one_event(self):
         watch.sample_prices(okx(1), "OKX", now=1000)
