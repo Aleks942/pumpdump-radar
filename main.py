@@ -13,6 +13,12 @@ from bybit_mover_watch import fetch as fetch_bybit_movers, sample as sample_bybi
 from multi_window_watch import (sample_prices as sample_multi_window_prices,
                                 select_events as select_multi_window_events,
                                 mark_sent as mark_multi_window_sent)
+from pump_info_audit import (
+    record_delivered as record_pump_info_event,
+    observe_quotes as observe_pump_info_quotes,
+    print_report as report_pump_info_audit,
+    daily_digest as send_pump_info_daily_digest,
+)
 from pump_lifecycle import observe as observe_pump_lifecycle
 from pump_edge_report import print_candle_edge_report
 from pump_exit_research import print_exit_research
@@ -155,6 +161,14 @@ def maybe_send_market_watch(signal, reason, now=None):
     print("[PUMP_INFO_SENT]", symbol, "type=", kind,
           "count_today=", state["count"],
           "trade_approved=false informational_only=true", flush=True)
+    # Observational journal must NEVER influence Telegram ACK or dedup logic.
+    try:
+        if not record_pump_info_event(signal, reason, now=now):
+            print("[PUMP_INFO_AUDIT_NOT_RECORDED]", symbol,
+                  "reason=invalid_or_duplicate", flush=True)
+    except Exception as audit_error:
+        print("[PUMP_INFO_AUDIT_SAVE_ERROR]", symbol,
+              type(audit_error).__name__, flush=True)
     # Optional CoinGlass study remains behind successful Telegram ACK.
     try:
         schedule_coinglass_context(symbol, observed_at=now)
@@ -1361,6 +1375,12 @@ while True:
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
+    # Quote markouts use the same OKX market snapshot. No new REST calls.
+    try:
+        observe_pump_info_quotes(tickers, "OKX")
+    except Exception as audit_error:
+        print("[PUMP_INFO_AUDIT_OKX_ERROR]",
+              type(audit_error).__name__, flush=True)
 
     # Read the existing market-wide ticker history with zero extra HTTP calls.
     mover_rows = []
@@ -1417,6 +1437,11 @@ while True:
     try:
         bybit_tickers = fetch_bybit_movers()
         if bybit_tickers is not None:
+            try:
+                observe_pump_info_quotes(bybit_tickers, "Bybit")
+            except Exception as audit_error:
+                print("[PUMP_INFO_AUDIT_BYBIT_ERROR]",
+                      type(audit_error).__name__, flush=True)
             bybit_quotes = sample_bybit_movers(bybit_tickers)
             extended_bybit_quotes = sample_multi_window_prices(
                 bybit_tickers, "Bybit")
@@ -1444,6 +1469,15 @@ while True:
     except Exception as extended_exc:
         print("[MULTI_WINDOW_WATCH_ERROR]", type(extended_exc).__name__,
               flush=True)
+
+    # Summaries are explicitly non-trading observations, not entry alerts.
+    try:
+        report_pump_info_audit()
+        send_pump_info_daily_digest(
+            lambda msg: send_telegram(msg, symbol="PUMP_AUDIT"))
+    except Exception as audit_error:
+        print("[PUMP_INFO_AUDIT_REPORT_ERROR]",
+              type(audit_error).__name__, flush=True)
 
     # Parallel research-only watchlist. Does NOT gate or alter the original
     # price/OI/CVD/long-liquidation signal conditions below.
