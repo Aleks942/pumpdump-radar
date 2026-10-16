@@ -110,6 +110,46 @@ class MultiWindowWatchTests(TestCase):
         self.assertEqual(older, [])
         self.assertEqual(watch.select_events([], THRESHOLDS), [])
 
+    def test_sender_dedup_separates_windows_not_exchanges(self):
+        # Validate the real Telegram gate, without importing the live bot.
+        source = Path(__file__).with_name("main.py").read_text()
+        parser = ast.parse(source)
+        function = next(n for n in parser.body
+                        if isinstance(n, ast.FunctionDef)
+                        and n.name == "maybe_send_market_watch")
+        deliveries = []
+        ns = {
+            "math": math, "time": __import__("time"),
+            "_MARKET_WATCH_SPACING_SEC": 0,
+            "_MARKET_WATCH_SYMBOL_SEC": 600,
+            "_MARKET_WATCH_DAILY_MAX": None,
+            "_market_watch_delivery": {
+                "day": None, "count": 0, "last_sent": None,
+                "symbols": {}, "retry_after": 0,
+            },
+            "send_telegram": lambda message, symbol=None:
+                deliveries.append((message, symbol)) or True,
+            "schedule_coinglass_context": lambda *args, **kwargs: None,
+            "build_market_watch_message": lambda signal, reason: "notice",
+            "print": lambda *args, **kwargs: None,
+        }
+        exec(compile(ast.fix_missing_locations(
+            ast.Module(body=[function], type_ignores=[])), "notice_sender", "exec"), ns)
+        send = ns["maybe_send_market_watch"]
+
+        def event(period, exchange):
+            return {
+                "symbol": "PUFFERUSDT", "window": period, "exchange": exchange,
+                "type": "PUMP", "decision": {"direction": "UP"}, "price": 1,
+                "change": 8,
+            }
+
+        self.assertTrue(send(event("5m", "OKX"), "PRICE_THRESHOLD", now=10000))
+        self.assertTrue(send(event("10m", "Bybit"), "PRICE_THRESHOLD", now=10000))
+        self.assertFalse(send(event("10m", "OKX"), "PRICE_THRESHOLD", now=10001))
+        self.assertTrue(send(event("20m", "OKX"), "PRICE_THRESHOLD", now=10002))
+        self.assertEqual(len(deliveries), 3)
+
     def test_message_and_main_wiring(self):
         source = Path(__file__).with_name("telegram_builder.py").read_text()
         tree = ast.parse(source)
