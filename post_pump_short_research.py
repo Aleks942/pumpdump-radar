@@ -137,12 +137,14 @@ def _phases(state, now):
 
 def _prune(db,now):
     expiry = now-RETENTION_SEC
-    db.execute("""DELETE FROM post_pump_short_markouts
-        WHERE event_id IN (
-            SELECT id FROM post_pump_short_events WHERE observed_at < ?
-            UNION
-            SELECT id FROM post_pump_short_events
-            ORDER BY id DESC LIMIT -1 OFFSET ?)""",(expiry,MAX_EVENTS))
+    db.execute("""DELETE FROM post_pump_short_markouts WHERE event_id IN
+        (SELECT id FROM post_pump_short_events WHERE observed_at < ?)""",
+        (expiry,))
+    db.execute("DELETE FROM post_pump_short_events WHERE observed_at < ?",
+               (expiry,))
+    db.execute("""DELETE FROM post_pump_short_markouts WHERE event_id IN
+        (SELECT id FROM post_pump_short_events
+         ORDER BY id DESC LIMIT -1 OFFSET ?)""",(MAX_EVENTS,))
     db.execute("""DELETE FROM post_pump_short_events WHERE id NOT IN (
         SELECT DISTINCT event_id FROM post_pump_short_markouts)""")
 
@@ -168,7 +170,7 @@ def observe(tickers, now=None, db_path=None):
                 states=db.execute("""SELECT symbol,start_at,last_at,stage,
                         weakening_at,break_at,support,last_price,
                         flow_status,flow_delta,flow_verified_at,flow_observed_at
-                    FROM pump_cycle_state WHERE last_at>=?""",(now-180,)).fetchall()
+                    FROM pump_cycle_state WHERE last_at>=?""",(now-75,)).fetchall()
                 for state in states:
                     symbol=state["symbol"]
                     if symbol not in keys:
