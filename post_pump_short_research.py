@@ -18,6 +18,11 @@ from collections import defaultdict
 from contextlib import closing
 
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from post_pump_short_evidence import (
+    ensure_schema as ensure_evidence_schema,
+    take_cached_evidence, sampled_returns, record_quote,
+    prune_quote_samples, METRIC_NAMES, missing_counter,
+)
 
 DB_PATH = os.getenv("PUMP_WATCH_DB", "/data/pump_watch.sqlite3")
 MIN_RISE_PCT = 50.0
@@ -86,6 +91,7 @@ def _setup(db):
     )""")
     db.execute("""CREATE INDEX IF NOT EXISTS idx_post_pump_due
         ON post_pump_short_events(observed_at)""")
+    ensure_evidence_schema(db)
 
 
 def _quotes(tickers):
@@ -179,6 +185,7 @@ def observe(tickers, now=None, db_path=None):
                     # No back-filling 24h rise or flow at event time.
                     if state["start_at"]>now or state["last_at"]>now:
                         continue
+                    captured=None
                     for phase in _phases(state,now):
                         cursor=db.execute("""INSERT OR IGNORE INTO
                             post_pump_short_events(
@@ -192,6 +199,16 @@ def observe(tickers, now=None, db_path=None):
                              state["flow_status"],state["flow_delta"]))
                         if cursor.rowcount!=1:
                             continue
+                        # Snapshot cached evidence at the FIRST causal event,
+                        # never retrofit future observations on old events.
+                        if captured is None:
+                            captured=take_cached_evidence(symbol,now)
+                            captured.update(sampled_returns(db,symbol,now,price))
+                        columns=", ".join(f"{name}=?" for name in METRIC_NAMES)
+                        values=tuple(captured.get(name) for name in METRIC_NAMES)
+                        db.execute(
+                            f"UPDATE post_pump_short_events SET {columns} WHERE id=?",
+                            values+(cursor.lastrowid,))
                         db.executemany("""INSERT INTO post_pump_short_markouts
                             (event_id,horizon_min) VALUES (?,?)""",
                             ((cursor.lastrowid,h) for h in HORIZONS))
@@ -199,7 +216,18 @@ def observe(tickers, now=None, db_path=None):
                         print(f"[POST_PUMP_SHORT_EVENT] symbol={symbol} "
                               f"band={band} phase={phase} rise24={rise:+.2f}% "
                               f"retrace24={retrace:.2f}% flow={state['flow_status']} "
+                              f"missing_cached_metrics={missing_counter(captured)} "
+                              f"return5={captured.get('sampled_return_5m_pct')} "
+                              f"return15={captured.get('sampled_return_15m_pct')} "
+                              f"return60={captured.get('sampled_return_60m_pct')} "
                               "mtf=UNVERIFIED trade_approved=false",flush=True)
+            # Save a bounded quote trail for ALL observed +50% pump symbols.
+            # This happens AFTER event features, preventing self-observation
+            # from creating a fake historic return on the same scan.
+            for symbol,price,*_rest in pumps.values():
+                record_quote(db,symbol,now,price)
+            prune_quote_samples(db,now)
+
             # Forward-only markouts use ANY valid quote from the same OKX batch
             # even if the symbol is no longer a +50% 24h pump by then.
             due=db.execute("""SELECT o.event_id,o.horizon_min,
