@@ -18,6 +18,12 @@ from collections import defaultdict
 from contextlib import closing
 
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from post_pump_short_stage import (
+    setup as setup_stage_research,
+    record as record_stage_comparison,
+    prune as prune_stage_comparisons,
+    quality as stage_quality,
+)
 from post_pump_short_evidence import (
     ensure_schema as ensure_evidence_schema,
     take_cached_evidence, sampled_returns, record_quote,
@@ -92,6 +98,7 @@ def _setup(db):
     db.execute("""CREATE INDEX IF NOT EXISTS idx_post_pump_due
         ON post_pump_short_events(observed_at)""")
     ensure_evidence_schema(db)
+    setup_stage_research(db)
 
 
 def _quotes(tickers):
@@ -209,6 +216,19 @@ def observe(tickers, now=None, db_path=None):
                         db.execute(
                             f"UPDATE post_pump_short_events SET {columns} WHERE id=?",
                             values+(cursor.lastrowid,))
+                        comparison=record_stage_comparison(
+                            db,event_id=cursor.lastrowid,symbol=symbol,
+                            episode_at=state["start_at"],band=band,
+                            phase=phase,now=now,current=captured)
+                        if comparison and phase!="WATCH":
+                            print(f"[POST_PUMP_STAGE_SHIFT] symbol={symbol} "
+                                  f"band={band} phase={phase} "
+                                  f"prior={comparison['previous_phase']} "
+                                  f"flow={comparison['control']} "
+                                  f"price={comparison['price_response']} "
+                                  f"oi={comparison['oi']} "
+                                  "research_only=true no_trade_approval=true",
+                                  flush=True)
                         db.executemany("""INSERT INTO post_pump_short_markouts
                             (event_id,horizon_min) VALUES (?,?)""",
                             ((cursor.lastrowid,h) for h in HORIZONS))
@@ -257,6 +277,7 @@ def observe(tickers, now=None, db_path=None):
                         (now,lag,quote,round(gross,6),round(net,6),ident,h))
                     priced+=1
             _prune(db,now)
+            prune_stage_comparisons(db)
             db.commit()
         if inserted or priced or missed:
             print(f"[POST_PUMP_SHORT_BATCH] events={inserted} "
@@ -309,6 +330,13 @@ def report(now=None,db_path=None):
         if not rows:
             print("[POST_PUMP_SHORT_SUMMARY] events=0 "
                   "status=WAITING_FOR_STRONG_PUMPS research_only=true",flush=True)
+        # Independent strata only in a descriptive sense. An episode may
+        # appear at multiple stages or in different 24h rise bands.
+        with closing(sqlite3.connect(db_path,timeout=5)) as db:
+            for cohort in stage_quality(db):
+                print("[POST_PUMP_STAGE_QUALITY]",cohort,
+                      "descriptive_only=true no_trade_approval=true "
+                      "no_independent_sample_claim=true",flush=True)
         return result
     except (sqlite3.Error,ValueError,TypeError) as exc:
         print("[POST_PUMP_SHORT_REPORT_ERROR]",type(exc).__name__,flush=True)
