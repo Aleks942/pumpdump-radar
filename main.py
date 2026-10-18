@@ -33,6 +33,10 @@ from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pum
 from pump_cycle_research import (observe as observe_pump_cycle,
                                  observe_outcomes as observe_cycle_outcomes,
                                  report_outcomes as report_cycle_outcomes)
+from post_pump_short_research import (
+    observe as observe_post_pump_short,
+    report as report_post_pump_short,
+)
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
@@ -1522,6 +1526,16 @@ while True:
         report_cycle_outcomes()
     except Exception as cycle_exc:
         print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
+
+    # Strong (+50% / +100% observed 24h) POST-PUMP SHORT cohorts:
+    # associate existing causal pump-cycle stages with forward OKX quotes.
+    # Independent research only; never sends Telegram or approves orders.
+    try:
+        observe_post_pump_short(tickers)
+        report_post_pump_short()
+    except Exception as post_short_exc:
+        print("[POST_PUMP_SHORT_LOOP_ERROR]",
+              type(post_short_exc).__name__, flush=True)
 
     # Evaluate forward checkpoints from the same already-fetched ticker list.
     # Research-only: NEVER modifies original signal decisions or orders.
