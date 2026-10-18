@@ -63,14 +63,22 @@ def take_cached_evidence(symbol, now=None, sources=None):
               trade_flow.get_futures_windows, trade_flow.get_spot_windows).
     """
     now=time.time() if now is None else float(now)
-    if sources is None:
-        from oi_collector import read as local_oi
-        from aggregated_oi import get_aggregated_oi
-        from trade_flow_collector_v3 import get_futures_windows,get_spot_windows
-        sources=(local_oi,get_aggregated_oi,get_futures_windows,get_spot_windows)
-    local,aggregated,futures,spot=sources
     values={k:None for k in METRIC_COLUMNS}
     quality={}
+    if sources is None:
+        try:
+            from oi_collector import read as local_oi
+            from aggregated_oi import get_aggregated_oi
+            from trade_flow_collector_v3 import get_futures_windows,get_spot_windows
+            sources=(local_oi,get_aggregated_oi,get_futures_windows,get_spot_windows)
+        except ImportError as exc:
+            # Unavailable research dependency is missing evidence, NEVER
+            # a reason to interrupt the live PumpDump scanner.
+            values["evidence_captured_at"]=now
+            values["evidence_quality_json"]=json.dumps(
+                {"source_import":type(exc).__name__},sort_keys=True)
+            return values
+    local,aggregated,futures,spot=sources
     try:
         v=local(symbol,now) or {}
         quality["local_oi"]=str(v.get("quality","UNKNOWN"))
