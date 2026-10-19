@@ -10,6 +10,7 @@ import json
 import math
 import os
 import sqlite3
+import threading
 import time
 from collections import defaultdict
 
@@ -18,6 +19,8 @@ FLOW_TTL_SEC=240
 FUNDING_TTL_SEC=300
 REPORT_INTERVAL_SEC=3600
 _funding_cache={}
+_funding_pending=set()
+_funding_lock=threading.Lock()
 _last_report_at=0.0
 
 
@@ -152,43 +155,72 @@ def classify_liquidations(liquidations):
     }
 
 
-def funding_context(symbol,now=None,getter=None):
-    """Bounded OKX funding snapshot. Descriptive only, never a short trigger."""
-    now=time.time() if now is None else float(now)
-    cached=_funding_cache.get(symbol)
-    if cached and 0<=now-cached["captured_at"]<=FUNDING_TTL_SEC:
-        return dict(cached)
-    if getter is None:
-        try:
-            from money_flow_engine import get_funding
-            getter=get_funding
-        except ImportError:
-            getter=None
-    if getter is None:
-        result={"available":False,"state":"FUNDING_UNAVAILABLE",
-                "funding_pct":None,"captured_at":now,"context_only":True}
+def _funding_state(value):
+    if value is None:
+        return "FUNDING_UNAVAILABLE"
+    if value>=0.10:
+        return "EXTREME_POSITIVE"
+    if value>=0.03:
+        return "ELEVATED_POSITIVE"
+    if value<=-0.03:
+        return "NEGATIVE"
+    return "NORMAL"
+
+
+def _store_funding(symbol,value,captured_at):
+    value=_num(value)
+    result={"available":value is not None,"state":_funding_state(value),
+            "funding_pct":value,"captured_at":captured_at,
+            "context_only":True}
+    with _funding_lock:
         _funding_cache[symbol]=result
-        return dict(result)
+        _funding_pending.discard(symbol)
+    return dict(result)
+
+
+def funding_context(symbol,now=None,getter=None):
+    """Bounded OKX funding snapshot. Descriptive only, never a short trigger.
+
+    Live collection is asynchronous so a slow exchange endpoint cannot delay
+    the market scan. Injected getters stay synchronous for deterministic tests.
+    """
+    now=time.time() if now is None else float(now)
+    with _funding_lock:
+        cached=_funding_cache.get(symbol)
+        if cached and 0<=now-cached["captured_at"]<=FUNDING_TTL_SEC:
+            return dict(cached)
     inst=(symbol[:-4]+"-USDT-SWAP"
           if isinstance(symbol,str) and symbol.endswith("USDT") else symbol)
+    if getter is not None:
+        try:
+            return _store_funding(symbol,getter(inst),now)
+        except Exception:
+            return _store_funding(symbol,None,now)
+
+    with _funding_lock:
+        if symbol in _funding_pending:
+            return {"available":False,"state":"FUNDING_WARMING",
+                    "funding_pct":None,"captured_at":now,
+                    "context_only":True}
+        _funding_pending.add(symbol)
+
+    def worker():
+        try:
+            from money_flow_engine import get_funding
+            value=get_funding(inst)
+        except Exception:
+            value=None
+        _store_funding(symbol,value,time.time())
+
     try:
-        value=_num(getter(inst))
+        threading.Thread(target=worker,daemon=True,
+                         name="post-pump-funding").start()
     except Exception:
-        value=None
-    if value is None:
-        state="FUNDING_UNAVAILABLE"
-    elif value>=0.10:
-        state="EXTREME_POSITIVE"
-    elif value>=0.03:
-        state="ELEVATED_POSITIVE"
-    elif value<=-0.03:
-        state="NEGATIVE"
-    else:
-        state="NORMAL"
-    result={"available":value is not None,"state":state,
-            "funding_pct":value,"captured_at":now,"context_only":True}
-    _funding_cache[symbol]=result
-    return dict(result)
+        with _funding_lock:
+            _funding_pending.discard(symbol)
+        return _store_funding(symbol,None,now)
+    return {"available":False,"state":"FUNDING_WARMING",
+            "funding_pct":None,"captured_at":now,"context_only":True}
 
 
 def enrich(symbol,now,evidence,spot,structure,liquidations=None,db_path=None,
