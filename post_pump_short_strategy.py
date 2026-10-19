@@ -432,7 +432,9 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
                   and struct["trend_shift"]):
                 _record_phase(db,st,now,"RETEST","CLOSED_5M_RETEST_REJECTED",ev,struct)
     if st["phase"]=="RETEST" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
-        if not struct["trend_shift"] or struct["h1"]=="UP":
+        if not profile.get("liquid"):
+            st["watch_reason"]="WAITING_FOR_LIQUID_MARKET"
+        elif not struct["trend_shift"] or struct["h1"]=="UP":
             _record_phase(db,st,now,"WEAKENING","TREND_NOT_ALIGNED",ev,struct)
         elif not _evidence_ok(ev,spot):
             # Remain research watch while waiting for validated spot and OI.
@@ -490,7 +492,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             for symbol,item in eligible.items():
                 old=db.execute("""SELECT * FROM post_pump_short_strategy
                                   WHERE symbol=?""",(symbol,)).fetchone()
-                if old is None or now-old["last_seen_at"]>STALE_SYMBOL_SEC:
+                if old is None or now-old["last_seen_at"]>STALE_SYMBOL_SEC or now-old["episode_at"]>72*3600:
                     if old is not None:
                         db.execute("DELETE FROM post_pump_short_strategy WHERE symbol=?",
                                    (symbol,))
@@ -522,7 +524,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         band=?,last_price=?,last_retrace_pct=? WHERE symbol=?""",
                         (now,item["high"],item["rise"],item["band"],
                          item["last"],item["retrace"],symbol))
-            # Evaluate existing + fresh assets even after a 24h window rolled.
+            # Evaluate existing + fresh assets even after the 24h window rolls;
+            # at most one 72h research episode, never immortal on stale momentum.
             candidates=db.execute("""SELECT * FROM post_pump_short_strategy
                 WHERE last_seen_at>=? AND phase NOT IN ('READY_RESEARCH','EXPIRED')
                 ORDER BY CASE phase WHEN 'RETEST' THEN 0
@@ -544,11 +547,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     price=quotes.get(symbol)
                     if not price or not st["peak"]:
                         continue
+                    # Losing the +30% rolling threshold must not erase the
+                    # already observed episode, but must NEVER imply free
+                    # spread/liquidity at a proposed paper entry.
                     profile=dict(symbol=symbol,inst=symbol[:-4]+"-USDT-SWAP",
                                  last=price,high=st["peak"],
                                  opening=st["reference_open"],
                                  rise=st["rise_max"],band=st["band"],
-                                 spread=0,notional=0,liquid=False)
+                                 spread=MAX_SPREAD_BPS+1,
+                                 notional=0,liquid=False)
                 status,structure=_advance(db,st,profile,now,context,spot_fetch,
                                            evidence,equity_usdt)
                 if structure is not None:
@@ -599,8 +606,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             db.execute("DELETE FROM post_pump_short_spot_trades WHERE ts<?",(now-3600,))
             db.execute("DELETE FROM post_pump_short_spot_coverage WHERE last_at<?",
                        (now-STALE_SYMBOL_SEC,))
-            db.execute("DELETE FROM post_pump_short_strategy WHERE last_seen_at<?",
-                       (now-STALE_SYMBOL_SEC,))
+            db.execute("""DELETE FROM post_pump_short_strategy WHERE
+                 last_seen_at<? OR episode_at<?""",
+                       (now-STALE_SYMBOL_SEC,now-72*3600))
             db.execute("""DELETE FROM post_pump_short_strategy_outcomes WHERE audit_id IN(
                SELECT id FROM post_pump_short_strategy_audit WHERE at<?)""",(cutoff,))
             db.execute("DELETE FROM post_pump_short_strategy_audit WHERE at<?",(cutoff,))
