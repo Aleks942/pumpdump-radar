@@ -471,6 +471,11 @@ def get_flow(
         "window_seconds": seconds,
 
         "trade_count": len(rows),
+        # Per-symbol freshness: global WS health can be OK even when this
+        # individual instrument stopped receiving executions.
+        "last_trade_age_sec": (
+            now-max(row.ts for row in rows) if rows else None
+        ),
 
         "buy_count": buy_count,
         "sell_count": sell_count,

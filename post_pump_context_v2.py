@@ -32,10 +32,35 @@ def _num(value):
     return x if math.isfinite(x) else None
 
 
-def read_order_flow(symbol,now=None,db_path=None):
-    """Read already-authenticated Pump Flow result from the shared SQLite."""
+def read_order_flow(symbol,now=None,db_path=None,episode_at=None):
+    """Read authenticated Flow result, tied to a single observed pump episode."""
     now=time.time() if now is None else float(now)
     path=DB_PATH if db_path is None else db_path
+    if episode_at is not None:
+        try:
+            from post_pump_short_flow import latest
+            with sqlite3.connect(path,timeout=3) as db:
+                db.row_factory=sqlite3.Row
+                row=latest(db,symbol,now,episode_at)
+            if row is None:
+                return {"ready":False,"status":"INSUFFICIENT_DATA",
+                        "reason":"POST_PUMP_FLOW_NOT_VERIFIED"}
+            return {"ready":row["status"] in ("CONFIRMED","CONTRADICTION"),
+                    "status":row["status"],
+                    "delta_ratio":row["delta_ratio"],
+                    "price_change_pct":row["price_change_pct"],
+                    "trade_span_sec":row["trade_span_sec"],
+                    "evidence_event":row["evidence_event"],
+                    "buy_absorption_candidate":
+                        row["evidence_event"]=="BUY_ABSORPTION_CANDIDATE",
+                    "observed_at":row["observed_at"],
+                    "verified_at":row["verified_at"],
+                    "age_sec":round(now-row["verified_at"],3),
+                    "reason":row["reason"],
+                    "source":"POST_PUMP_DIRECT_AUTHENTICATED_FLOW"}
+        except sqlite3.Error as exc:
+            return {"ready":False,"status":"INSUFFICIENT_DATA",
+                    "reason":"POST_PUMP_FLOW_DB_"+type(exc).__name__}
     try:
         with sqlite3.connect(path,timeout=3) as db:
             db.row_factory=sqlite3.Row
@@ -224,10 +249,11 @@ def funding_context(symbol,now=None,getter=None):
 
 
 def enrich(symbol,now,evidence,spot,structure,liquidations=None,db_path=None,
-           funding_getter=None):
+           funding_getter=None,episode_at=None):
     """Return an enriched COPY; no gate or score is changed."""
     out=dict(evidence or {})
-    order_flow=read_order_flow(symbol,now=now,db_path=db_path)
+    order_flow=read_order_flow(symbol,now=now,db_path=db_path,
+                               episode_at=episode_at)
     bounded=classify_bounded_cvd(out,spot or {})
     capital=classify_capital(out,structure or {})
     liq=classify_liquidations(liquidations or out.get("liquidations") or {})

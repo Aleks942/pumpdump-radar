@@ -37,6 +37,7 @@ class SpotStreamTests(unittest.TestCase):
             return {"5m":{"window_ready":ready,"stream_healthy":True,
                            "quality":"READY" if ready else "WARMING",
                            "stream_stale_seconds":4,
+                           "last_trade_age_sec":3,
                            "trade_count":count,"total_quote":total,
                            "imbalance_pct":-44.0,
                            "delta_quote":-1110}}
@@ -46,7 +47,11 @@ class SpotStreamTests(unittest.TestCase):
                 r=stream.verified("TESTUSDT")
                 self.assertTrue(r["ready"])
                 self.assertEqual(r["imbalance_pct"],-44)
-            for item in (reader(count=3),reader(ready=False),reader(total=20)):
+            for item in (reader(count=3),reader(ready=False),reader(total=20),
+                         {"5m":{**reader()["5m"],
+                                "last_trade_age_sec":200}},
+                         {"5m":{**reader()["5m"],
+                                "last_trade_age_sec":None}}):
                 with patch.object(stream,"get_spot_windows",return_value=item):
                     self.assertFalse(stream.verified("TESTUSDT")["ready"])
 

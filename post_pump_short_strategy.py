@@ -17,6 +17,14 @@ import time
 from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
+from post_pump_short_flow import dispatch as dispatch_post_pump_flow
+from post_pump_short_paper import (
+    setup as setup_paper_audit,
+    register as register_paper_plan,
+    advance as advance_paper_audit,
+    report as paper_audit_report,
+    prune as prune_paper_audit,
+)
 from post_pump_context_v2 import enrich as enrich_research_evidence
 from post_pump_context_v2 import maybe_report_cohorts
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
@@ -116,6 +124,7 @@ def setup(db):
         quote_at REAL, price REAL, model_net_short_pct REAL,
         PRIMARY KEY(audit_id,horizon_min)
     )""")
+    setup_paper_audit(db)
 
 
 def parse_closed_candles(rows,seconds,now):
@@ -290,7 +299,9 @@ def _plan(price,structure,level,retrace,spread,equity):
     if (atr is None or atr<=0 or high is None or level is None
             or price<=0 or spread>MAX_SPREAD_BPS):
         return None
-    if price<level-atr*MAX_LATE_ATR:
+    # An observed rally back above the retested support invalidates a
+    # delayed short entry, even if the previous 5m candle still looked weak.
+    if price<level-atr*MAX_LATE_ATR or price>level+0.20*atr:
         return None
     stop=max(high,level+0.35*atr)*(1+0.002)
     risk=stop-price
@@ -298,7 +309,7 @@ def _plan(price,structure,level,retrace,spread,equity):
         return None
     tp1=price-2*risk
     tp2=price-3*risk
-    if tp1<=0:
+    if tp1<=0 or tp2<=0:
         return None
     # Conservative bound on risk: <=0.5% equity; equity unknown => no qty.
     equity=num(equity)
@@ -342,6 +353,9 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
     db.executemany("""INSERT OR IGNORE INTO post_pump_short_strategy_outcomes
         (audit_id,horizon_min) VALUES (?,?)""",
         [(audit_id,h) for h in WINDOWS])
+    if phase=="READY_RESEARCH" and plan is not None:
+        register_paper_plan(db,audit_id,state["symbol"],now,
+                            plan["entry"],plan["stop"],plan["tp1"])
     print(f"[SHORT_STRATEGY_STAGE] symbol={state['symbol']} "
           f"{old}->{phase} reason={reason} rise={state['rise_max']:.1f}% "
           f"retrace={state['last_retrace_pct']:.1f}% "
@@ -424,7 +438,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     # after cohort evidence proves they add value.
     ev=enrich_research_evidence(
         sym,now,ev,spot,struct,liquidations=ev.get("liquidations"),
-        db_path=db_path)
+        db_path=db_path,episode_at=st["episode_at"])
     st["last_evidence_json"]=json.dumps(ev,sort_keys=True,default=str)
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
@@ -464,6 +478,11 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         elif not _evidence_ok(ev,spot):
             # Remain research watch while waiting for validated spot and OI.
             st["watch_reason"]="WAITING_FOR_INDEPENDENT_FLOW_OI"
+        elif ((ev.get("order_flow") or {}).get("status")!="CONFIRMED"
+              or (ev.get("order_flow") or {}).get("ready") is not True):
+            # The external book/price-response verifier is independent.
+            # Never elevate to READY on local spot/futures alone.
+            st["watch_reason"]="WAITING_FOR_INDEPENDENT_ORDER_FLOW"
         else:
             plan=_plan(profile["last"],struct,st["break_level"],
                        st["last_retrace_pct"],profile["spread"],equity)
@@ -479,19 +498,27 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     return status,struct
 
 
+def _fetch_paper_1m(symbol):
+    from market_data_v3 import get_candles
+    return get_candles(symbol,bar="1m",limit=100)
+
+
 def observe(tickers,now=None,db_path=None,fetch_context=None,
-            fetch_spot=None,evidence_reader=None,equity_usdt=None):
+            fetch_spot=None,evidence_reader=None,equity_usdt=None,
+            fetch_paper_1m=None):
     """One bounded live scan, direct discovery and entirely paper decisions."""
     now=time.time() if now is None else float(now)
     path=DB_PATH if db_path is None else db_path
     context=_fetch_context if fetch_context is None else fetch_context
     spot_fetch=_fetch_spot if fetch_spot is None else fetch_spot
     evidence=take_cached_evidence if evidence_reader is None else evidence_reader
+    paper_source=_fetch_paper_1m if fetch_paper_1m is None else fetch_paper_1m
     equity_usdt=equity_usdt if equity_usdt is not None else os.getenv("POST_PUMP_EQUITY_USDT")
     quotes={}
     eligible={}
     diagnostics=dict(tickers=0,over30=0,liquid=0,active=0,
-                     context_checks=0,new=0,outcomes=0)
+                     context_checks=0,new=0,outcomes=0,paper_checks=0)
+    pending_flow=[]
     for ticker in tickers or ():
         if not isinstance(ticker,dict):
             continue
@@ -586,6 +613,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                                            evidence,equity_usdt,db_path=path)
                 if structure is not None:
                     diagnostics["context_checks"]+=1
+                # Requests are launched AFTER the SQLite transaction commits.
+                if st["phase"] in ("TREND_SHIFT","RETEST") and st["phase_at"]==now:
+                    pending_flow.append((symbol,profile["last"],st["episode_at"]))
                 db.execute("""UPDATE post_pump_short_strategy SET
                     last_seen_at=?,phase=?,phase_at=?,peak=?,rise_max=?,band=?,
                     break_level=?,break_candle_ts=?,watch_reason=?,
@@ -632,7 +662,10 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                             WHERE audit_id=? AND horizon_min=?""",
                             (now,quote,round(net,6),row["audit_id"],row["horizon_min"]))
                         diagnostics["outcomes"]+=1
+            diagnostics["paper_checks"]=advance_paper_audit(
+                db,now,paper_source)
             cutoff=now-30*86400
+            prune_paper_audit(db,cutoff)
             db.execute("DELETE FROM post_pump_short_spot_trades WHERE ts<?",(now-3600,))
             db.execute("DELETE FROM post_pump_short_spot_coverage WHERE last_at<?",
                        (now-STALE_SYMBOL_SEC,))
@@ -647,9 +680,18 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     except (sqlite3.Error,ValueError,TypeError,OverflowError) as exc:
         print("[SHORT_STRATEGY_ERROR]",type(exc).__name__,str(exc)[:170],flush=True)
         return diagnostics
+    for symbol,price,episode in pending_flow:
+        dispatch_post_pump_flow(symbol,price,episode,db_path=path,now=now)
     global last_status_at
     if now-last_status_at>=3600:
         last_status_at=now
         print("[SHORT_STRATEGY_FUNNEL]",diagnostics,
               "30pct_uses_24h_high_open=true paper_only=true",flush=True)
+        try:
+            with closing(sqlite3.connect(path,timeout=5)) as report_db:
+                print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
+                      "first_touch_closed_1m=true no_live_orders=true",
+                      flush=True)
+        except sqlite3.Error:
+            print("[POST_PUMP_PAPER_REPORT_ERROR] sqlite",flush=True)
     return diagnostics
