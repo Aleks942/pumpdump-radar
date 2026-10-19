@@ -23,19 +23,97 @@ _thread=None
 _lease_at=0.0
 MIN_STREAM_TENURE_SEC=15*60
 _WS="wss://ws.okx.com:8443/ws/v5/public"
+_SPOT_INSTRUMENTS_URL="https://www.okx.com/api/v5/public/instruments"
+SPOT_UNIVERSE_TTL_SEC=30*60
+_SPOT_UNIVERSE=set()
+_SPOT_UNIVERSE_AT=0.0
+_SPOT_UNIVERSE_STATUS="UNKNOWN"
+
+
+def _refresh_spot_universe(now=None,request_get=None):
+    """Return (available_pairs,status) using a bounded cached OKX instrument list.
+
+    Missing contracts are SPOT_UNAVAILABLE. A transport/schema failure is
+    SPOT_DATA_ERROR and must never be converted into a bearish/neutral vote.
+    """
+    global _SPOT_UNIVERSE,_SPOT_UNIVERSE_AT,_SPOT_UNIVERSE_STATUS
+    now=time.time() if now is None else float(now)
+    with _LOCK:
+        if _SPOT_UNIVERSE and 0<=now-_SPOT_UNIVERSE_AT<=SPOT_UNIVERSE_TTL_SEC:
+            return set(_SPOT_UNIVERSE),_SPOT_UNIVERSE_STATUS
+    if request_get is None:
+        try:
+            import requests
+            request_get=requests.get
+        except ImportError:
+            request_get=None
+    if request_get is None:
+        with _LOCK:
+            if _SPOT_UNIVERSE:
+                _SPOT_UNIVERSE_STATUS="STALE_CACHE"
+                return set(_SPOT_UNIVERSE),_SPOT_UNIVERSE_STATUS
+            _SPOT_UNIVERSE_STATUS="SPOT_DATA_ERROR"
+            return set(),_SPOT_UNIVERSE_STATUS
+    try:
+        response=request_get(_SPOT_INSTRUMENTS_URL,
+                             params={"instType":"SPOT"},timeout=6)
+        if getattr(response,"status_code",None)!=200:
+            raise RuntimeError("HTTP_"+str(getattr(response,"status_code","?")))
+        raw=response.json()
+        rows=raw.get("data") if isinstance(raw,dict) and raw.get("code")=="0" else None
+        if not isinstance(rows,list):
+            raise ValueError("BAD_SPOT_INSTRUMENT_SCHEMA")
+        universe={str(x.get("instId")) for x in rows if isinstance(x,dict)
+                  and x.get("state","live")=="live"
+                  and isinstance(x.get("instId"),str)
+                  and x.get("instId").endswith("-USDT")}
+        if not universe:
+            raise ValueError("EMPTY_SPOT_UNIVERSE")
+        with _LOCK:
+            _SPOT_UNIVERSE=universe
+            _SPOT_UNIVERSE_AT=now
+            _SPOT_UNIVERSE_STATUS="READY"
+        return set(universe),"READY"
+    except Exception as exc:
+        with _LOCK:
+            if _SPOT_UNIVERSE:
+                _SPOT_UNIVERSE_STATUS="STALE_CACHE"
+                print("[POST_PUMP_SPOT_UNIVERSE_STALE]",
+                      type(exc).__name__,flush=True)
+                return set(_SPOT_UNIVERSE),"STALE_CACHE"
+            _SPOT_UNIVERSE_STATUS="SPOT_DATA_ERROR"
+        print("[POST_PUMP_SPOT_UNIVERSE_ERROR]",type(exc).__name__,flush=True)
+        return set(),"SPOT_DATA_ERROR"
+
+
+def spot_availability(pair,now=None,request_get=None):
+    universe,status=_refresh_spot_universe(now=now,request_get=request_get)
+    if not universe and status=="SPOT_DATA_ERROR":
+        return {"available":False,"reason":"SPOT_DATA_ERROR"}
+    if pair not in universe:
+        return {"available":False,"reason":"SPOT_UNAVAILABLE"}
+    return {"available":True,"reason":"SPOT_AVAILABLE",
+            "universe_status":status}
 
 
 def watch(symbols):
     global _watched,_thread,_lease_at
     # Preserve continuity: rotating three subscriptions every 60s would
     # prevent ANY 5-minute flow window from ever warming up.
-    candidates=tuple(dict.fromkeys(
+    raw_candidates=tuple(dict.fromkeys(
         s[:-4]+"-USDT" for s in (symbols or ())
         if isinstance(s,str) and s.endswith("USDT") and len(s)>4))
     now=time.time()
+    universe,universe_status=_refresh_spot_universe(now=now)
+    candidates=tuple(x for x in raw_candidates if x in universe)
     with _LOCK:
         old=_watched
         available=set(candidates)
+        if not universe and universe_status=="SPOT_DATA_ERROR" and old:
+            # A temporary instrument-list failure must not rotate a healthy,
+            # already validated subscription. Keep the old set until refresh.
+            candidates=old
+            available=set(old)
         if old and all(p in available for p in old) and now-_lease_at<MIN_STREAM_TENURE_SEC:
             target=old
         else:
@@ -134,6 +212,11 @@ def _worker():
 
 def verified(symbol):
     """5-minute *streamed* taker imbalance, not an unsupported CVD assertion."""
+    pair=(symbol[:-4]+"-USDT" if isinstance(symbol,str) and symbol.endswith("USDT")
+          else str(symbol or ""))
+    availability=spot_availability(pair)
+    if not availability.get("available"):
+        return {"ready":False,"reason":availability.get("reason","SPOT_DATA_ERROR")}
     try:
         item=(get_spot_windows(symbol) or {}).get("5m") or {}
         age=item.get("stream_stale_seconds")
