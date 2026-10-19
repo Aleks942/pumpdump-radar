@@ -62,12 +62,12 @@ def _previous(db,symbol,episode_at,band,phase,now):
             futures_taker_5m_imbalance_pct,
             spot_taker_5m_imbalance_pct
         FROM post_pump_short_events
-        WHERE symbol=? AND episode_at=? AND rise_band=?
+        WHERE symbol=? AND episode_at=?
           AND phase IN ({placeholders})
           AND observed_at<? AND observed_at>=?
           AND evidence_captured_at IS NOT NULL
         ORDER BY {clause} DESC, observed_at DESC LIMIT 1""",
-        (symbol,episode_at,band,*prior_phases,now,now-MAX_PREVIOUS_GAP_SEC)
+        (symbol,episode_at,*prior_phases,now,now-MAX_PREVIOUS_GAP_SEC)
     ).fetchone()
 
 
