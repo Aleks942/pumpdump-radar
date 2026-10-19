@@ -17,6 +17,7 @@ import time
 from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
+from post_pump_short_flow import dispatch as dispatch_post_pump_flow
 from post_pump_short_paper import (
     setup as setup_paper_audit,
     register as register_paper_plan,
@@ -437,7 +438,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     # after cohort evidence proves they add value.
     ev=enrich_research_evidence(
         sym,now,ev,spot,struct,liquidations=ev.get("liquidations"),
-        db_path=db_path)
+        db_path=db_path,episode_at=st["episode_at"])
     st["last_evidence_json"]=json.dumps(ev,sort_keys=True,default=str)
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
@@ -477,6 +478,11 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         elif not _evidence_ok(ev,spot):
             # Remain research watch while waiting for validated spot and OI.
             st["watch_reason"]="WAITING_FOR_INDEPENDENT_FLOW_OI"
+        elif ((ev.get("order_flow") or {}).get("status")!="CONFIRMED"
+              or (ev.get("order_flow") or {}).get("ready") is not True):
+            # The external book/price-response verifier is independent.
+            # Never elevate to READY on local spot/futures alone.
+            st["watch_reason"]="WAITING_FOR_INDEPENDENT_ORDER_FLOW"
         else:
             plan=_plan(profile["last"],struct,st["break_level"],
                        st["last_retrace_pct"],profile["spread"],equity)
@@ -512,6 +518,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     eligible={}
     diagnostics=dict(tickers=0,over30=0,liquid=0,active=0,
                      context_checks=0,new=0,outcomes=0,paper_checks=0)
+    pending_flow=[]
     for ticker in tickers or ():
         if not isinstance(ticker,dict):
             continue
@@ -606,6 +613,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                                            evidence,equity_usdt,db_path=path)
                 if structure is not None:
                     diagnostics["context_checks"]+=1
+                # Requests are launched AFTER the SQLite transaction commits.
+                if st["phase"] in ("TREND_SHIFT","RETEST") and st["phase_at"]==now:
+                    pending_flow.append((symbol,profile["last"],st["episode_at"]))
                 db.execute("""UPDATE post_pump_short_strategy SET
                     last_seen_at=?,phase=?,phase_at=?,peak=?,rise_max=?,band=?,
                     break_level=?,break_candle_ts=?,watch_reason=?,
@@ -670,6 +680,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     except (sqlite3.Error,ValueError,TypeError,OverflowError) as exc:
         print("[SHORT_STRATEGY_ERROR]",type(exc).__name__,str(exc)[:170],flush=True)
         return diagnostics
+    for symbol,price,episode in pending_flow:
+        dispatch_post_pump_flow(symbol,price,episode,db_path=path,now=now)
     global last_status_at
     if now-last_status_at>=3600:
         last_status_at=now
