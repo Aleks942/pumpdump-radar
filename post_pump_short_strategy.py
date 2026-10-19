@@ -520,11 +520,12 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     diagnostics["new"]+=1
                 else:
                     # Keep state even if the ticker rose in a different band.
+                    # Preserve the *previous* peak until the stage engine
+                    # compares the fresh price against it. Prematurely
+                    # updating peak here would make BUYERS_RECLAIMED_NEW_HIGH
+                    # mathematically unreachable.
                     db.execute("""UPDATE post_pump_short_strategy SET
-                        last_seen_at=?,peak=MAX(peak,?),rise_max=MAX(rise_max,?),
-                        band=?,last_price=?,last_retrace_pct=? WHERE symbol=?""",
-                        (now,item["high"],item["rise"],item["band"],
-                         item["last"],item["retrace"],symbol))
+                        last_seen_at=? WHERE symbol=?""",(now,symbol))
             # Evaluate existing + fresh assets even after the 24h window rolls;
             # at most one 72h research episode, never immortal on stale momentum.
             candidates=db.execute("""SELECT * FROM post_pump_short_strategy
