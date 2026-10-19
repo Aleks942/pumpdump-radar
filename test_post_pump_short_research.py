@@ -65,6 +65,41 @@ class PostPumpResearchTests(unittest.TestCase):
         self.assertEqual(result[0],"DONE")
         self.assertAlmostEqual(result[1],2.905,places=4)
 
+    def test_30_percent_minimum_and_three_nonoverlapping_rise_bands(self):
+        # 24h high/open is the observable rolling-day rise, not last/open.
+        self.assertEqual(post.MIN_RISE_PCT,30.0)
+        cases=[
+            (129.99,None),
+            (130.0,"30_TO_49"),
+            (149.99,"30_TO_49"),
+            (150.0,"50_TO_99"),
+            (199.99,"50_TO_99"),
+            (200.0,"100_PLUS"),
+        ]
+        for high,band in cases:
+            with self.subTest(high=high):
+                # At the current peak, volume/spread checks are otherwise valid.
+                item=post._ticker(ticker(price=high,high=high))
+                self.assertEqual(item[-1] if item else None,band)
+        self.assertEqual(post.observe(
+            [ticker(price=134,high=134)],self.at,self.path),(1,0))
+        self.assertEqual(self.events(),[("WATCH","30_TO_49",134,0)])
+
+    def test_30_to_50_to_100_is_forward_only_not_retroactive(self):
+        self.assertEqual(post.observe(
+            [ticker(price=135,high=135)],self.at,self.path),(1,0))
+        self.update_cycle(self.at+60,"PUMP_CONTINUATION",152)
+        self.assertEqual(post.observe(
+            [ticker(price=152,high=152)],self.at+60,self.path),(1,0))
+        self.update_cycle(self.at+120,"PUMP_CONTINUATION",205)
+        self.assertEqual(post.observe(
+            [ticker(price=205,high=205)],self.at+120,self.path),(1,0))
+        self.assertEqual([x[:2] for x in self.events()],[
+            ("WATCH","30_TO_49"),("WATCH","50_TO_99"),
+            ("WATCH","100_PLUS")])
+        # No overwriting a prior band to make history look more predictive.
+        self.assertEqual([x[2] for x in self.events()],[135,152,205])
+
     def test_100_plus_is_separate_real_time_band_not_fake_backfill(self):
         self.assertEqual(post.observe([ticker()],self.at,self.path),(1,0))
         self.update_cycle(self.at+60,"PUMP_CONTINUATION",198)
@@ -113,7 +148,7 @@ class PostPumpResearchTests(unittest.TestCase):
 
     def test_no_state_or_no_valid_24h_quote_is_not_a_signal(self):
         self.assertEqual(post.observe(
-            [ticker(high=140,price=120)],self.at,self.path),(0,0))
+            [ticker(high=129,price=120)],self.at,self.path),(0,0))
         self.assertEqual(post.observe(
             [ticker(volume=1000)],self.at,self.path),(0,0))
         self.assertEqual(post.observe(
