@@ -1527,7 +1527,7 @@ while True:
     except Exception as cycle_exc:
         print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
-    # Strong (+50% / +100% observed 24h) POST-PUMP SHORT cohorts:
+    # Strong (+30% / +50% / +100% observed 24h) POST-PUMP SHORT cohorts:
     # associate existing causal pump-cycle stages with forward OKX quotes.
     # Independent research only; never sends Telegram or approves orders.
     try:
