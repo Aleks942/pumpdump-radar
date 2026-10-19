@@ -585,10 +585,14 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 if lag<0:
                     continue
                 quote=quotes.get(row["symbol"])
-                if lag>300 or quote is None:
+                if lag>300:
                     db.execute("""UPDATE post_pump_short_strategy_outcomes
                         SET status='MISSING' WHERE audit_id=? AND horizon_min=?""",
                         (row["audit_id"],row["horizon_min"]))
+                elif quote is None:
+                    # A temporarily unavailable quote is not a confirmed
+                    # missing 5/15/30/60m outcome until grace expires.
+                    continue
                 else:
                     # Markouts at every causal phase are descriptive counterfactuals,
                     # not trades, first-touch TP/SL fills, or execution results.
