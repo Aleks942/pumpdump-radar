@@ -401,6 +401,22 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
     except Exception as exc:
         ev=dict(evidence_error=type(exc).__name__)
     ev["verified_spot"]=spot
+    # Existing liquidation stream cache; no new REST or WebSocket.
+    # Incomplete coverage is reported as partial, never "zero liquidation".
+    try:
+        from liquidation_engine import get_liquidation_summary
+        liq=get_liquidation_summary(sym) or {}
+        ev["liquidations"]={
+            "quality":liq.get("quality","UNAVAILABLE"),
+            "available":liq.get("available") is True,
+            "complete":liq.get("complete") is True,
+            "event_count":liq.get("event_count"),
+            "long_usdt":liq.get("long_liq") if liq.get("available") else None,
+            "short_usdt":liq.get("short_liq") if liq.get("available") else None,
+        }
+    except Exception as exc:
+        ev["liquidations"]={"available":False,
+                            "quality":type(exc).__name__}
     st["last_evidence_json"]=json.dumps(ev,sort_keys=True,default=str)
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
