@@ -54,7 +54,10 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         patcher=patch.object(
             strat,"enrich_research_evidence",
             side_effect=lambda symbol,now,evidence,spot,structure,
-                               liquidations=None,db_path=None: dict(evidence))
+                               liquidations=None,db_path=None,episode_at=None:
+                dict(evidence,order_flow={"ready":True,"status":"CONFIRMED",
+                     "price_change_pct":-0.09,
+                     "source":"POST_PUMP_DIRECT_AUTHENTICATED_FLOW"}))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -198,6 +201,49 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertGreater(plan["stop"],plan["entry"])
         self.assertIsNotNone(plan["quantity"])
         self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI")
+
+    def test_missing_independent_order_flow_blocks_research_ready(self):
+        with patch.object(strat,"analyze_structure",
+                          side_effect=lambda a,b,c,now:
+                            structure(now,broken=now>=NOW+130)):
+          with patch.object(strat,"spot_status",return_value={
+                  "ready":True,"imbalance_pct":-50,
+                  "reason":"OVERLAP_VERIFIED_5M"}):
+            with patch.object(strat,"enrich_research_evidence",
+                              side_effect=lambda *args,**kwargs:
+                                  {"futures_taker_5m_imbalance_pct":-30,
+                                   "local_oi_5m_pct":-0.7,
+                                   "order_flow":{"status":"INSUFFICIENT_DATA",
+                                                 "ready":False}}):
+                self.drive(NOW,last=115)
+                self.drive(NOW+130,last=111)
+                self.drive(NOW+260,last=110)
+                self.drive(NOW+390,last=110)
+        state,events=self.data()
+        self.assertEqual(state[0]["phase"],"RETEST")
+        self.assertEqual(state[0]["watch_reason"],
+                         "WAITING_FOR_INDEPENDENT_ORDER_FLOW")
+        self.assertNotIn("READY_RESEARCH",[e["phase"] for e in events])
+
+    def test_paper_plan_registered_only_after_final_research_confirmation(self):
+        with patch.object(strat,"analyze_structure",
+                          side_effect=lambda a,b,c,now:
+                              structure(now,broken=now>=NOW+130)):
+          with patch.object(strat,"spot_status",return_value={
+                  "ready":True,"imbalance_pct":-40,
+                  "reason":"OVERLAP_VERIFIED_5M"}):
+            self.drive(NOW,last=115,equity_usdt=50)
+            self.drive(NOW+130,last=111,equity_usdt=50)
+            self.drive(NOW+260,last=110,equity_usdt=50)
+            self.drive(NOW+390,last=110,equity_usdt=50)
+        with sqlite3.connect(self.path) as db:
+            rows=db.execute("""SELECT status,signal_price,stop,tp1,model_only
+                FROM post_pump_paper_trades""").fetchall()
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0][0],"PENDING")
+        self.assertLess(rows[0][1],rows[0][2])
+        self.assertGreater(rows[0][1],rows[0][3])
+        self.assertEqual(rows[0][4],1)
 
     def test_new_price_high_invalidates_prior_short_thesis(self):
         with patch.object(strat,"analyze_structure",
