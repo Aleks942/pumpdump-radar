@@ -1,6 +1,6 @@
 """Research-only POST-PUMP SHORT cohorts inside the existing PumpDump Radar.
 
-Separate +50-99% / +100% (24h high versus 24h opening quote) at observation
+Separate +30-49% / +50-99% / +100% (24h high versus 24h opening quote) at observation
 time. Correlate causal pump_cycle stage transitions with later OKX ticker
 markouts. No new API calls, Telegram, orders, scores, risk or live trade gates.
 
@@ -31,7 +31,7 @@ from post_pump_short_evidence import (
 )
 
 DB_PATH = os.getenv("PUMP_WATCH_DB", "/data/pump_watch.sqlite3")
-MIN_RISE_PCT = 50.0
+MIN_RISE_PCT = 30.0
 MIN_QUOTE_VOLUME_USDT = 10_000_000.0
 MAX_SPREAD_BPS = 40.0
 HORIZONS = (5, 15, 30, 60)
@@ -73,7 +73,9 @@ def _ticker(t):
     if rise < MIN_RISE_PCT:
         return None
     retrace = 100*(1-price/high)
-    return (symbol, price, rise, retrace, "100_PLUS" if rise >= 100 else "50_TO_99")
+    return (symbol, price, rise, retrace,
+            "100_PLUS" if rise >= 100 else
+            "50_TO_99" if rise >= 50 else "30_TO_49")
 
 
 def _setup(db):
@@ -241,7 +243,7 @@ def observe(tickers, now=None, db_path=None):
                               f"return15={captured.get('sampled_return_15m_pct')} "
                               f"return60={captured.get('sampled_return_60m_pct')} "
                               "mtf=UNVERIFIED trade_approved=false",flush=True)
-            # Save a bounded quote trail for ALL observed +50% pump symbols.
+            # Save a bounded quote trail for ALL observed +30% pump symbols.
             # This happens AFTER event features, preventing self-observation
             # from creating a fake historic return on the same scan.
             for symbol,price,*_rest in pumps.values():
@@ -249,7 +251,7 @@ def observe(tickers, now=None, db_path=None):
             prune_quote_samples(db,now)
 
             # Forward-only markouts use ANY valid quote from the same OKX batch
-            # even if the symbol is no longer a +50% 24h pump by then.
+            # even if the symbol is no longer a +30% 24h pump by then.
             due=db.execute("""SELECT o.event_id,o.horizon_min,
                         a.symbol,a.observed_at,a.reference_price,a.phase,
                         a.rise_band FROM post_pump_short_markouts o
@@ -292,7 +294,7 @@ def observe(tickers, now=None, db_path=None):
 
 
 def report(now=None,db_path=None):
-    """Hourly descriptive report of distinct +50%/+100% stage markouts."""
+    """Hourly descriptive report of distinct +30%/+50%/+100% stage markouts."""
     global _last_report_at
     now=time.time() if now is None else float(now)
     if _last_report_at is not None and now-_last_report_at<3600:
