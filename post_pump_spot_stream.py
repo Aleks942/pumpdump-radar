@@ -20,22 +20,34 @@ _LOCK=threading.RLock()
 _watched=()
 _socket=None
 _thread=None
+_lease_at=0.0
+MIN_STREAM_TENURE_SEC=15*60
 _WS="wss://ws.okx.com:8443/ws/v5/public"
 
 
 def watch(symbols):
-    global _watched,_thread
-    target=tuple(sorted({s[:-4]+"-USDT" for s in (symbols or ())
-                         if isinstance(s,str) and s.endswith("USDT")
-                         and len(s)>4}))[:3]
+    global _watched,_thread,_lease_at
+    # Preserve continuity: rotating three subscriptions every 60s would
+    # prevent ANY 5-minute flow window from ever warming up.
+    candidates=tuple(dict.fromkeys(
+        s[:-4]+"-USDT" for s in (symbols or ())
+        if isinstance(s,str) and s.endswith("USDT") and len(s)>4))
+    now=time.time()
     with _LOCK:
         old=_watched
-        _watched=target
+        available=set(candidates)
+        if old and all(p in available for p in old) and now-_lease_at<MIN_STREAM_TENURE_SEC:
+            target=old
+        else:
+            target=tuple(candidates[:3])
+        if target!=old:
+            _watched=target
+            _lease_at=now
         if _thread is None or not _thread.is_alive():
             _thread=threading.Thread(target=_worker,daemon=True,
                                      name="post-pump-spot-flow")
             _thread.start()
-        if old!=target and _socket is not None:
+        if target!=old and _socket is not None:
             try:
                 _socket.close()
             except Exception:
