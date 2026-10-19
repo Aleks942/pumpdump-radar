@@ -102,10 +102,11 @@ def setup(db):
         phase TEXT NOT NULL, reason TEXT NOT NULL,
         rise_pct REAL NOT NULL, retrace_pct REAL NOT NULL,
         evidence_json TEXT, structure_json TEXT,
+        reference_price REAL NOT NULL,
         entry REAL, stop REAL, tp1 REAL, tp2 REAL,
         risk_fraction REAL, quantity REAL,
         paper_only INTEGER NOT NULL DEFAULT 1,
-        UNIQUE(symbol,episode_at,phase)
+        UNIQUE(symbol,episode_at,phase,at)
     )""")
     db.execute("""CREATE TABLE IF NOT EXISTS post_pump_short_strategy_outcomes(
         audit_id INTEGER NOT NULL, horizon_min INTEGER NOT NULL,
@@ -323,18 +324,19 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
     state["watch_reason"]=reason
     db.execute("""INSERT OR IGNORE INTO post_pump_short_strategy_audit(
         symbol,episode_at,at,phase,reason,rise_pct,retrace_pct,
-        evidence_json,structure_json,entry,stop,tp1,tp2,
+        evidence_json,structure_json,reference_price,entry,stop,tp1,tp2,
         risk_fraction,quantity)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (state["symbol"],state["episode_at"],now,phase,reason,
          state["rise_max"],state["last_retrace_pct"],payload,structur,
+         state["last_price"],
          plan["entry"] if plan else None,plan["stop"] if plan else None,
          plan["tp1"] if plan else None,plan["tp2"] if plan else None,
          plan["risk_fraction"] if plan else None,
          plan["quantity"] if plan else None))
     audit_id=db.execute("""SELECT id FROM post_pump_short_strategy_audit
-        WHERE symbol=? AND episode_at=? AND phase=?""",
-        (state["symbol"],state["episode_at"],phase)).fetchone()["id"]
+        WHERE symbol=? AND episode_at=? AND phase=? AND at=?""",
+        (state["symbol"],state["episode_at"],phase,now)).fetchone()["id"]
     db.executemany("""INSERT OR IGNORE INTO post_pump_short_strategy_outcomes
         (audit_id,horizon_min) VALUES (?,?)""",
         [(audit_id,h) for h in WINDOWS])
@@ -566,7 +568,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                      st["last_evidence_json"],st["last_structure_json"],symbol))
             # Forward quote markouts; not TP/SL first-touch execution.
             due=db.execute("""SELECT o.audit_id,o.horizon_min,
-                a.symbol,a.at,a.entry FROM post_pump_short_strategy_outcomes o
+                a.symbol,a.at,a.reference_price FROM post_pump_short_strategy_outcomes o
                 JOIN post_pump_short_strategy_audit a ON a.id=o.audit_id
                 WHERE o.status='PENDING' AND a.at<=? LIMIT 2000""",(now,)).fetchall()
             for row in due:
@@ -579,18 +581,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         SET status='MISSING' WHERE audit_id=? AND horizon_min=?""",
                         (row["audit_id"],row["horizon_min"]))
                 else:
-                    # The reference quote is available from event's original
-                    # stage timestamp, never retroactively replaced.
-                    ref=db.execute("""SELECT last_price FROM
-                        post_pump_short_strategy WHERE symbol=?""",
-                        (row["symbol"],)).fetchone()
-                    # Audit tables are descriptive only if no entry quote saved.
-                    if row["entry"] is None:
+                    # Markouts at every causal phase are descriptive counterfactuals,
+                    # not trades, first-touch TP/SL fills, or execution results.
+                    baseline=row["reference_price"]
+                    if baseline is None or baseline<=0:
                         db.execute("""UPDATE post_pump_short_strategy_outcomes
-                          SET status='NO_ENTRY' WHERE audit_id=? AND horizon_min=?""",
+                          SET status='NO_BASELINE' WHERE audit_id=? AND horizon_min=?""",
                           (row["audit_id"],row["horizon_min"]))
                     else:
-                        net=100*(row["entry"]-quote)/row["entry"]-ROUND_TRIP_COST_PCT
+                        net=100*(baseline-quote)/baseline-ROUND_TRIP_COST_PCT
                         db.execute("""UPDATE post_pump_short_strategy_outcomes SET
                             status='DONE',quote_at=?,price=?,model_net_short_pct=?
                             WHERE audit_id=? AND horizon_min=?""",
