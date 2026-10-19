@@ -191,6 +191,42 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertIsNotNone(plan["quantity"])
         self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI")
 
+    def test_new_price_high_invalidates_prior_short_thesis(self):
+        with patch.object(strat,"analyze_structure",
+            side_effect=lambda a,b,c,now:structure(
+                now,broken=now>NOW)):
+            self.drive(NOW,last=115)
+            self.drive(NOW+130,last=111)
+            self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
+            # Old peak was 150. Ticker prints a NEW 151 high.
+            self.drive(NOW+260,last=151,high=151)
+        st,events=self.data()
+        self.assertEqual(st[0]["phase"],"WATCH")
+        self.assertIsNone(st[0]["break_level"])
+        self.assertIn("BUYERS_RECLAIMED_NEW_HIGH",[x["reason"] for x in events])
+
+    def test_no_approval_after_market_liquidity_disappears(self):
+        with patch.object(strat,"analyze_structure",
+            side_effect=lambda a,b,c,now:structure(now,broken=now>NOW)):
+            with patch.object(strat,"spot_status",return_value={
+                "ready":True,"imbalance_pct":-60,
+                "reason":"OVERLAP_VERIFIED_5M"}):
+                self.drive(NOW,last=115)
+                self.drive(NOW+130,last=111)
+                self.drive(NOW+260,last=110)
+                # Hourly OKX liquidity is now unavailable while the old
+                # stage still exists. No imaginary zero spread is allowed.
+                bad={**ticker(last=109),"volCcy24h":"1"}
+                strat.observe([bad],NOW+390,self.path,
+                    fetch_context=lambda symbol:{
+                        "5m":[],"15m":[],"1H":[]},
+                    fetch_spot=lambda symbol:[],
+                    evidence_reader=evidence,equity_usdt=50)
+        st,events=self.data()
+        self.assertEqual(st[0]["phase"],"RETEST")
+        self.assertEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
+        self.assertNotIn("READY_RESEARCH",[x["phase"] for x in events])
+
     def test_no_real_decision_when_spot_missing_despite_break_and_retest(self):
         with patch.object(strat,"analyze_structure",
             side_effect=lambda a,b,c,now:structure(now,broken=now>NOW)):
