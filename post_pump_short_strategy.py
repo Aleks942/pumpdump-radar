@@ -17,6 +17,8 @@ import time
 from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
+from post_pump_context_v2 import enrich as enrich_research_evidence
+from post_pump_context_v2 import maybe_report_cohorts
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from post_pump_spot_stream import (
     watch as watch_spot_stream,
@@ -367,7 +369,7 @@ def _fetch_spot(symbol):
     return data.get("data") if data.get("code")=="0" else None
 
 
-def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
+def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_path=None):
     sym=st["symbol"]
     ws_spot=(verified_spot_stream(sym) if spot_reader is _fetch_spot
              else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
@@ -417,6 +419,12 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
     except Exception as exc:
         ev["liquidations"]={"available":False,
                             "quality":type(exc).__name__}
+    # Enrich the immutable research snapshot without changing the existing
+    # READY_RESEARCH gate. These features are measured first, promoted only
+    # after cohort evidence proves they add value.
+    ev=enrich_research_evidence(
+        sym,now,ev,spot,struct,liquidations=ev.get("liquidations"),
+        db_path=db_path)
     st["last_evidence_json"]=json.dumps(ev,sort_keys=True,default=str)
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
@@ -575,7 +583,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                                  spread=MAX_SPREAD_BPS+1,
                                  notional=0,liquid=False)
                 status,structure=_advance(db,st,profile,now,context,spot_fetch,
-                                           evidence,equity_usdt)
+                                           evidence,equity_usdt,db_path=path)
                 if structure is not None:
                     diagnostics["context_checks"]+=1
                 db.execute("""UPDATE post_pump_short_strategy SET
@@ -634,6 +642,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             db.execute("""DELETE FROM post_pump_short_strategy_outcomes WHERE audit_id IN(
                SELECT id FROM post_pump_short_strategy_audit WHERE at<?)""",(cutoff,))
             db.execute("DELETE FROM post_pump_short_strategy_audit WHERE at<?",(cutoff,))
+            maybe_report_cohorts(db,now)
             db.commit()
     except (sqlite3.Error,ValueError,TypeError,OverflowError) as exc:
         print("[SHORT_STRATEGY_ERROR]",type(exc).__name__,str(exc)[:170],flush=True)
