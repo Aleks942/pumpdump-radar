@@ -24,10 +24,12 @@ class DirectFlowTests(unittest.TestCase):
         flow._recent.clear()
 
     def store(self,status="CONFIRMED",reason="TAKER_PRESSURE_PRICE_ALIGNED"):
-        return flow.store_result(self.db,"TESTUSDT",AT-1800,
+        ok=flow.store_result(self.db,"TESTUSDT",AT-1800,
               AT,{"status":status,"finished_at":AT+20,"delta_ratio":-0.5,
                   "price_change_pct":-0.1,"trade_span_sec":20,
                   "reason":reason,"evidence_event":"NONE"},AT+22)
+        self.db.commit()  # Other connection must only read committed results.
+        return ok
 
     def test_confirmed_result_fresh_and_matched_to_episode(self):
         self.assertTrue(self.store())
