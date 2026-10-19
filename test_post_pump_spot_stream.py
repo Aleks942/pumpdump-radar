@@ -40,13 +40,15 @@ class SpotStreamTests(unittest.TestCase):
                            "trade_count":count,"total_quote":total,
                            "imbalance_pct":-44.0,
                            "delta_quote":-1110}}
-        with patch.object(stream,"get_spot_windows",return_value=reader()):
-            r=stream.verified("TESTUSDT")
-            self.assertTrue(r["ready"])
-            self.assertEqual(r["imbalance_pct"],-44)
-        for item in (reader(count=3),reader(ready=False),reader(total=20)):
-            with patch.object(stream,"get_spot_windows",return_value=item):
-                self.assertFalse(stream.verified("TESTUSDT")["ready"])
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=({"TEST-USDT"},"READY")):
+            with patch.object(stream,"get_spot_windows",return_value=reader()):
+                r=stream.verified("TESTUSDT")
+                self.assertTrue(r["ready"])
+                self.assertEqual(r["imbalance_pct"],-44)
+            for item in (reader(count=3),reader(ready=False),reader(total=20)):
+                with patch.object(stream,"get_spot_windows",return_value=item):
+                    self.assertFalse(stream.verified("TESTUSDT")["ready"])
 
     def test_subscription_is_stable_for_warmup(self):
         universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
