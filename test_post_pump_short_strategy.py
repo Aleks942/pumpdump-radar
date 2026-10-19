@@ -49,6 +49,14 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path=str(Path(tmp.name)/"watch.sqlite")
         self.calls=[]
+        # Strategy progression tests stay deterministic and network-free;
+        # feature enrichment has its own dedicated test module.
+        patcher=patch.object(
+            strat,"enrich_research_evidence",
+            side_effect=lambda symbol,now,evidence,spot,structure,
+                               liquidations=None,db_path=None: dict(evidence))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def data(self):
         with sqlite3.connect(self.path) as db:
