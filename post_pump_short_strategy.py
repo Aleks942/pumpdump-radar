@@ -295,7 +295,11 @@ def _plan(price,structure,level,retrace,spread,equity):
         return None
     # Conservative bound on risk: <=0.5% equity; equity unknown => no qty.
     equity=num(equity)
-    qty=(equity*RISK_FRACTION/risk if equity is not None and equity>0 else None)
+    # Loss budget includes exit fees and a slippage allowance.
+    # Conservative but still a model, not an executable order guarantee.
+    fee_buffer=price*(ROUND_TRIP_COST_PCT+0.10)/100
+    qty=(equity*RISK_FRACTION/(risk+fee_buffer)
+         if equity is not None and equity>0 else None)
     return dict(entry=price,stop=stop,tp1=tp1,tp2=tp2,
                 rr1=2.0,risk_fraction=RISK_FRACTION,quantity=qty,
                 validity="PAPER_ONLY_NOT_BACKTESTED",fee_model_pct=ROUND_TRIP_COST_PCT)
@@ -399,11 +403,15 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
     if st["last_retrace_pct"]>=2.5 and st["phase"]=="WATCH":
         if struct["bearish5"]:
             _record_phase(db,st,now,"WEAKENING","RETRACE_AND_5M_LOWER_PRICE",ev,struct)
-    if st["phase"]=="WEAKENING" and struct["trend_shift"] and struct["broken"]:
+    # A reversal stage requires a NEW closed candle after weakening, not
+    # two labels from the same market snapshot.
+    if (st["phase"]=="WEAKENING" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC
+            and struct["trend_shift"] and struct["broken"]
+            and struct["last5"]["ts"]+300>st["phase_at"]):
         st["break_level"]=struct["support"]
         st["break_candle_ts"]=struct["last5"]["ts"]
         _record_phase(db,st,now,"TREND_SHIFT","CLOSED_5M_BREAK_15M_H1_ALIGNED",ev,struct)
-    if st["phase"]=="TREND_SHIFT":
+    if st["phase"]=="TREND_SHIFT" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
         level=st["break_level"]
         last5=struct["last5"]
         if (level is not None and st["break_candle_ts"] is not None
@@ -415,7 +423,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
             elif (last5["h"]>=level*0.997 and last5["c"]<level
                   and struct["trend_shift"]):
                 _record_phase(db,st,now,"RETEST","CLOSED_5M_RETEST_REJECTED",ev,struct)
-    if st["phase"]=="RETEST":
+    if st["phase"]=="RETEST" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
         if not struct["trend_shift"] or struct["h1"]=="UP":
             _record_phase(db,st,now,"WEAKENING","TREND_NOT_ALIGNED",ev,struct)
         elif not _evidence_ok(ev,spot):
