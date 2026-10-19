@@ -222,11 +222,13 @@ def verified(symbol):
         age=item.get("stream_stale_seconds")
         count=item.get("trade_count")
         total=item.get("total_quote")
+        symbol_age=item.get("last_trade_age_sec")
         value=item.get("imbalance_pct")
         if (item.get("quality")!="READY"
             or item.get("window_ready") is not True
             or item.get("stream_healthy") is not True
             or age is None or not 0<=age<=30
+            or symbol_age is None or not 0<=symbol_age<=60
             or count is None or count<15
             or total is None or total<1000
             or value is None or not math.isfinite(float(value))):
