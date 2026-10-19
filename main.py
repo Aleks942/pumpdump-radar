@@ -37,6 +37,7 @@ from post_pump_short_research import (
     observe as observe_post_pump_short,
     report as report_post_pump_short,
 )
+from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
@@ -1527,9 +1528,18 @@ while True:
     except Exception as cycle_exc:
         print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
-    # Strong (+30% / +50% / +100% observed 24h) POST-PUMP SHORT cohorts:
-    # associate existing causal pump-cycle stages with forward OKX quotes.
-    # Independent research only; never sends Telegram or approves orders.
+    # Complete independent POST-PUMP SHORT strategy. Discovers +30% pumps
+    # directly from the same OKX ticker list, including late pullbacks
+    # excluded by earlier Pump Watch. Max three candidates checked per scan,
+    # 5m/15m/H1 closed candles, verified 5m Spot + cached OI/futures.
+    # PAPER ONLY: never opens positions or overrides trading gates.
+    try:
+        observe_complete_post_pump_short(tickers)
+    except Exception as complete_short_exc:
+        print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
+              type(complete_short_exc).__name__, flush=True)
+
+    # Retain the prior Pump Cycle research cohorts as a separate experiment.
     try:
         observe_post_pump_short(tickers)
         report_post_pump_short()
