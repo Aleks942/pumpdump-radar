@@ -49,7 +49,10 @@ class SpotStreamTests(unittest.TestCase):
                 self.assertFalse(stream.verified("TESTUSDT")["ready"])
 
     def test_subscription_is_stable_for_warmup(self):
-        with patch.object(stream,"_thread",ThreadAlive()):
+        universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(universe,"READY")):
+          with patch.object(stream,"_thread",ThreadAlive()):
             with patch.object(stream,"_socket",None):
                 with patch.object(stream,"_watched",()):
                     with patch.object(stream,"_lease_at",0.0):
@@ -67,6 +70,24 @@ class SpotStreamTests(unittest.TestCase):
                             self.assertEqual(stream.watch(
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
                                     "DDD-USDT","AAA-USDT","BBB-USDT"))
+
+    def test_missing_spot_contract_fails_closed_before_subscription(self):
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=({"AAA-USDT"},"READY")):
+            with patch.object(stream,"_thread",ThreadAlive()):
+                with patch.object(stream,"_socket",None):
+                    with patch.object(stream,"_watched",()):
+                        with patch.object(stream,"_lease_at",0.0):
+                            selected=stream.watch(["AAAUSDT","APRUSDT"])
+                            self.assertEqual(selected,("AAA-USDT",))
+            x=stream.spot_availability("APR-USDT")
+            self.assertEqual(x["reason"],"SPOT_UNAVAILABLE")
+
+    def test_universe_transport_failure_is_not_spot_unavailable(self):
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(set(),"SPOT_DATA_ERROR")):
+            self.assertEqual(stream.spot_availability("AAA-USDT")["reason"],
+                             "SPOT_DATA_ERROR")
 
 
 if __name__=="__main__":
