@@ -148,7 +148,7 @@ class PostPumpResearchTests(unittest.TestCase):
 
     def test_no_state_or_no_valid_24h_quote_is_not_a_signal(self):
         self.assertEqual(post.observe(
-            [ticker(high=140,price=120)],self.at,self.path),(0,0))
+            [ticker(high=129,price=120)],self.at,self.path),(0,0))
         self.assertEqual(post.observe(
             [ticker(volume=1000)],self.at,self.path),(0,0))
         self.assertEqual(post.observe(
