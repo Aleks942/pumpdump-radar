@@ -18,6 +18,10 @@ from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from post_pump_spot_stream import (
+    watch as watch_spot_stream,
+    verified as verified_spot_stream,
+)
 
 DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
 MIN_RISE_PCT=30.0
@@ -363,13 +367,15 @@ def _fetch_spot(symbol):
 
 def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
     sym=st["symbol"]
+    ws_spot=(verified_spot_stream(sym) if spot_reader is _fetch_spot
+             else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
     st["last_seen_at"]=now
     st["last_price"]=profile["last"]
     st["rise_max"]=max(st["rise_max"],profile["rise"])
     st["peak"]=max(st["peak"],profile["high"])
     st["band"]=profile["band"]
     st["last_retrace_pct"]=100*(1-profile["last"]/st["peak"])
-    if now-st["last_spot_poll_at"]>=SPOT_POLL_INTERVAL_SEC:
+    if not ws_spot.get("ready") and now-st["last_spot_poll_at"]>=SPOT_POLL_INTERVAL_SEC:
         try:
             trades=spot_reader(sym)
             status=store_spot_poll(db,sym,now,trades)
@@ -378,7 +384,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
         st["last_spot_poll_at"]=now
     else:
         status="WAIT_POLL"
-    spot=spot_status(db,sym,now)
+    spot=ws_spot if ws_spot.get("ready") else spot_status(db,sym,now)
     if now-st["last_context_at"]<CONTEXT_INTERVAL_SEC:
         return status,None
     st["last_context_at"]=now
@@ -515,12 +521,18 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         (now,item["high"],item["rise"],item["band"],
                          item["last"],item["retrace"],symbol))
             # Evaluate existing + fresh assets even after a 24h window rolled.
-            rows=db.execute("""SELECT * FROM post_pump_short_strategy
+            candidates=db.execute("""SELECT * FROM post_pump_short_strategy
                 WHERE last_seen_at>=? AND phase NOT IN ('READY_RESEARCH','EXPIRED')
                 ORDER BY CASE phase WHEN 'RETEST' THEN 0
                          WHEN 'TREND_SHIFT' THEN 1 WHEN 'WEAKENING' THEN 2
-                         ELSE 3 END, last_context_at ASC LIMIT ?""",
-                (now-STALE_SYMBOL_SEC,MAX_ACTIVE)).fetchall()
+                         ELSE 3 END, last_context_at ASC LIMIT 120""",
+                (now-STALE_SYMBOL_SEC,)).fetchall()
+            if fetch_spot is None:
+                selected=watch_spot_stream([z["symbol"] for z in candidates])
+                rows=[z for z in candidates
+                      if z["symbol"][:-4]+"-USDT" in selected]
+            else:
+                rows=candidates[:MAX_ACTIVE]  # deterministic offline tests
             diagnostics["active"]=len(rows)
             for row in rows:
                 st=dict(row)
