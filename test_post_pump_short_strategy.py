@@ -155,12 +155,11 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertGreater(plan["stop"],110)
         self.assertLess(plan["tp1"],110)
         self.assertLess(plan["tp2"],plan["tp1"])
-        self.assertAlmostEqual(plan["quantity"]*(plan["stop"]-110),0.25)
+        self.assertAlmostEqual(plan["quantity"]*
+            (plan["stop"]-110+110*(strat.ROUND_TRIP_COST_PCT+0.10)/100),0.25)
         self.assertIsNone(strat._plan(102,st,112,32,6,50))
         self.assertIsNone(strat._plan(110,st,112,20,60,50))
-        self.assertIsNone(strat._plan(110,st,112,20,6,None)["quantity"]
-                          if strat._plan(110,st,112,20,6,None) is None
-                          else None)
+        self.assertIsNone(strat._plan(110,st,112,20,6,None)["quantity"])
 
     def test_end_to_end_progression_has_real_later_retest(self):
         # Test at three strictly increasing 5m closes, NOT an instant signal
@@ -172,13 +171,15 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                           side_effect=lambda a,b,c,now:mk(now)):
             with patch.object(strat,"spot_status",
                 side_effect=lambda db,symbol,now:
-                   {"ready":now>=NOW+260,"imbalance_pct":-40,
+                   {"ready":now>=NOW+390,"imbalance_pct":-40,
                     "reason":"OVERLAP_VERIFIED_5M"}):
                 self.drive(NOW,last=115,equity_usdt=50)
                 self.assertEqual(self.data()[0][0]["phase"],"WEAKENING")
                 self.drive(NOW+130,last=111,equity_usdt=50)
                 self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
                 self.drive(NOW+260,last=110,equity_usdt=50)
+                self.assertEqual(self.data()[0][0]["phase"],"RETEST")
+                self.drive(NOW+390,last=110,equity_usdt=50)
         state,events=self.data()
         self.assertEqual(state[0]["phase"],"READY_RESEARCH")
         self.assertEqual([x["phase"] for x in events],
@@ -188,7 +189,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertLess(plan["tp1"],plan["entry"])
         self.assertGreater(plan["stop"],plan["entry"])
         self.assertIsNotNone(plan["quantity"])
-        self.assertIsNone(state[0]["watch_reason"] if False else None)
+        self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI")
 
     def test_no_real_decision_when_spot_missing_despite_break_and_retest(self):
         with patch.object(strat,"analyze_structure",
