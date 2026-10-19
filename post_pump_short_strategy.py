@@ -298,7 +298,9 @@ def _plan(price,structure,level,retrace,spread,equity):
     if (atr is None or atr<=0 or high is None or level is None
             or price<=0 or spread>MAX_SPREAD_BPS):
         return None
-    if price<level-atr*MAX_LATE_ATR:
+    # An observed rally back above the retested support invalidates a
+    # delayed short entry, even if the previous 5m candle still looked weak.
+    if price<level-atr*MAX_LATE_ATR or price>level+0.20*atr:
         return None
     stop=max(high,level+0.35*atr)*(1+0.002)
     risk=stop-price
@@ -306,7 +308,7 @@ def _plan(price,structure,level,retrace,spread,equity):
         return None
     tp1=price-2*risk
     tp2=price-3*risk
-    if tp1<=0:
+    if tp1<=0 or tp2<=0:
         return None
     # Conservative bound on risk: <=0.5% equity; equity unknown => no qty.
     equity=num(equity)
