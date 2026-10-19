@@ -373,6 +373,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
              else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
     st["last_seen_at"]=now
     st["last_price"]=profile["last"]
+    previous_peak=st["peak"]
     st["rise_max"]=max(st["rise_max"],profile["rise"])
     st["peak"]=max(st["peak"],profile["high"])
     st["band"]=profile["band"]
@@ -404,7 +405,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity):
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
         return status,struct
-    if (profile["last"]>=st["peak"]*1.001 and st["phase"]!="WATCH"):
+    if (profile["last"]>=previous_peak*1.001 and st["phase"]!="WATCH"):
         st["break_level"]=None
         st["break_candle_ts"]=None
         _record_phase(db,st,now,"WATCH","BUYERS_RECLAIMED_NEW_HIGH",ev,struct)
