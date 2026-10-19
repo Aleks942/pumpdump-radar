@@ -95,11 +95,16 @@ class ControlShiftTests(unittest.TestCase):
         self.assertIsNone(w["previous_phase"])
         self.assertEqual(w["control"],"NO_PRIOR_STAGE")
 
-    def test_prior_in_different_100_plus_band_is_not_a_baseline(self):
-        self.add("WATCH",self.start,70,40,1,2,band="50_TO_99")
+    def test_prior_across_30_50_100_bands_is_a_baseline(self):
+        watch,_=self.add("WATCH",self.start,70,40,1,2,band="30_TO_49")
         _,w=self.add("WEAKENING",self.start+300,-30,-30,-2,-2,
-                     band="100_PLUS")
-        self.assertEqual(w["control"],"NO_PRIOR_STAGE")
+                     band="50_TO_99")
+        self.assertEqual(w["previous_phase"],"WATCH")
+        self.assertEqual(w["control"],"BOTH_SELL_PRESSURE_STRENGTHENING")
+        _,w2=self.add("STRUCTURE_BREAK",self.start+420,-40,-40,-3,-4,
+                      band="100_PLUS")
+        self.assertEqual(w2["previous_phase"],"WEAKENING")
+        self.assertEqual(w2["control"],"BOTH_SELL_PRESSURE_STRENGTHENING")
 
     def test_baseline_older_than_three_hours_not_used(self):
         self.add("WATCH",self.start,70,40,1,2)
