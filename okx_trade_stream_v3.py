@@ -426,7 +426,8 @@ def on_close(
     close_msg,
 ):
 
-    mark_stream_disconnected("spot")
+    # This socket carries SWAP trades only. The dedicated Spot socket
+    # has its own health state and must not be invalidated here.
     mark_stream_disconnected("swap")
     
     print(
@@ -467,8 +468,10 @@ def run_stream_forever(swap_symbols=None):
             "No valid SWAP symbols"
         )
 
+    retry_delay = 5
     while True:
 
+        connected_at = time.monotonic()
         try:
 
             print(
@@ -518,12 +521,14 @@ def run_stream_forever(swap_symbols=None):
                 flush=True,
             )
 
-        print(
-            "[V3_WS_RECONNECT_IN_5S]",
-            flush=True,
-        )
-
-        time.sleep(5)
+        # Reconnect carefully on repeated short-lived failures. A connection
+        # that survived 5 minutes resets backoff; otherwise cap at 60 sec.
+        if time.monotonic() - connected_at >= 300:
+            retry_delay = 5
+        else:
+            retry_delay = min(60, retry_delay * 2)
+        print("[V3_WS_RECONNECT]", "delay_sec=", retry_delay, flush=True)
+        time.sleep(retry_delay)
         
 
 if __name__ == "__main__":
