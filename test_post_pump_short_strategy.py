@@ -57,7 +57,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                                liquidations=None,db_path=None,episode_at=None:
                 dict(evidence,order_flow={"ready":True,"status":"CONFIRMED",
                      "price_change_pct":-0.09,
-                     "source":"POST_PUMP_DIRECT_AUTHENTICATED_FLOW"}))
+                     "source":"PUMPDUMP_LOCAL_TAKER_FLOW"}))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -200,7 +200,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertLess(plan["tp1"],plan["entry"])
         self.assertGreater(plan["stop"],plan["entry"])
         self.assertIsNotNone(plan["quantity"])
-        self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI")
+        self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI_LOCAL_FLOW")
 
     def test_early_weakening_is_research_only_before_full_retrace(self):
         def mk(at):
@@ -250,7 +250,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(events[-1]["reason"],"BUYERS_RECOVERED_EARLY_WEAKENING")
         self.assertNotIn("READY_RESEARCH",[x["phase"] for x in events])
 
-    def test_missing_independent_order_flow_blocks_research_ready(self):
+    def test_missing_local_aggression_confirmation_blocks_research_ready(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                             structure(now,broken=now>=NOW+130)):
@@ -270,7 +270,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         state,events=self.data()
         self.assertEqual(state[0]["phase"],"RETEST")
         self.assertEqual(state[0]["watch_reason"],
-                         "WAITING_FOR_INDEPENDENT_ORDER_FLOW")
+                         "WAITING_FOR_LOCAL_AGGRESSION_RESPONSE")
         self.assertNotIn("READY_RESEARCH",[e["phase"] for e in events])
 
     def test_paper_plan_registered_only_after_final_research_confirmation(self):

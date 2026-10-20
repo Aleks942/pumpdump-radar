@@ -57,7 +57,8 @@ def read_order_flow(symbol,now=None,db_path=None,episode_at=None):
                     "verified_at":row["verified_at"],
                     "age_sec":round(now-row["verified_at"],3),
                     "reason":row["reason"],
-                    "source":"POST_PUMP_DIRECT_AUTHENTICATED_FLOW"}
+                    "source":"PUMPDUMP_LOCAL_TAKER_FLOW",
+                    "orderbook_verified":False}
         except sqlite3.Error as exc:
             return {"ready":False,"status":"INSUFFICIENT_DATA",
                     "reason":"POST_PUMP_FLOW_DB_"+type(exc).__name__}

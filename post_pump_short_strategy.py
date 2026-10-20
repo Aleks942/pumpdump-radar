@@ -499,15 +499,16 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
             st["watch_reason"]="WAITING_FOR_INDEPENDENT_FLOW_OI"
         elif ((ev.get("order_flow") or {}).get("status")!="CONFIRMED"
               or (ev.get("order_flow") or {}).get("ready") is not True):
-            # The external book/price-response verifier is independent.
-            # Never elevate to READY on local spot/futures alone.
-            st["watch_reason"]="WAITING_FOR_INDEPENDENT_ORDER_FLOW"
+            # Autonomous local verifier: fresh 1m/5m taker aggression plus
+            # Spot confirmation and bearish price response. It is deliberately
+            # not represented as independent order-book reconstruction.
+            st["watch_reason"]="WAITING_FOR_LOCAL_AGGRESSION_RESPONSE"
         else:
             plan=_plan(profile["last"],struct,st["break_level"],
                        st["last_retrace_pct"],profile["spread"],equity)
             if plan is not None:
                 if _record_phase(db,st,now,"READY_RESEARCH",
-                                 "STRUCTURE_RETEST_SPOT_FUTURES_OI",ev,struct,plan):
+                                 "STRUCTURE_RETEST_SPOT_FUTURES_OI_LOCAL_FLOW",ev,struct,plan):
                     st["last_plan_at"]=now
                     print(f"[SHORT_PLAN_PAPER] {sym} "
                           f"entry={plan['entry']:.8g} stop={plan['stop']:.8g} "
@@ -633,8 +634,10 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                                            evidence,equity_usdt,db_path=path)
                 if structure is not None:
                     diagnostics["context_checks"]+=1
-                # Requests are launched AFTER the SQLite transaction commits.
-                if st["phase"] in ("TREND_SHIFT","RETEST") and st["phase_at"]==now:
+                # The autonomous local verifier reads only in-process caches
+                # and is refreshed while the setup is structurally relevant.
+                # Cooldown inside dispatch bounds repeated work.
+                if st["phase"] in ("TREND_SHIFT","RETEST"):
                     pending_flow.append((symbol,profile["last"],st["episode_at"]))
                 db.execute("""UPDATE post_pump_short_strategy SET
                     last_seen_at=?,phase=?,phase_at=?,peak=?,rise_max=?,band=?,

@@ -1,21 +1,40 @@
-"""Authenticated independent Order Flow research for direct +30% post-pump cases.
+"""Autonomous local aggression/absorption verifier for POST-PUMP SHORT.
 
-Best-effort background HTTPS query to the EXISTING smart-money-order-flow
-service. Tied to a fresh, immutable (symbol,episode,observed_at) key.
-Never turns Flow into an order, Telegram or live trading permission.
+Uses only PumpDump Radar's existing in-process trade-flow caches plus the
+already-computed closed-candle structure. No HTTP, no Order Flow service,
+no new websocket, no Telegram and no live order permission.
+
+The result is deliberately narrow:
+- CONFIRMED = fresh SELL taker aggression + Spot confirmation + bearish response
+- CONTRADICTION = strong BUY aggression (optionally absorbed by bearish price)
+- INSUFFICIENT_DATA = anything stale, warming, mixed or incomplete
+
+This is not order-book reconstruction and must not be presented as such.
 """
+import json
 import math
 import os
-import re
 import sqlite3
 import threading
 import time
 
 _lock=threading.Lock()
-_slots=threading.BoundedSemaphore(2)
 _recent={}
-COOLDOWN_SEC=180
+COOLDOWN_SEC=120
 MAX_RESULT_AGE_SEC=240
+MAX_STREAM_STALE_SEC=60
+MIN_1M_TRADES=5
+MIN_5M_TRADES=15
+MIN_1M_NOTIONAL=500.0
+MIN_5M_NOTIONAL=1000.0
+
+
+def _num(value):
+    try:
+        x=float(value)
+    except (TypeError,ValueError,OverflowError):
+        return None
+    return x if math.isfinite(x) else None
 
 
 def setup(db):
@@ -43,13 +62,11 @@ def latest(db,symbol,now,episode_at=None):
             WHERE symbol=? AND episode_at=? AND verified_at>=? AND verified_at<=?
             ORDER BY verified_at DESC LIMIT 1""",
             (symbol,episode_at,now-MAX_RESULT_AGE_SEC,now)).fetchone()
-    if row is None:
-        return None
-    return dict(row)
+    return dict(row) if row is not None else None
 
 
 def store_result(db,symbol,episode_at,observed_at,result,now):
-    """Reject stale, unverifiable response and unrecognized statuses."""
+    """Persist only finite, bounded local-verifier output."""
     if not isinstance(result,dict) or result.get("status") not in (
             "CONFIRMED","CONTRADICTION","INSUFFICIENT_DATA"):
         return False
@@ -58,97 +75,166 @@ def store_result(db,symbol,episode_at,observed_at,result,now):
         req=float(observed_at)
         at=float(now)
         episode=float(episode_at)
-        price=float(result.get("price_change_pct")) if result.get("price_change_pct") is not None else None
-        delta=float(result.get("delta_ratio")) if result.get("delta_ratio") is not None else None
-        span=float(result.get("trade_span_sec")) if result.get("trade_span_sec") is not None else None
+        price=_num(result.get("price_change_pct"))
+        delta=_num(result.get("delta_ratio"))
+        span=_num(result.get("trade_span_sec"))
     except (ValueError,TypeError,OverflowError):
         return False
     if (not all(math.isfinite(x) for x in (stamp,req,at,episode))
-            or not req<=stamp<=at or stamp-req>90 or at-stamp>15
-            or any(v is not None and not math.isfinite(v) for v in (price,delta,span))
-            or delta is not None and not -1<=delta<=1):
+            or not req<=stamp<=at or stamp-req>5 or at-stamp>5
+            or delta is not None and not -1<=delta<=1
+            or span is not None and not 0<span<=300):
         return False
     setup(db)
-    db.execute("""INSERT OR IGNORE INTO post_pump_short_flow_results(
+    db.execute("""INSERT OR REPLACE INTO post_pump_short_flow_results(
         symbol,episode_at,observed_at,verified_at,status,reason,
         delta_ratio,price_change_pct,trade_span_sec,evidence_event)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (symbol,episode,req,stamp,result["status"],
-         str(result.get("reason") or "")[:90],
-         delta,price,span,str(result.get("evidence_event") or "")[:90]))
+         str(result.get("reason") or "")[:120],
+         delta,price,span,str(result.get("evidence_event") or "NONE")[:90]))
     return True
 
 
-def dispatch(symbol,price,episode_at,db_path=None,now=None):
-    """Start at most two concurrent verifications, never block a market scan."""
+def _window(window,min_trades,min_notional):
+    if not isinstance(window,dict):
+        return None
+    stale=_num(window.get("stream_stale_seconds"))
+    trades=_num(window.get("trade_count"))
+    total=_num(window.get("total_quote"))
+    imbalance=_num(window.get("imbalance_pct"))
+    if (window.get("window_ready") is not True
+            or window.get("stream_healthy") is not True
+            or str(window.get("quality"))!="READY"
+            or stale is None or not 0<=stale<=MAX_STREAM_STALE_SEC
+            or trades is None or trades<min_trades
+            or total is None or total<min_notional
+            or imbalance is None or not -100<=imbalance<=100):
+        return None
+    return imbalance
+
+
+def _price_response(structure,price):
+    structure=structure if isinstance(structure,dict) else {}
+    last5=structure.get("last5") if isinstance(structure.get("last5"),dict) else {}
+    o=_num(last5.get("o",last5.get("open")))
+    c=_num(last5.get("c",last5.get("close")))
+    response=None
+    if o is not None and c is not None and o>0:
+        response=100*(c/o-1)
+    elif c is not None and c>0 and _num(price) is not None:
+        response=100*(float(price)/c-1)
+    bearish=bool(structure.get("trend_shift") and structure.get("bearish5"))
+    return response,bearish
+
+
+def verify_local(price,futures_windows,spot_windows,structure,now=None):
+    """Classify cached taker aggression and price response, fail-closed."""
     now=time.time() if now is None else float(now)
-    base=os.getenv("PUMP_FLOW_URL","").strip()
-    token=os.getenv("PUMP_FLOW_SHARED_TOKEN","")
-    mode=os.getenv("PUMP_FLOW_MODE","OFF").upper()
+    fw=futures_windows if isinstance(futures_windows,dict) else {}
+    sw=spot_windows if isinstance(spot_windows,dict) else {}
+    f1=_window(fw.get("1m"),MIN_1M_TRADES,MIN_1M_NOTIONAL)
+    f5=_window(fw.get("5m"),MIN_5M_TRADES,MIN_5M_NOTIONAL)
+    s5=_window(sw.get("5m"),MIN_5M_TRADES,MIN_5M_NOTIONAL)
+    response,bearish=_price_response(structure,price)
+
+    base={"finished_at":now,
+          "delta_ratio":round(f1/100,6) if f1 is not None else None,
+          "price_change_pct":round(response,6) if response is not None else None,
+          "trade_span_sec":60.0,
+          "evidence_event":"NONE",
+          "research_only":True,
+          "source":"PUMPDUMP_LOCAL_TAKER_FLOW",
+          "orderbook_verified":False}
+
+    if f1 is None or f5 is None or s5 is None:
+        return dict(base,status="INSUFFICIENT_DATA",
+                    reason="LOCAL_FLOW_NOT_READY")
+
+    # Immediate and 5m futures pressure must agree. Spot must also sell and
+    # the already-confirmed price structure must respond down.
+    if f1<=-15 and f5<=-10 and s5<=-10 and bearish:
+        return dict(base,status="CONFIRMED",
+                    reason="LOCAL_SELL_AGGRESSION_PRICE_ALIGNED",
+                    evidence_event="SELL_AGGRESSION_CONFIRMED")
+
+    buy_aggression=(f1>=15 and f5>=10)
+    if buy_aggression and bearish:
+        # Buyers are still crossing the spread, but price/structure no longer
+        # rewards that aggression. Useful research evidence, not SHORT approval.
+        return dict(base,status="CONTRADICTION",
+                    reason="LOCAL_BUY_AGGRESSION_ABSORBED",
+                    evidence_event="BUY_ABSORPTION_CANDIDATE")
+
+    if buy_aggression and s5>=10 and not bearish:
+        return dict(base,status="CONTRADICTION",
+                    reason="LOCAL_BUYERS_STILL_CONTROL",
+                    evidence_event="NONE")
+
+    return dict(base,status="INSUFFICIENT_DATA",
+                reason="LOCAL_FLOW_MIXED")
+
+
+def _read_structure(path,symbol,episode_at):
+    try:
+        with sqlite3.connect(path,timeout=3) as db:
+            db.row_factory=sqlite3.Row
+            row=db.execute("""SELECT last_structure_json
+                FROM post_pump_short_strategy
+                WHERE symbol=? AND episode_at=?""",
+                (symbol,episode_at)).fetchone()
+        if not row or not row["last_structure_json"]:
+            return {}
+        value=json.loads(row["last_structure_json"])
+        return value if isinstance(value,dict) else {}
+    except (sqlite3.Error,ValueError,TypeError):
+        return {}
+
+
+def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
+    """Refresh local verification at most once per 120s per pump episode."""
+    now=time.time() if now is None else float(now)
     path=db_path or os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
-    if (mode!="RESEARCH" or not token or not base.startswith("https://")
-            or not base.endswith("/api/pump-candidate")):
+    p=_num(price)
+    ep=_num(episode_at)
+    if not isinstance(symbol,str) or not symbol.endswith("USDT") or p is None or p<=0 or ep is None:
         return False
-    if (not isinstance(symbol,str)
-            or re.fullmatch(r"[A-Z0-9]{2,25}USDT",symbol) is None
-            or not isinstance(price,(int,float))
-            or not math.isfinite(price) or price<=0):
-        return False
+    key=(symbol,ep)
     with _lock:
-        if now-_recent.get((symbol,episode_at),-1e20)<COOLDOWN_SEC:
+        if now-_recent.get(key,-1e20)<COOLDOWN_SEC:
             return False
-        if not _slots.acquire(blocking=False):
-            return False
-        _recent[(symbol,episode_at)]=now
+        _recent[key]=now
         if len(_recent)>500:
             cutoff=now-24*3600
-            for key,ts in list(_recent.items()):
+            for k,ts in list(_recent.items()):
                 if ts<cutoff:
-                    _recent.pop(key,None)
-    def worker():
+                    _recent.pop(k,None)
+    if readers is None:
         try:
-            import requests
-            observed=time.time()
-            payload={"schema":1,"source":"pumpdump-radar",
-                     "symbol":symbol,"side":"SHORT","price":price,
-                     "observed_at":observed,"expires_at":observed+90}
-            headers={"X-Pump-Flow-Token":token}
-            res=requests.post(base,json=payload,headers=headers,timeout=3)
-            if res.status_code!=202:
-                print("[POST_PUMP_DIRECT_FLOW] rejected",symbol,
-                      res.status_code,flush=True)
-                return
-            url=base.rsplit("/",1)[0]+"/pump-result"
-            for _ in range(12):
-                time.sleep(3)
-                reply=requests.get(url,params={
-                    "symbol":symbol,"observed_at":observed},
-                    headers=headers,timeout=3)
-                if reply.status_code!=200:
-                    return
-                outcome=reply.json()
-                if outcome.get("status")=="PENDING":
-                    continue
-                with sqlite3.connect(path,timeout=5) as db:
-                    db.row_factory=sqlite3.Row
-                    success=store_result(
-                        db,symbol,episode_at,observed,outcome,time.time())
-                    db.commit()
-                print(f"[POST_PUMP_DIRECT_FLOW] symbol={symbol} "
-                      f"status={outcome.get('status')} "
-                      f"reason={outcome.get('reason')} stored={success} "
-                      "research_only=true",flush=True)
-                return
-            print("[POST_PUMP_DIRECT_FLOW] timeout",symbol,flush=True)
-        except Exception as exc:
-            print("[POST_PUMP_DIRECT_FLOW_ERROR]",
-                  type(exc).__name__,flush=True)
-        finally:
-            _slots.release()
+            from trade_flow_collector_v3 import get_futures_windows,get_spot_windows
+            readers=(get_futures_windows,get_spot_windows)
+        except ImportError:
+            readers=(lambda _:{},lambda _:{})
+    futures_reader,spot_reader=readers
     try:
-        threading.Thread(target=worker,daemon=True,
-                         name="post-pump-flow-"+symbol).start()
-        return True
+        futures=futures_reader(symbol) or {}
     except Exception:
-        _slots.release()
-        return False
+        futures={}
+    try:
+        spot=spot_reader(symbol) or {}
+    except Exception:
+        spot={}
+    structure=_read_structure(path,symbol,ep)
+    result=verify_local(p,futures,spot,structure,now=now)
+    try:
+        with sqlite3.connect(path,timeout=5) as db:
+            db.row_factory=sqlite3.Row
+            ok=store_result(db,symbol,ep,now,result,now)
+            db.commit()
+    except sqlite3.Error:
+        ok=False
+    print(f"[POST_PUMP_LOCAL_FLOW] symbol={symbol} "
+          f"status={result.get('status')} reason={result.get('reason')} "
+          f"event={result.get('evidence_event')} stored={ok} "
+          "no_external_service=true research_only=true",flush=True)
+    return ok
