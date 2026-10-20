@@ -59,6 +59,39 @@ def _setup(db, now):
     db.execute("UPDATE post_pump_notify_outbox SET status='UNKNOWN' WHERE status='SENDING' AND retry_at<?", (now,))
 
 
+
+def _research_lines(event):
+    """Describe cached evidence, not an approval to trade."""
+    try:
+        d=json.loads(event.get('evidence_json') or '{}')
+    except (ValueError,TypeError):
+        return ['Дополнительные данные: недоступны']
+    if not isinstance(d,dict):
+        return ['Дополнительные данные: недоступны']
+    lines=[]
+    capital=d.get('capital_state') or {}
+    if isinstance(capital,dict):
+        lines.append('OI / капитал: '+escape(str(capital.get('state') or 'НЕТ ДАННЫХ')[:70]))
+    cvd=d.get('bounded_cvd_5m') or {}
+    if isinstance(cvd,dict):
+        lines.append('Дельта сделок 5м: '+escape(str(cvd.get('state') or 'НЕТ ДАННЫХ')[:70])+
+                     ' (не полный CVD)')
+    liq=d.get('liquidation_context') or {}
+    if isinstance(liq,dict):
+        lo=_num(liq.get('long_usdt'))
+        sh=_num(liq.get('short_usdt'))
+        if liq.get('available') is True and lo is not None and sh is not None:
+            lines.append(f'Ликвидации (частично): LONG ${lo:,.0f} / SHORT ${sh:,.0f}')
+        else:
+            lines.append('Ликвидации: данных недостаточно')
+    funding=d.get('funding_context') or {}
+    if isinstance(funding,dict):
+        pct=_num(funding.get('funding_pct'))
+        lines.append(f'Funding: {pct:+.4f}%' if pct is not None and funding.get('available') is True
+                     else 'Funding: нет данных')
+    return lines or ['Дополнительные данные: пока недоступны']
+
+
 def message(event):
     kind = event['kind']
     at = datetime.fromtimestamp(event['at'], ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M:%S')
@@ -77,6 +110,8 @@ def message(event):
                   'ТЕСТОВЫЙ ПЛАН. Прибыльность не доказана. Ордера не выставляются.']
     else:
         lines.append('Наблюдение, не подтверждённый вход SHORT.')
+    if kind != 'CANCELLED':
+        lines.extend(_research_lines(event))
     return '\n'.join(lines)
 
 
