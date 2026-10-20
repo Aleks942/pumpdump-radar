@@ -1,10 +1,8 @@
-"""Authenticated, episode-scoped external Order Flow evidence tests."""
-import os
+"""Autonomous local POST-PUMP aggression/absorption verifier tests."""
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import post_pump_short_flow as flow
 import post_pump_context_v2 as context
@@ -12,7 +10,13 @@ import post_pump_context_v2 as context
 AT=1800000000.0
 
 
-class DirectFlowTests(unittest.TestCase):
+def window(imbalance,trades=50,total=10000):
+    return {"window_ready":True,"stream_healthy":True,"quality":"READY",
+            "stream_stale_seconds":1,"trade_count":trades,
+            "total_quote":total,"imbalance_pct":imbalance}
+
+
+class LocalFlowTests(unittest.TestCase):
     def setUp(self):
         tmp=tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -22,48 +26,70 @@ class DirectFlowTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         flow.setup(self.db)
         flow._recent.clear()
+        self.db.execute("""CREATE TABLE post_pump_short_strategy(
+            symbol TEXT PRIMARY KEY,episode_at REAL NOT NULL,
+            last_structure_json TEXT)""")
+        self.db.execute("""INSERT INTO post_pump_short_strategy VALUES(
+            'TESTUSDT',?,?)""",(AT-1800,
+            '{"trend_shift":true,"bearish5":true,'
+            '"last5":{"o":101,"c":99}}'))
+        self.db.commit()
 
-    def store(self,status="CONFIRMED",reason="TAKER_PRESSURE_PRICE_ALIGNED"):
-        ok=flow.store_result(self.db,"TESTUSDT",AT-1800,
-              AT,{"status":status,"finished_at":AT+20,"delta_ratio":-0.5,
-                  "price_change_pct":-0.1,"trade_span_sec":20,
-                  "reason":reason,"evidence_event":"NONE"},AT+22)
-        self.db.commit()  # Other connection must only read committed results.
-        return ok
+    def test_sell_aggression_confirms_only_with_spot_and_bearish_response(self):
+        result=flow.verify_local(98,
+            {"1m":window(-35),"5m":window(-25)},
+            {"5m":window(-20)},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT)
+        self.assertEqual(result["status"],"CONFIRMED")
+        self.assertEqual(result["evidence_event"],"SELL_AGGRESSION_CONFIRMED")
+        self.assertEqual(result["source"],"PUMPDUMP_LOCAL_TAKER_FLOW")
+        self.assertFalse(result["orderbook_verified"])
 
-    def test_confirmed_result_fresh_and_matched_to_episode(self):
-        self.assertTrue(self.store())
-        record=flow.latest(self.db,"TESTUSDT",AT+22,AT-1800)
+    def test_buy_aggression_against_bearish_price_is_absorption_candidate(self):
+        result=flow.verify_local(99,
+            {"1m":window(38),"5m":window(24)},
+            {"5m":window(18)},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT)
+        self.assertEqual(result["status"],"CONTRADICTION")
+        self.assertEqual(result["reason"],"LOCAL_BUY_AGGRESSION_ABSORBED")
+        self.assertEqual(result["evidence_event"],"BUY_ABSORPTION_CANDIDATE")
+
+    def test_stale_or_small_sample_fails_closed(self):
+        bad=window(-50,trades=2)
+        result=flow.verify_local(99,
+            {"1m":bad,"5m":window(-30)},
+            {"5m":window(-25)},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT)
+        self.assertEqual(result["status"],"INSUFFICIENT_DATA")
+        self.assertEqual(result["reason"],"LOCAL_FLOW_NOT_READY")
+
+    def test_dispatch_uses_local_readers_and_episode_scoped_storage(self):
+        readers=(lambda symbol:{"1m":window(-40),"5m":window(-30)},
+                 lambda symbol:{"5m":window(-25)})
+        self.assertTrue(flow.dispatch("TESTUSDT",98,AT-1800,
+                                     self.path,AT,readers=readers))
+        record=flow.latest(self.db,"TESTUSDT",AT,AT-1800)
         self.assertEqual(record["status"],"CONFIRMED")
-        self.assertEqual(record["price_change_pct"],-0.1)
-        self.assertIsNone(flow.latest(self.db,"TESTUSDT",AT+22,AT-900))
-        self.assertIsNone(flow.latest(self.db,"TESTUSDT",AT+300,AT-1800))
+        self.assertIsNone(flow.latest(self.db,"TESTUSDT",AT,AT-900))
+        # Bounded local refresh: repeated scan inside cooldown does no work.
+        self.assertFalse(flow.dispatch("TESTUSDT",98,AT-1800,
+                                      self.path,AT+30,readers=readers))
 
-    def test_invalid_stale_flow_never_authenticated(self):
-        self.assertFalse(flow.store_result(self.db,"TESTUSDT",AT-1800,AT,
-                   {"status":"CONFIRMED","finished_at":AT-2},AT+22))
-        self.assertFalse(flow.store_result(self.db,"TESTUSDT",AT-1800,AT,
-                   {"status":"CONFIRMED","finished_at":AT+21,
-                    "delta_ratio":-2},AT+22))
-        self.assertFalse(flow.store_result(self.db,"TESTUSDT",AT-1800,AT,
-                   {"status":"READY","finished_at":AT+21},AT+22))
-
-    def test_context_reads_direct_source_and_preserves_contradiction(self):
-        self.assertTrue(self.store(status="CONTRADICTION",
-                 reason="TAKER_PRESSURE_ABSORBED"))
-        e=context.read_order_flow("TESTUSDT",AT+22,self.path,
+    def test_context_reads_local_source(self):
+        readers=(lambda symbol:{"1m":window(40),"5m":window(25)},
+                 lambda symbol:{"5m":window(15)})
+        self.assertTrue(flow.dispatch("TESTUSDT",99,AT-1800,
+                                     self.path,AT,readers=readers))
+        e=context.read_order_flow("TESTUSDT",AT,self.path,
                                   episode_at=AT-1800)
         self.assertEqual(e["status"],"CONTRADICTION")
-        self.assertTrue(e["ready"])
-        self.assertEqual(e["source"],"POST_PUMP_DIRECT_AUTHENTICATED_FLOW")
-        self.assertFalse(context.read_order_flow(
-            "TESTUSDT",AT+22,self.path,episode_at=AT-800)["ready"])
+        self.assertTrue(e["buy_absorption_candidate"])
+        self.assertEqual(e["source"],"PUMPDUMP_LOCAL_TAKER_FLOW")
+        self.assertFalse(e["orderbook_verified"])
 
-    def test_missing_configuration_cannot_submit_candidate(self):
-        with patch.dict(os.environ,{"PUMP_FLOW_MODE":"OFF",
-                                   "PUMP_FLOW_URL":"","PUMP_FLOW_SHARED_TOKEN":""}):
-            self.assertFalse(flow.dispatch("TESTUSDT",100,AT-10,
-                                           db_path=self.path,now=AT))
 
 if __name__=="__main__":
     unittest.main()
