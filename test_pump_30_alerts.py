@@ -62,6 +62,11 @@ class Pump30AlertsTests(unittest.TestCase):
         self.assertEqual(self.observe(125, high=128), [])
         self.assertEqual(self.observe(139, vol=1000), [])
         self.assertEqual(self.observe(100, high=140), [])
+        # The past 24h peak was +40%, but current price is only +25%.
+        # This must NOT be promoted as a fresh +30% alert.
+        self.assertEqual(self.observe(125, high=140), [])
+        # A genuinely current +30% rise remains eligible.
+        self.assertEqual(self.observe(130, high=140)[0]["stage"], 1)
 
     def test_info_alert_is_opt_in_and_independent_of_trade_confirmation(self):
         from pathlib import Path
