@@ -28,6 +28,7 @@ from post_pump_short_paper import (
 from post_pump_context_v2 import enrich as enrich_research_evidence
 from post_pump_context_v2 import maybe_report_cohorts
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from post_pump_early_weakening import is_early_weakening
 from post_pump_spot_stream import (
     watch as watch_spot_stream,
     verified as verified_spot_stream,
@@ -387,6 +388,13 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     sym=st["symbol"]
     ws_spot=(verified_spot_stream(sym) if spot_reader is _fetch_spot
              else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
+    # Snapshot the preceding market observation before overwriting it.
+    # Comparing a rolling 24h peak alone would give false early warnings.
+    previous_price=num(st.get("last_price"))
+    try:
+        previous_structure=json.loads(st.get("last_structure_json") or "{}")
+    except (TypeError,ValueError):
+        previous_structure={}
     st["last_seen_at"]=now
     st["last_price"]=profile["last"]
     previous_peak=st["peak"]
@@ -447,7 +455,18 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         st["break_level"]=None
         st["break_candle_ts"]=None
         _record_phase(db,st,now,"WATCH","BUYERS_RECLAIMED_NEW_HIGH",ev,struct)
-    if st["last_retrace_pct"]>=2.5 and st["phase"]=="WATCH":
+    # EARLY_WEAKENING is informational only. Demand a fresh closed 5m bar
+    # and a lower observed quote, not merely a stale rolling 24h high.
+    if (st["phase"]=="EARLY_WEAKENING" and previous_price is not None
+            and profile["last"]>=previous_price*1.005
+            and not struct["bearish5"]):
+        _record_phase(db,st,now,"WATCH","BUYERS_RECOVERED_EARLY_WEAKENING",ev,struct)
+    if (st["phase"]=="WATCH" and is_early_weakening(
+            previous_price,profile["last"],st["peak"],
+            previous_structure,struct)):
+        _record_phase(db,st,now,"EARLY_WEAKENING",
+                      "LOWER_LIVE_QUOTE_AND_FRESH_CLOSED_5M",ev,struct)
+    if st["last_retrace_pct"]>=2.5 and st["phase"] in ("WATCH","EARLY_WEAKENING"):
         if struct["bearish5"]:
             _record_phase(db,st,now,"WEAKENING","RETRACE_AND_5M_LOWER_PRICE",ev,struct)
     # A reversal stage requires a NEW closed candle after weakening, not
@@ -583,7 +602,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 WHERE last_seen_at>=? AND phase NOT IN ('READY_RESEARCH','EXPIRED')
                 ORDER BY CASE phase WHEN 'RETEST' THEN 0
                          WHEN 'TREND_SHIFT' THEN 1 WHEN 'WEAKENING' THEN 2
-                         ELSE 3 END, last_context_at ASC LIMIT 120""",
+                         WHEN 'EARLY_WEAKENING' THEN 3
+                         ELSE 4 END, last_context_at ASC LIMIT 120""",
                 (now-STALE_SYMBOL_SEC,)).fetchall()
             if fetch_spot is None:
                 selected=watch_spot_stream([z["symbol"] for z in candidates])

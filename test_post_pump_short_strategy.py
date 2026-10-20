@@ -202,6 +202,54 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertIsNotNone(plan["quantity"])
         self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI")
 
+    def test_early_weakening_is_research_only_before_full_retrace(self):
+        def mk(at):
+            result=structure(at)
+            result["last5"]={"ts":at-300, "h":150, "l":147,
+                             "c":148-(at-NOW)*0.003}
+            return result
+
+        with patch.object(strat,"analyze_structure",side_effect=lambda a,b,c,at:mk(at)):
+            self.drive(NOW,last=149.2,high=150)
+            self.assertEqual(self.data()[0][0]["phase"],"WATCH")
+            self.drive(NOW+130,last=147.8,high=150)
+            self.assertEqual(self.data()[0][0]["phase"],"EARLY_WEAKENING")
+            self.drive(NOW+260,last=145.5,high=150)
+        states,events=self.data()
+        self.assertEqual(states[0]["phase"],"WEAKENING")
+        self.assertEqual([row["phase"] for row in events],
+                         ["DISCOVERED","EARLY_WEAKENING","WEAKENING"])
+        self.assertTrue(all(row["paper_only"]==1 for row in events))
+        self.assertFalse(any(row["entry"] is not None for row in events))
+
+    def test_early_weakening_rejects_reused_closed_candle(self):
+        def mk(at):
+            result=structure(at)
+            result["last5"]={"ts":NOW-300,"h":150,"l":147,"c":148}
+            return result
+        with patch.object(strat,"analyze_structure",side_effect=lambda a,b,c,at:mk(at)):
+            self.drive(NOW,last=149.2,high=150)
+            self.drive(NOW+130,last=147.8,high=150)
+        self.assertEqual(self.data()[0][0]["phase"],"WATCH")
+
+    def test_early_weakening_recovers_without_short_setup(self):
+        def mk(at):
+            result=structure(at)
+            result["last5"]={"ts":at-300,"h":150,"l":147,
+                             "c":148-(at-NOW)*0.003}
+            if at==NOW+260:
+                result["bearish5"]=False
+            return result
+        with patch.object(strat,"analyze_structure",side_effect=lambda a,b,c,at:mk(at)):
+            self.drive(NOW,last=149.2,high=150)
+            self.drive(NOW+130,last=147.8,high=150)
+            self.assertEqual(self.data()[0][0]["phase"],"EARLY_WEAKENING")
+            self.drive(NOW+260,last=149.0,high=150)
+        states,events=self.data()
+        self.assertEqual(states[0]["phase"],"WATCH")
+        self.assertEqual(events[-1]["reason"],"BUYERS_RECOVERED_EARLY_WEAKENING")
+        self.assertNotIn("READY_RESEARCH",[x["phase"] for x in events])
+
     def test_missing_independent_order_flow_blocks_research_ready(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
