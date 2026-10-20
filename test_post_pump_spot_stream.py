@@ -78,6 +78,30 @@ class SpotStreamTests(unittest.TestCase):
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
                                     "DDD-USDT","AAA-USDT","BBB-USDT"))
 
+    def test_ranked_out_pair_keeps_subscription_during_lease(self):
+        universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(universe,"READY")):
+          with patch.object(stream,"_thread",ThreadAlive()):
+            with patch.object(stream,"_socket",None):
+              with patch.object(stream,"_watched",("AAA-USDT","BBB-USDT","CCC-USDT")):
+                with patch.object(stream,"_lease_at",10000.0):
+                  with patch.object(stream.time,"time",return_value=10100.0):
+                    self.assertEqual(stream.watch(["DDDUSDT"]),(
+                        "AAA-USDT","BBB-USDT","CCC-USDT"))
+                  with patch.object(stream.time,"time",return_value=11000.0):
+                    self.assertEqual(stream.watch(["DDDUSDT"]),("DDD-USDT",))
+
+    def test_instrument_outage_retains_verified_subscriptions(self):
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(set(),"SPOT_DATA_ERROR")):
+          with patch.object(stream,"_thread",ThreadAlive()):
+            with patch.object(stream,"_socket",None):
+              with patch.object(stream,"_watched",("AAA-USDT",)):
+                with patch.object(stream,"_lease_at",10000.0):
+                  with patch.object(stream.time,"time",return_value=10050.0):
+                    self.assertEqual(stream.watch(["BBBUSDT"]),("AAA-USDT",))
+
     def test_missing_spot_contract_fails_closed_before_subscription(self):
         with patch.object(stream,"_refresh_spot_universe",
                           return_value=({"AAA-USDT"},"READY")):
