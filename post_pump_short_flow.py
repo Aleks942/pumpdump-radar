@@ -148,8 +148,12 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None):
           "orderbook_verified":False}
 
     if f1 is None or f5 is None or s5 is None:
+        # Identify missing components without relaxing evidence requirements.
+        missing=[name for name,value in (("FUTURES_1M",f1),
+                 ("FUTURES_5M",f5),("SPOT_5M",s5)) if value is None]
         return dict(base,status="INSUFFICIENT_DATA",
-                    reason="LOCAL_FLOW_NOT_READY")
+                    reason="LOCAL_FLOW_NOT_READY",
+                    missing_windows=missing)
 
     # Immediate and 5m futures pressure must agree. Spot must also sell and
     # the already-confirmed price structure must respond down.
@@ -236,5 +240,6 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
     print(f"[POST_PUMP_LOCAL_FLOW] symbol={symbol} "
           f"status={result.get('status')} reason={result.get('reason')} "
           f"event={result.get('evidence_event')} stored={ok} "
+          f"missing_windows={','.join(result.get('missing_windows') or []) or 'NONE'} "
           "no_external_service=true research_only=true",flush=True)
     return ok
