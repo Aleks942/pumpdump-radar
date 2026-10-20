@@ -114,8 +114,15 @@ def watch(symbols):
             # already validated subscription. Keep the old set until refresh.
             candidates=old
             available=set(old)
-        if old and all(p in available for p in old) and now-_lease_at<MIN_STREAM_TENURE_SEC:
-            target=old
+        # Keep current valid subscriptions for their full lease even when
+        # candidate ranking changes. A prematurely rotated feed cannot
+        # accumulate the required continuous 5m Spot trade window.
+        # Drop only symbols that the verified instrument universe no longer
+        # lists; never continue ingesting a delisted pair.
+        if old and now-_lease_at<MIN_STREAM_TENURE_SEC:
+            retained=tuple(p for p in old if p in universe)
+            additions=tuple(p for p in candidates if p not in retained)
+            target=(retained+additions)[:3]
         else:
             target=tuple(candidates[:3])
         if target!=old:
