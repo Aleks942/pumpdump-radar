@@ -471,7 +471,16 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
                   and struct["trend_shift"]):
                 _record_phase(db,st,now,"RETEST","CLOSED_5M_RETEST_REJECTED",ev,struct)
     if st["phase"]=="RETEST" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
-        if not profile.get("liquid"):
+        # A closed reclaim above the broken support invalidates the short retest,
+        # even when lagging trend indicators have not turned bullish yet.
+        level=st["break_level"]
+        last5=struct["last5"]
+        if (level is not None and last5["ts"]>st["break_candle_ts"]
+                and last5["c"]>level*1.012):
+            st["break_level"]=None
+            st["break_candle_ts"]=None
+            _record_phase(db,st,now,"WEAKENING","RETEST_LEVEL_RECLAIMED",ev,struct)
+        elif not profile.get("liquid"):
             st["watch_reason"]="WAITING_FOR_LIQUID_MARKET"
         elif not struct["trend_shift"] or struct["h1"]=="UP":
             _record_phase(db,st,now,"WEAKENING","TREND_NOT_ALIGNED",ev,struct)
