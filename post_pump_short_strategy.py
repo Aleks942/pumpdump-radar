@@ -475,7 +475,8 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         # even when lagging trend indicators have not turned bullish yet.
         level=st["break_level"]
         last5=struct["last5"]
-        if (level is not None and last5["ts"]>st["break_candle_ts"]
+        if (level is not None and st["break_candle_ts"] is not None
+                and last5["ts"]>st["break_candle_ts"]
                 and last5["c"]>level*1.012):
             st["break_level"]=None
             st["break_candle_ts"]=None
