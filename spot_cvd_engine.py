@@ -1,4 +1,12 @@
 import requests
+import time
+import threading
+
+# An OKX 51001 invalid instrument is not a sell/buy signal.
+# Cache only that explicit error to avoid repeated paid bandwidth/requests.
+_INVALID_SPOT_UNTIL = {}
+_INVALID_LOCK = threading.Lock()
+_INVALID_TTL_SEC = 3600
 
 
 OKX_SPOT_TRADES_URL = "https://www.okx.com/api/v5/market/trades"
@@ -85,6 +93,15 @@ def get_spot_cvd(raw_symbol, limit=100):
             "text": "Спотовая пара не определена"
         }
 
+    with _INVALID_LOCK:
+        blocked_until = _INVALID_SPOT_UNTIL.get(spot_symbol, 0)
+    if time.monotonic() < blocked_until:
+        return {
+            "available": False, "spot_symbol": spot_symbol,
+            "state": "SPOT_UNAVAILABLE", "vote": "UNKNOWN",
+            "weight": 0, "text": "У OKX нет этой спотовой пары"
+        }
+
     params = {
         "instId": spot_symbol,
         "limit": str(limit)
@@ -115,6 +132,10 @@ def get_spot_cvd(raw_symbol, limit=100):
             }
 
         payload = response.json()
+
+        if payload.get("code") == "51001":
+            with _INVALID_LOCK:
+                _INVALID_SPOT_UNTIL[spot_symbol] = time.monotonic() + _INVALID_TTL_SEC
 
         if payload.get("code") != "0":
             print(
