@@ -1,0 +1,22 @@
+name: Pump +30 percent info alert tests
+on:
+  pull_request:
+    paths:
+      - main.py
+      - pump_30_alerts.py
+      - test_pump_30_alerts.py
+      - ticker_metrics.py
+      - .github/workflows/pump-30-info-tests.yml
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile pump_30_alerts.py test_pump_30_alerts.py main.py
+      - run: python -m unittest -v test_pump_30_alerts.py
