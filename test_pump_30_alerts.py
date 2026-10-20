@@ -43,6 +43,8 @@ class Pump30AlertsTests(unittest.TestCase):
         self.assertEqual(self.observe(136, offset=120), [])
         weak = self.observe(134, offset=180)[0]
         self.assertEqual(weak["stage"], 2)
+        self.assertIn("ЦЕНА ОСЛАБЕВАЕТ", alerts.message(weak))
+        self.assertIn("Сила покупателей по споту здесь НЕ подтверждена", alerts.message(weak))
         alerts.acknowledge(weak, True, now=self.now + 180)
         self.assertEqual(self.observe(130, offset=240), [])
         risk = self.observe(127, offset=300)[0]
