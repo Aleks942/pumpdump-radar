@@ -48,8 +48,9 @@ def _setup(db, now):
         audit_id INTEGER PRIMARY KEY, symbol TEXT NOT NULL,
         episode_at REAL NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'PENDING', retry_at REAL NOT NULL DEFAULT 0,
-        attempts INTEGER NOT NULL DEFAULT 0, sent_at REAL,
-        UNIQUE(symbol,episode_at,kind))''')
+        attempts INTEGER NOT NULL DEFAULT 0, sent_at REAL)''')
+    db.execute('''CREATE UNIQUE INDEX IF NOT EXISTS idx_post_pump_notify_stage
+        ON post_pump_notify_outbox(symbol,episode_at,kind) WHERE kind!='CANCELLED' ''')
     if db.execute("SELECT 1 FROM post_pump_notify_meta WHERE key='cursor'").fetchone() is None:
         last = db.execute('SELECT COALESCE(MAX(id),0) FROM post_pump_short_strategy_audit').fetchone()[0]
         db.execute("INSERT INTO post_pump_notify_meta VALUES ('cursor',?)", (last,))
@@ -141,7 +142,11 @@ def deliver(sender, tickers, now=None, db_path=None):
                 # Never notify cancellation of a scenario the user has not seen.
                 prior = db.execute('''SELECT 1 FROM post_pump_notify_outbox
                     WHERE symbol=? AND episode_at=? AND status IN ('SENT','UNKNOWN')
-                    AND kind!='CANCELLED' LIMIT 1''', (row['symbol'],row['episode_at'])).fetchone()
+                    AND kind!='CANCELLED' AND audit_id > COALESCE((
+                        SELECT MAX(audit_id) FROM post_pump_notify_outbox
+                        WHERE symbol=? AND episode_at=? AND kind='CANCELLED'
+                        AND status IN ('SENT','UNKNOWN')),0) LIMIT 1''',
+                    (row['symbol'],row['episode_at'],row['symbol'],row['episode_at'])).fetchone()
                 valid = valid and prior is not None
             if not valid:
                 db.execute("UPDATE post_pump_notify_outbox SET status='EXPIRED' WHERE audit_id=?", (row['audit_id'],))

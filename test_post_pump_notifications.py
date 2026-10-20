@@ -51,6 +51,20 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(self.sender.call_count,6)
         self.assertIn('СЦЕНАРИЙ ОТМЕНЁН',self.sender.call_args.args[0])
 
+    def test_later_plan_can_be_cancelled_after_earlier_warning_cancel(self):
+        self.event('EARLY_WEAKENING')
+        self.run_delivery(NOW+1)
+        self.event('WATCH',NOW+2,'BUYERS_RECOVERED_EARLY_WEAKENING')
+        self.run_delivery(NOW+2)
+        self.event('WATCH',NOW+3,'BUYERS_RECOVERED_EARLY_WEAKENING')
+        self.run_delivery(NOW+3)
+        self.assertEqual(self.sender.call_count,2)
+        self.event('READY_RESEARCH',NOW+4)
+        self.run_delivery(NOW+4)
+        self.event('CANCELLED',NOW+5,'BREAK_INVALIDATED')
+        self.run_delivery(NOW+5)
+        self.assertEqual(self.sender.call_count,4)
+
     def test_false_retries_but_unknown_does_not(self):
         self.event('RETEST')
         self.sender.return_value = False
