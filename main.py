@@ -30,6 +30,7 @@ from telegram_builder import build_short_message, build_market_watch_message
 from coinglass_context import schedule as schedule_coinglass_context
 from public_exchange_context import schedule as schedule_public_exchange_context
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
+from pump_30_alerts import observe as observe_30_pumps, acknowledge as ack_30_pump, message as pump_30_message
 from pump_cycle_research import (observe as observe_pump_cycle,
                                  observe_outcomes as observe_cycle_outcomes,
                                  report_outcomes as report_cycle_outcomes)
@@ -1517,6 +1518,23 @@ while True:
                       "sent=", watch_sent is True, flush=True)
     except Exception as watch_exc:
         print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
+
+    # Opt-in informational +30% watch. Independent of Order Flow and the
+    # CONFIRMED_ONLY gate for actual trading signals. No new market requests.
+    if os.getenv("PUMP_30_INFO_ALERTS", "0") == "1":
+        try:
+            for pump30_event in observe_30_pumps(tickers):
+                delivered = send_telegram(
+                    pump_30_message(pump30_event),
+                    symbol=pump30_event["symbol"],
+                )
+                ack_30_pump(pump30_event, delivered)
+                print("[PUMP_30_INFO]", pump30_event["symbol"],
+                      "stage=", pump30_event["stage"],
+                      "sent=", delivered is True, flush=True)
+        except Exception as pump30_error:
+            print("[PUMP_30_INFO_ERROR]",
+                  type(pump30_error).__name__, flush=True)
 
     # Research-only pump lifecycle: correlates observed chronological pivots
     # with authenticated Bybit Flow sell pressure, never sends Telegram.
