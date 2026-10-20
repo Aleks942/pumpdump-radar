@@ -48,7 +48,7 @@ def _profile(row):
     if rise < MIN_RISE_PCT:
         return None
     return dict(symbol=instrument.replace("-USDT-SWAP", "USDT"), price=price,
-                peak=high, rise=rise, retrace=100.0 * (1.0 - price / high))
+                peak=high, opening=opening, rise=rise, retrace=100.0 * (1.0 - price / high))
 
 
 def _connect():
@@ -96,7 +96,7 @@ def observe(tickers, now=None):
             current = existing.get(symbol)
             if current is None:
                 # Don't initiate stale episodes after an already completed dump.
-                if p["retrace"] > 15.0:
+                if p["retrace"] > 15.0 or p["price"] < p["opening"] * 1.30:
                     continue
                 peak, down, notified, retry = p["peak"], 0, 0, 0.0
                 db.execute("""INSERT INTO pump_30_watch
