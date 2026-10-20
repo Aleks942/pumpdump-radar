@@ -322,16 +322,12 @@ def handle_trade(inst_id, trade):
             quote_value=quote_value,
         )
 def on_message(ws, message):
-
-    
-    mark_stream_activity("swap")
-
     try:
-        payload = json.loads(
-            message
-        )
+        payload = json.loads(message)
+    except (ValueError, TypeError):
+        return
 
-    except Exception:
+    if not isinstance(payload, dict):
         return
 
     if "event" in payload:
@@ -350,12 +346,14 @@ def on_message(ws, message):
     if arg.get("channel") != "trades":
         return
 
-    inst_id = arg.get(
-        "instId"
-    )
-
-    if not inst_id:
+    inst_id = arg.get("instId")
+    if not isinstance(inst_id, str) or not inst_id.endswith("-USDT-SWAP"):
         return
+
+    # A subscribe ACK, ping or unrelated event is not fresh trade evidence.
+    if not isinstance(payload.get("data"), list) or not payload["data"]:
+        return
+    mark_stream_activity("swap")
 
 
     data = payload.get(
