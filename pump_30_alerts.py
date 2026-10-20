@@ -117,7 +117,8 @@ def observe(tickers, now=None):
                 stage = 2
             if down >= 3 and retrace >= max(6.0, p["rise"] * 0.20):
                 stage = 3
-            if stage > notified and retry <= now and sent_today < MAX_DAILY_ALERTS:
+            if (stage > notified and retry <= now and
+                    sent_today + len(events) < MAX_DAILY_ALERTS):
                 events.append(dict(symbol=symbol, stage=stage, rise=p["rise"],
                                    retrace=retrace, price=p["price"], peak=peak))
         db.commit()
