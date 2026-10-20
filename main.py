@@ -901,27 +901,28 @@ def analyze(ticker):
     watch_symbol(symbol)
     oi_data = get_oi_5m(symbol)
 
-    print(
-        "[OI_5M]",
-        symbol,
-        "quality=", oi_data["quality"],
-        "period_sec=", (
-            round(oi_data["period_sec"], 1)
-            if oi_data["period_sec"] is not None
-            else None
-        ),
-        "age_sec=", (
-            round(oi_data["age_sec"], 1)
-            if oi_data["age_sec"] is not None
-            else None
-        ),
-        "change_pct=", (
-            round(oi_data["change_pct"], 3)
-            if oi_data["change_pct"] is not None
-            else None
-        ),
-        flush=True,
-    )
+    if os.getenv("OI_VERBOSE_LOGS", "0") == "1":
+        print(
+            "[OI_5M]",
+            symbol,
+            "quality=", oi_data["quality"],
+            "period_sec=", (
+                round(oi_data["period_sec"], 1)
+                if oi_data["period_sec"] is not None
+                else None
+            ),
+            "age_sec=", (
+                round(oi_data["age_sec"], 1)
+                if oi_data["age_sec"] is not None
+                else None
+            ),
+            "change_pct=", (
+                round(oi_data["change_pct"], 3)
+                if oi_data["change_pct"] is not None
+                else None
+            ),
+            flush=True,
+        )
 
     if not oi_data["ready"]:
         return None
