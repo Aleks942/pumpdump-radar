@@ -68,6 +68,14 @@ class Pump30AlertsTests(unittest.TestCase):
         # A genuinely current +30% rise remains eligible.
         self.assertEqual(self.observe(130, high=140)[0]["stage"], 1)
 
+    def test_initial_alert_requires_current_gain_of_30pct(self):
+        # +40% historical peak alone is not a fresh +30% pump.
+        self.assertEqual(self.observe(125, high=140), [])
+        # Current gain at the threshold qualifies.
+        fresh = self.observe(130, high=140)
+        self.assertEqual(len(fresh), 1)
+        self.assertEqual(fresh[0]["stage"], 1)
+
     def test_info_alert_is_opt_in_and_independent_of_trade_confirmation(self):
         from pathlib import Path
         code = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
