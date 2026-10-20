@@ -65,6 +65,15 @@ class LocalFlowTests(unittest.TestCase):
              "last5":{"o":101,"c":99}},AT)
         self.assertEqual(result["status"],"INSUFFICIENT_DATA")
         self.assertEqual(result["reason"],"LOCAL_FLOW_NOT_READY")
+        self.assertEqual(result["missing_windows"],["FUTURES_1M"])
+
+    def test_missing_spot_window_is_identified_without_approval(self):
+        result=flow.verify_local(99,
+            {"1m":window(-40),"5m":window(-30)}, {},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT)
+        self.assertEqual(result["status"],"INSUFFICIENT_DATA")
+        self.assertEqual(result["missing_windows"],["SPOT_5M"])
 
     def test_dispatch_uses_local_readers_and_episode_scoped_storage(self):
         readers=(lambda symbol:{"1m":window(-40),"5m":window(-30)},
