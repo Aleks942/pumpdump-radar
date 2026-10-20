@@ -1,6 +1,6 @@
 """Complete POST-PUMP SHORT decision pipeline inside existing PumpDump Radar.
 
-Research/paper-only: no orders, no automatic READY/ELITE Telegram alerts.
+Research/paper-only: no orders. Telegram lifecycle uses a separate ACK outbox.
 Finds *all* eligible +30% OKX-USDT-SWAP tickers directly, including those that
 already pulled back >15%; does not depend on early Pump Watch/cycle seeding.
 Closed OKX OHLC 5m/15m/1H, sequential structural break and later retest,
@@ -402,6 +402,24 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     st["peak"]=max(st["peak"],profile["high"])
     st["band"]=profile["band"]
     st["last_retrace_pct"]=100*(1-profile["last"]/st["peak"])
+    # A published paper plan must keep a live cancellation path. This cheap
+    # check also runs while candle/flow collectors are warming or unavailable.
+    if st["phase"] == "READY_RESEARCH":
+        plan_row = db.execute("""SELECT stop FROM post_pump_short_strategy_audit
+            WHERE symbol=? AND episode_at=? AND phase='READY_RESEARCH'
+            ORDER BY id DESC LIMIT 1""", (sym, st["episode_at"])).fetchone()
+        stop = num(plan_row["stop"]) if plan_row else None
+        level = num(st.get("break_level"))
+        reason = None
+        if stop is not None and profile["last"] >= stop:
+            reason = "PAPER_STOP_REACHED"
+        elif level is not None and profile["last"] > level * 1.012:
+            reason = "BREAK_INVALIDATED"
+        elif now - st["phase_at"] >= 3600:
+            reason = "PAPER_PLAN_EXPIRED"
+        if reason:
+            _record_phase(db,st,now,"CANCELLED",reason)
+            return "CANCELLED",None
     if not ws_spot.get("ready") and now-st["last_spot_poll_at"]>=SPOT_POLL_INTERVAL_SEC:
         try:
             trades=spot_reader(sym)
@@ -450,6 +468,10 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     st["last_evidence_json"]=json.dumps(ev,sort_keys=True,default=str)
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
+        return status,struct
+    if st["phase"] == "READY_RESEARCH":
+        if not struct["trend_shift"] or struct["h1"] == "UP":
+            _record_phase(db,st,now,"CANCELLED","TREND_NOT_ALIGNED",ev,struct)
         return status,struct
     if (profile["last"]>=previous_peak*1.001 and st["phase"]!="WATCH"):
         st["break_level"]=None
@@ -523,6 +545,33 @@ def _fetch_paper_1m(symbol):
     return get_candles(symbol,bar="1m",limit=100)
 
 
+def _cancel_published_plans(db, quotes, now):
+    """All paper plans get cheap invalidation, regardless of the 3-symbol cap."""
+    for row in db.execute("SELECT * FROM post_pump_short_strategy WHERE phase='READY_RESEARCH'").fetchall():
+        st = dict(row)
+        px = quotes.get(st['symbol'])
+        plan = db.execute("""SELECT stop FROM post_pump_short_strategy_audit
+            WHERE symbol=? AND episode_at=? AND phase='READY_RESEARCH'
+            ORDER BY id DESC LIMIT 1""", (st['symbol'],st['episode_at'])).fetchone()
+        stop = num(plan['stop']) if plan else None
+        level = num(st.get('break_level'))
+        reason = None
+        if px is not None and stop is not None and px >= stop:
+            reason = 'PAPER_STOP_REACHED'
+        elif px is not None and level is not None and px > level * 1.012:
+            reason = 'BREAK_INVALIDATED'
+        elif now-st['phase_at'] >= 3600:
+            reason = 'PAPER_PLAN_EXPIRED'
+        if reason:
+            if px is not None:
+                st['last_price'] = px
+                st['last_retrace_pct'] = 100*(1-px/st['peak'])
+            _record_phase(db,st,now,'CANCELLED',reason)
+            db.execute("""UPDATE post_pump_short_strategy SET phase=?,phase_at=?,
+                watch_reason=?,last_price=?,last_retrace_pct=? WHERE symbol=?""",
+                (st['phase'],st['phase_at'],reason,st['last_price'],st['last_retrace_pct'],st['symbol']))
+
+
 def observe(tickers,now=None,db_path=None,fetch_context=None,
             fetch_spot=None,evidence_reader=None,equity_usdt=None,
             fetch_paper_1m=None):
@@ -560,6 +609,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             db.row_factory=sqlite3.Row
             db.execute("PRAGMA busy_timeout=7000")
             setup(db)
+            _cancel_published_plans(db, quotes, now)
             # All detected +30% symbols enter watch regardless of earlier pullback.
             for symbol,item in eligible.items():
                 old=db.execute("""SELECT * FROM post_pump_short_strategy
@@ -600,8 +650,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             # Evaluate existing + fresh assets even after the 24h window rolls;
             # at most one 72h research episode, never immortal on stale momentum.
             candidates=db.execute("""SELECT * FROM post_pump_short_strategy
-                WHERE last_seen_at>=? AND phase NOT IN ('READY_RESEARCH','EXPIRED')
-                ORDER BY CASE phase WHEN 'RETEST' THEN 0
+                WHERE last_seen_at>=? AND phase NOT IN ('CANCELLED','EXPIRED')
+                ORDER BY CASE phase WHEN 'READY_RESEARCH' THEN -1 WHEN 'RETEST' THEN 0
                          WHEN 'TREND_SHIFT' THEN 1 WHEN 'WEAKENING' THEN 2
                          WHEN 'EARLY_WEAKENING' THEN 3
                          ELSE 4 END, last_context_at ASC LIMIT 120""",

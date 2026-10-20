@@ -31,6 +31,7 @@ from coinglass_context import schedule as schedule_coinglass_context
 from public_exchange_context import schedule as schedule_public_exchange_context
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_30_alerts import observe as observe_30_pumps, acknowledge as ack_30_pump, message as pump_30_message
+from post_pump_notifications import deliver as deliver_post_pump_notifications
 from pump_cycle_research import (observe as observe_pump_cycle,
                                  observe_outcomes as observe_cycle_outcomes,
                                  report_outcomes as report_cycle_outcomes)
@@ -1521,7 +1522,8 @@ while True:
 
     # Opt-in informational +30% watch. Independent of Order Flow and the
     # CONFIRMED_ONLY gate for actual trading signals. No new market requests.
-    if os.getenv("PUMP_30_INFO_ALERTS", "0") == "1":
+    if (os.getenv("PUMP_30_INFO_ALERTS", "0") == "1"
+            and os.getenv("POST_PUMP_TELEGRAM", "1") != "1"):
         try:
             for pump30_event in observe_30_pumps(tickers):
                 delivered = send_telegram(
@@ -1556,6 +1558,14 @@ while True:
     except Exception as complete_short_exc:
         print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
               type(complete_short_exc).__name__, flush=True)
+
+    # User-enabled complete lifecycle. Preserves every strategy evidence gate;
+    # messages explicitly label READY as a paper plan, never a live order.
+    if os.getenv("POST_PUMP_TELEGRAM", "1") == "1":
+        try:
+            deliver_post_pump_notifications(send_telegram, tickers)
+        except Exception as notify_error:
+            print("[POST_PUMP_NOTIFY_ERROR]", type(notify_error).__name__, flush=True)
 
     # Retain the prior Pump Cycle research cohorts as a separate experiment.
     try:
