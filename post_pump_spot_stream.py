@@ -120,7 +120,8 @@ def watch(symbols):
         # Drop only symbols that the verified instrument universe no longer
         # lists; never continue ingesting a delisted pair.
         if old and now-_lease_at<MIN_STREAM_TENURE_SEC:
-            retained=tuple(p for p in old if p in universe)
+            retained=(old if universe_status=='SPOT_DATA_ERROR' and not universe
+                      else tuple(p for p in old if p in universe))
             additions=tuple(p for p in candidates if p not in retained)
             target=(retained+additions)[:3]
         else:
