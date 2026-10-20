@@ -39,6 +39,23 @@ class NotificationsTests(unittest.TestCase):
         return notify.deliver(self.sender,[{'instId':'TEST-USDT-SWAP','last':str(price)}],
                               now=at,db_path=self.path)
 
+    def test_research_metrics_are_labeled_as_partial_context(self):
+        event={'kind':'WEAKENING','symbol':'TESTUSDT','at':NOW,
+               'rise_pct':35.0,'retrace_pct':8.0,
+               'evidence_json':json.dumps({
+                   'capital_state':{'state':'NEW_SHORT_BUILDUP'},
+                   'bounded_cvd_5m':{'state':'SELLERS_DOMINANT'},
+                   'liquidation_context':{'available':True,
+                       'long_usdt':12000,'short_usdt':3000},
+                   'funding_context':{'available':True,'funding_pct':0.015}})}
+        msg=notify.message(event)
+        self.assertIn('OI / капитал',msg)
+        self.assertIn('не полный CVD',msg)
+        self.assertIn('Ликвидации (частично)',msg)
+        self.assertIn('Funding: +0.0150%',msg)
+        event['evidence_json']='{invalid'
+        self.assertIn('недоступны',notify.message(event))
+
     def test_full_lifecycle_and_restart_dedup(self):
         for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT','RETEST','READY_RESEARCH')):
             self.event(phase,NOW+1+i)
