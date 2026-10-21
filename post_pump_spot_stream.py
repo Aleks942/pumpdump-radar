@@ -30,6 +30,59 @@ SPOT_UNIVERSE_TTL_SEC=30*60
 _SPOT_UNIVERSE=set()
 _SPOT_UNIVERSE_AT=0.0
 _SPOT_UNIVERSE_STATUS="UNKNOWN"
+_RECONNECT_BASE_SEC=5
+_RECONNECT_MAX_SEC=60
+_SPOT_DIAG_INTERVAL_SEC=300
+_SPOT_DIAG_LAST={}
+
+
+def _reconnect_delay(failures):
+    """Back off repeated short sessions without slowing healthy reconnects."""
+    return min(_RECONNECT_MAX_SEC,
+               _RECONNECT_BASE_SEC * (2 ** min(max(0,int(failures)-1),4)))
+
+
+def _spot_gap_reason(item):
+    """Distinguish network problems from insufficient real trades."""
+    if not item or item.get("stream_healthy") is not True:
+        return "STREAM_DISCONNECTED_OR_STALE"
+    age=item.get("stream_stale_seconds")
+    if age is None or not 0<=age<=30:
+        return "STREAM_DISCONNECTED_OR_STALE"
+    if item.get("window_ready") is not True or item.get("quality")!="READY":
+        return "WARMING_AFTER_CONNECTION_OR_SUBSCRIPTION"
+    age=item.get("last_trade_age_sec")
+    if age is None or not 0<=age<=60:
+        return "SYMBOL_TRADES_MISSING_OR_STALE"
+    count=item.get("trade_count")
+    if count is None or count<15:
+        return "TOO_FEW_REAL_TRADES"
+    total=item.get("total_quote")
+    if total is None or total<1000:
+        return "TOO_LITTLE_TRADED_NOTIONAL"
+    try:
+        if not math.isfinite(float(item.get("imbalance_pct"))):
+            return "BAD_IMBALANCE_DATA"
+    except (TypeError,ValueError,OverflowError):
+        return "BAD_IMBALANCE_DATA"
+    return "UNKNOWN_NOT_READY"
+
+
+def _log_spot_gap(pair,cause):
+    """Rate-limit diagnostic log lines without changing SHORT gates."""
+    now=time.monotonic()
+    with _LOCK:
+        key=(pair,cause)
+        if now-_SPOT_DIAG_LAST.get(key,-1e20)<_SPOT_DIAG_INTERVAL_SEC:
+            return
+        _SPOT_DIAG_LAST[key]=now
+        if len(_SPOT_DIAG_LAST)>120:
+            cutoff=now-_SPOT_DIAG_INTERVAL_SEC
+            for k,at in list(_SPOT_DIAG_LAST.items()):
+                if at<cutoff:
+                    _SPOT_DIAG_LAST.pop(k,None)
+    print("[POST_PUMP_SPOT_NOT_READY]","pair=",pair,"cause=",cause,
+          "no_short_approval=true",flush=True)
 
 
 def _refresh_spot_universe(now=None,request_get=None):
@@ -208,26 +261,34 @@ def _worker():
     except ImportError:
         print("[POST_PUMP_SPOT_STREAM] websocket_missing",flush=True)
         return
+    failures=0
     while True:
         with _LOCK:
             pairs=_watched
         if not pairs:
             mark_stream_disconnected("spot")
+            failures=0
             time.sleep(15)
             continue
+        session_started=None
+        close_info={"code":None,"reason":""}
         def on_open(ws):
             global _socket_ready
+            nonlocal session_started
             with _LOCK:
                 mark_stream_connected("spot")
                 _subscribed.clear()
                 _sync_subscriptions(ws)
                 _socket_ready=True
+                session_started=time.monotonic()
             print("[POST_PUMP_SPOT_WS_SUB]",len(_subscribed),flush=True)
         def on_message(ws,msg):
             with _LOCK:
                 if ws is _socket:
                     _message(msg)
         def on_close(ws,code,msg):
+            close_info["code"]=code
+            close_info["reason"]=str(msg or "")[:120]
             mark_stream_disconnected("spot")
         try:
             ws=websocket.WebSocketApp(
@@ -247,7 +308,19 @@ def _worker():
                     _socket_ready=False
                     _subscribed.clear()
             mark_stream_disconnected("spot")
-        time.sleep(5)
+        uptime=(max(0.0,time.monotonic()-session_started)
+                if session_started is not None else 0.0)
+        # Real disconnections reset the 5m windows; short repeated failures
+        # are rate-limited, never mistaken for completed market observations.
+        failures=0 if uptime>=300 else min(failures+1,5)
+        delay=_reconnect_delay(failures)
+        print("[POST_PUMP_SPOT_WS_RECONNECT]",
+              "uptime_sec=",round(uptime,1),
+              "close_code=",close_info["code"],
+              "close_reason=",repr(close_info["reason"]),
+              "consecutive_short_sessions=",failures,
+              "delay_sec=",delay,flush=True)
+        time.sleep(delay)
 
 
 def verified(symbol):
@@ -272,7 +345,10 @@ def verified(symbol):
             or count is None or count<15
             or total is None or total<1000
             or value is None or not math.isfinite(float(value))):
-            return {"ready":False,"reason":"SPOT_WS_NOT_READY"}
+            cause=_spot_gap_reason(item)
+            _log_spot_gap(pair,cause)
+            return {"ready":False,"reason":"SPOT_WS_NOT_READY",
+                    "diagnostic":cause}
         return {"ready":True,"reason":"OKX_SPOT_WS_5M",
                 "imbalance_pct":float(value),
                 "delta_quote":float(item.get("delta_quote") or 0),
