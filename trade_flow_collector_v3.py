@@ -57,6 +57,18 @@ STREAM_STATE = {
 }
 
 _LOCK = threading.RLock()
+# Explicitly managed subscriptions have their own warm-up clock.
+SYMBOL_STARTED = {"spot": {}, "swap": {}}
+
+def reset_symbol(market, symbol):
+    market = _normalize_market(market)
+    symbol = normalize_symbol(symbol)
+    if not market or not symbol:
+        return
+    with _LOCK:
+        TRADE_HISTORY[market].pop(symbol, None)
+        SYMBOL_STARTED[market][symbol] = None
+
 
 
 # ============================================================
@@ -107,6 +119,8 @@ def mark_stream_connected(market):
     with _LOCK:
         state = STREAM_STATE[market]
         TRADE_HISTORY[market].clear()
+        for symbol in SYMBOL_STARTED[market]:
+            SYMBOL_STARTED[market][symbol] = None
 
         state["connected"] = True
         state["started_at"] = now
@@ -130,6 +144,8 @@ def mark_stream_disconnected(market):
         state = STREAM_STATE[market]
 
         TRADE_HISTORY[market].clear()
+        for symbol in SYMBOL_STARTED[market]:
+            SYMBOL_STARTED[market][symbol] = None
 
         state["connected"] = False
         state["started_at"] = None
@@ -150,6 +166,8 @@ def _touch_stream_locked(market, now):
         or gap < 0
     ):
         TRADE_HISTORY[market].clear()
+        for symbol in SYMBOL_STARTED[market]:
+            SYMBOL_STARTED[market][symbol] = None
 
         state["connected"] = True
         state["started_at"] = now
@@ -310,6 +328,8 @@ def save_trade(
 
     with _LOCK:
         _touch_stream_locked(market, now)
+        if symbol in SYMBOL_STARTED[market] and SYMBOL_STARTED[market][symbol] is None:
+            SYMBOL_STARTED[market][symbol] = now
 
         TRADE_HISTORY[
             market
@@ -435,6 +455,12 @@ def get_flow(
         if state
         else False
     )
+
+    with _LOCK:
+        if symbol in SYMBOL_STARTED[market]:
+            started = SYMBOL_STARTED[market][symbol]
+            continuous_seconds = min(continuous_seconds,
+                max(0.0, now-started) if started is not None else 0.0)
 
     # Теперь coverage означает:
     # сколько времени collector непрерывно наблюдал рынок.

@@ -13,12 +13,14 @@ import time
 
 from trade_flow_collector_v3 import (
     save_trade, mark_stream_connected, mark_stream_disconnected,
-    mark_stream_activity, get_spot_windows,
+    mark_stream_activity, get_spot_windows, reset_symbol,
 )
 
 _LOCK=threading.RLock()
 _watched=()
 _socket=None
+_socket_ready=False
+_subscribed=set()
 _thread=None
 _lease_at=0.0
 MIN_STREAM_TENURE_SEC=15*60
@@ -133,12 +135,34 @@ def watch(symbols):
             _thread=threading.Thread(target=_worker,daemon=True,
                                      name="post-pump-spot-flow")
             _thread.start()
-        if target!=old and _socket is not None:
+        if _socket is not None and _socket_ready:
             try:
-                _socket.close()
+                _sync_subscriptions(_socket)
             except Exception:
-                pass
+                # Uncertain subscription state: fail closed and reconnect.
+                mark_stream_disconnected("spot")
+                _socket.close()
     return target
+
+
+def _sync_subscriptions(ws):
+    """Caller holds _LOCK. Retained instruments keep their accumulated trades."""
+    target=set(_watched)
+    removed=_subscribed-target
+    added=target-_subscribed
+    for pair in removed | added:
+        reset_symbol("spot", pair)
+    for op, pairs in (("unsubscribe",removed),("subscribe",added)):
+        if pairs:
+            ws.send(json.dumps({"op":op,"args":[
+                {"channel":"trades","instId":p} for p in sorted(pairs)]}))
+    _subscribed.clear()
+    _subscribed.update(target)
+    if added or removed:
+        print("[POST_PUMP_SPOT_SUB_CHANGE]",
+              "added=", ",".join(sorted(added)) or "NONE",
+              "removed=", ",".join(sorted(removed)) or "NONE",
+              "retained=", ",".join(sorted(target-added)) or "NONE",flush=True)
 
 
 def _message(message):
@@ -178,7 +202,7 @@ def _message(message):
 
 
 def _worker():
-    global _socket
+    global _socket, _socket_ready
     try:
         import websocket
     except ImportError:
@@ -192,12 +216,17 @@ def _worker():
             time.sleep(15)
             continue
         def on_open(ws):
-            mark_stream_connected("spot")
-            ws.send(json.dumps({"op":"subscribe","args":[
-                {"channel":"trades","instId":s} for s in pairs]}))
-            print("[POST_PUMP_SPOT_WS_SUB]",len(pairs),flush=True)
+            global _socket_ready
+            with _LOCK:
+                mark_stream_connected("spot")
+                _subscribed.clear()
+                _sync_subscriptions(ws)
+                _socket_ready=True
+            print("[POST_PUMP_SPOT_WS_SUB]",len(_subscribed),flush=True)
         def on_message(ws,msg):
-            _message(msg)
+            with _LOCK:
+                if ws is _socket:
+                    _message(msg)
         def on_close(ws,code,msg):
             mark_stream_disconnected("spot")
         try:
@@ -207,6 +236,7 @@ def _worker():
                     "[POST_PUMP_SPOT_WS_ERROR]",type(e).__name__,flush=True))
             with _LOCK:
                 _socket=ws
+                _socket_ready=False
             ws.run_forever(ping_interval=20,ping_timeout=10)
         except Exception as exc:
             print("[POST_PUMP_SPOT_WS_ERROR]",type(exc).__name__,flush=True)
@@ -214,6 +244,8 @@ def _worker():
             with _LOCK:
                 if _socket is ws:
                     _socket=None
+                    _socket_ready=False
+                    _subscribed.clear()
             mark_stream_disconnected("spot")
         time.sleep(5)
 
