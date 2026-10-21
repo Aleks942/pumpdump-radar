@@ -770,6 +770,22 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
                       "first_touch_closed_1m=true no_live_orders=true",
                       flush=True)
+                # Lightweight hourly funnel: diagnose blocked research candidates
+                # using the state already persisted in SQLite. No extra API,
+                # notifications, tables or changes to the SHORT safety gates.
+                report_db.row_factory=sqlite3.Row
+                stalled=report_db.execute("""SELECT phase,
+                    COALESCE(NULLIF(watch_reason,''),'NO_REASON') AS reason,
+                    COUNT(*) AS n
+                    FROM post_pump_short_strategy
+                    WHERE last_seen_at>=? AND phase NOT IN ('EXPIRED','CANCELLED')
+                    GROUP BY phase,reason ORDER BY n DESC LIMIT 20""",
+                    (now-STALE_SYMBOL_SEC,)).fetchall()
+                for item in stalled:
+                    print("[SHORT_REJECTION_FUNNEL]",
+                          "phase=",item["phase"],"reason=",item["reason"],
+                          "candidates=",item["n"],
+                          "descriptive_only=true no_gate_change=true",flush=True)
         except sqlite3.Error:
             print("[POST_PUMP_PAPER_REPORT_ERROR] sqlite",flush=True)
     return diagnostics
