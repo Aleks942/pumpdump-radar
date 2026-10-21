@@ -163,5 +163,49 @@ class SpotStreamTests(unittest.TestCase):
                              "SPOT_DATA_ERROR")
 
 
+    def test_reconnect_delay_backs_off_and_is_bounded(self):
+        self.assertEqual([stream._reconnect_delay(n) for n in range(1,7)],
+                         [5,10,20,40,60,60])
+        self.assertEqual(stream._reconnect_delay(0),5)
+        self.assertEqual(stream._reconnect_delay(100),60)
+
+    def test_spot_gap_reason_separates_data_gap_from_low_liquidity(self):
+        base={"window_ready":True,"stream_healthy":True,
+              "quality":"READY","stream_stale_seconds":1,
+              "last_trade_age_sec":1,"trade_count":30,
+              "total_quote":2500,"imbalance_pct":-20}
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "stream_healthy":False}),
+                         "STREAM_DISCONNECTED_OR_STALE")
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "window_ready":False,"quality":"WARMING"}),
+                         "WARMING_AFTER_CONNECTION_OR_SUBSCRIPTION")
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "last_trade_age_sec":80}),
+                         "SYMBOL_TRADES_MISSING_OR_STALE")
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "trade_count":2}),"TOO_FEW_REAL_TRADES")
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "total_quote":200}),"TOO_LITTLE_TRADED_NOTIONAL")
+        self.assertEqual(stream._spot_gap_reason({**base,
+                         "imbalance_pct":None}),"BAD_IMBALANCE_DATA")
+
+    def test_unready_spot_diagnostic_does_not_approve_short(self):
+        item={"5m":{"window_ready":False,"stream_healthy":True,
+                     "quality":"WARMING","stream_stale_seconds":1,
+                     "last_trade_age_sec":1,"trade_count":30,
+                     "total_quote":2500,"imbalance_pct":-50}}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=({"TEST-USDT"},"READY")):
+            with patch.object(stream,"get_spot_windows",return_value=item):
+                with patch.object(stream,"_log_spot_gap") as reporter:
+                    result=stream.verified("TESTUSDT")
+        self.assertFalse(result["ready"])
+        self.assertEqual(result["reason"],"SPOT_WS_NOT_READY")
+        self.assertEqual(result["diagnostic"],
+                         "WARMING_AFTER_CONNECTION_OR_SUBSCRIPTION")
+        reporter.assert_called_once_with("TEST-USDT",result["diagnostic"])
+
+
 if __name__=="__main__":
     unittest.main()
