@@ -30,11 +30,11 @@ def ready_sources(now):
                                  "change_pct":-1.28}}}
     def futures(symbol):
         return {"5m":{"window_ready":True,"stream_healthy":True,
-                "quality":"READY","stream_stale_seconds":3,
+                "quality":"READY","last_trade_age_sec":2,"stream_stale_seconds":3,
                 "imbalance_pct":-35,"delta_quote":-18500}}
     def spot(symbol):
         return {"5m":{"window_ready":True,"stream_healthy":True,
-                "quality":"READY","stream_stale_seconds":4,
+                "quality":"READY","last_trade_age_sec":2,"stream_stale_seconds":4,
                 "imbalance_pct":-22,"delta_quote":-5000}}
     return (oi,agg,futures,spot)
 

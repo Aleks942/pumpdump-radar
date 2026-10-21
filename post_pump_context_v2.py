@@ -103,10 +103,10 @@ def classify_bounded_cvd(evidence,spot):
         s_delta=_num(spot.get("delta_quote"))
         spot_quality=spot.get("reason","READY")
     else:
-        s_imb=_num(evidence.get("spot_taker_5m_imbalance_pct"))
-        s_delta=_num(evidence.get("spot_taker_5m_delta_quote"))
+        s_imb=None
+        s_delta=None
         spot_quality=spot.get("reason","SPOT_NOT_READY")
-    if f_imb is None or s_imb is None:
+    if f_imb is None or s_imb is None or f_delta is None or s_delta is None:
         state="INSUFFICIENT_DATA"
     elif f_imb<=-10 and s_imb<=-10:
         state="SPOT_AND_FUTURES_SELL"
@@ -175,6 +175,10 @@ def classify_liquidations(liquidations):
         "available":available,"complete":complete,
         "quality":liq.get("quality","UNAVAILABLE"),
         "long_usdt":long_usdt,"short_usdt":short_usdt,
+        "sources":liq.get("sources", {}),
+        "exchanges":liq.get("exchanges"),
+        "observed_at":liq.get("observed_at"),
+        "event_count":liq.get("event_count"),
         "long_to_short_ratio":round(ratio,4) if ratio is not None else None,
         "dominance":dominance,
         "context_only":True,
@@ -193,15 +197,40 @@ def _funding_state(value):
     return "NORMAL"
 
 
-def _store_funding(symbol,value,captured_at):
+def _store_funding(symbol,value,captured_at,metadata=None):
     value=_num(value)
     result={"available":value is not None,"state":_funding_state(value),
             "funding_pct":value,"captured_at":captured_at,
             "context_only":True}
+    result.update(metadata or {})
+    result["source"]="OKX"
     with _funding_lock:
         _funding_cache[symbol]=result
         _funding_pending.discard(symbol)
     return dict(result)
+
+
+def _fetch_funding(inst, request_get=None):
+    if request_get is None:
+        import requests
+        request_get=requests.get
+    response=request_get("https://www.okx.com/api/v5/public/funding-rate",
+                         params={"instId":inst},timeout=(3,6))
+    response.raise_for_status()
+    data=response.json()
+    rows=data.get("data") if data.get("code")=="0" else None
+    if not isinstance(rows,list) or len(rows)!=1:
+        raise ValueError("FUNDING_SCHEMA")
+    row=rows[0]
+    rate=_num(row.get("fundingRate"))
+    stamp=_num(row.get("ts"))
+    now=time.time()
+    if (row.get("instId")!=inst or rate is None or abs(rate)>1
+            or stamp is None or not -5<=now-stamp/1000<=FUNDING_TTL_SEC):
+        raise ValueError("FUNDING_STALE_OR_INVALID")
+    funding_at=_num(row.get("fundingTime"))
+    return rate*100, {"exchange_ts":stamp/1000,
+                      "funding_at":funding_at/1000 if funding_at else None}
 
 
 def funding_context(symbol,now=None,getter=None):
@@ -213,8 +242,10 @@ def funding_context(symbol,now=None,getter=None):
     now=time.time() if now is None else float(now)
     with _funding_lock:
         cached=_funding_cache.get(symbol)
-        if cached and 0<=now-cached["captured_at"]<=FUNDING_TTL_SEC:
-            return dict(cached)
+        age=now-cached.get("exchange_ts",cached["captured_at"]) if cached else None
+        fresh=dict(cached,age_sec=round(age,1)) if cached and 0<=age<=FUNDING_TTL_SEC else None
+        if fresh and now-cached["captured_at"]<120:
+            return fresh
     inst=(symbol[:-4]+"-USDT-SWAP"
           if isinstance(symbol,str) and symbol.endswith("USDT") else symbol)
     if getter is not None:
@@ -225,18 +256,20 @@ def funding_context(symbol,now=None,getter=None):
 
     with _funding_lock:
         if symbol in _funding_pending:
-            return {"available":False,"state":"FUNDING_WARMING",
+            return fresh or {"available":False,"state":"FUNDING_WARMING",
                     "funding_pct":None,"captured_at":now,
                     "context_only":True}
         _funding_pending.add(symbol)
 
     def worker():
         try:
-            from money_flow_engine import get_funding
-            value=get_funding(inst)
-        except Exception:
+            value,metadata=_fetch_funding(inst)
+        except Exception as exc:
             value=None
-        _store_funding(symbol,value,time.time())
+            metadata={"error":type(exc).__name__}
+        _store_funding(symbol,value,time.time(),metadata)
+        print("[POST_PUMP_FUNDING]",symbol,"available=",value is not None,
+              "source=OKX",flush=True)
 
     try:
         threading.Thread(target=worker,daemon=True,
@@ -245,7 +278,7 @@ def funding_context(symbol,now=None,getter=None):
         with _funding_lock:
             _funding_pending.discard(symbol)
         return _store_funding(symbol,None,now)
-    return {"available":False,"state":"FUNDING_WARMING",
+    return fresh or {"available":False,"state":"FUNDING_WARMING",
             "funding_pct":None,"captured_at":now,"context_only":True}
 
 
