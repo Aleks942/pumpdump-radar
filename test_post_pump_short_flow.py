@@ -12,7 +12,7 @@ AT=1800000000.0
 
 def window(imbalance,trades=50,total=10000):
     return {"window_ready":True,"stream_healthy":True,"quality":"READY",
-            "stream_stale_seconds":1,"trade_count":trades,
+            "last_trade_age_sec":2,"stream_stale_seconds":1,"trade_count":trades,
             "total_quote":total,"imbalance_pct":imbalance}
 
 
@@ -66,6 +66,13 @@ class LocalFlowTests(unittest.TestCase):
         self.assertEqual(result["status"],"INSUFFICIENT_DATA")
         self.assertEqual(result["reason"],"LOCAL_FLOW_NOT_READY")
         self.assertEqual(result["missing_windows"],["FUTURES_1M"])
+
+    def test_stale_symbol_trades_are_not_approved_by_global_health(self):
+        fw={"1m":window(-30),"5m":window(-30)}
+        sw={"5m":dict(window(-30),last_trade_age_sec=100)}
+        result=flow.verify_local(100,fw,sw,{"trend_shift":True,"bearish5":True},now=AT)
+        self.assertEqual(result["status"],"INSUFFICIENT_DATA")
+        self.assertIn("SPOT_5M",result["missing_windows"])
 
     def test_missing_spot_window_is_identified_without_approval(self):
         result=flow.verify_local(99,

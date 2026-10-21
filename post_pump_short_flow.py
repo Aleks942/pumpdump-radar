@@ -100,6 +100,7 @@ def _window(window,min_trades,min_notional):
     if not isinstance(window,dict):
         return None
     stale=_num(window.get("stream_stale_seconds"))
+    trade_age=_num(window.get("last_trade_age_sec"))
     trades=_num(window.get("trade_count"))
     total=_num(window.get("total_quote"))
     imbalance=_num(window.get("imbalance_pct"))
@@ -107,6 +108,7 @@ def _window(window,min_trades,min_notional):
             or window.get("stream_healthy") is not True
             or str(window.get("quality"))!="READY"
             or stale is None or not 0<=stale<=MAX_STREAM_STALE_SEC
+            or trade_age is None or not 0<=trade_age<=60
             or trades is None or trades<min_trades
             or total is None or total<min_notional
             or imbalance is None or not -100<=imbalance<=100):

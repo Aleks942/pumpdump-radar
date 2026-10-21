@@ -453,6 +453,9 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
             "available":liq.get("available") is True,
             "complete":liq.get("complete") is True,
             "event_count":liq.get("event_count"),
+            "sources":liq.get("sources", {}),
+            "exchanges":liq.get("exchanges"),
+            "observed_at":now,
             "long_usdt":liq.get("long_liq") if liq.get("available") else None,
             "short_usdt":liq.get("short_liq") if liq.get("available") else None,
         }
@@ -658,6 +661,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 (now-STALE_SYMBOL_SEC,)).fetchall()
             if fetch_spot is None:
                 selected=watch_spot_stream([z["symbol"] for z in candidates])
+                from post_pump_market_context import watch as watch_market_context
+                watch_market_context([p.replace("-USDT", "USDT") for p in selected])
                 rows=[z for z in candidates
                       if z["symbol"][:-4]+"-USDT" in selected]
             else:

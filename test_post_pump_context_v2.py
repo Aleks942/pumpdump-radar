@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import post_pump_context_v2 as ctx
 
@@ -45,6 +45,41 @@ class ContextV2Tests(unittest.TestCase):
         self.assertTrue(x["not_full_history_cvd"])
         y=ctx.classify_bounded_cvd(base,{**spot,"imbalance_pct":-22})
         self.assertEqual(y["state"],"SPOT_AND_FUTURES_SELL")
+
+    def test_funding_rejects_stale_missing_and_wrong_instrument(self):
+        row={"instId":"TEST-USDT-SWAP","fundingRate":"0.0002",
+             "ts":str(int(NOW*1000)),"fundingTime":str(int((NOW+3600)*1000))}
+        response=Mock()
+        get=Mock(return_value=response)
+        with patch.object(ctx.time,"time",return_value=NOW):
+            response.json.return_value={"code":"0","data":[row]}
+            rate,meta=ctx._fetch_funding("TEST-USDT-SWAP",get)
+            self.assertAlmostEqual(rate,0.02)
+            self.assertEqual(meta["exchange_ts"],NOW)
+            for changes in ({"ts":str(int((NOW-301)*1000))},
+                            {"fundingRate":None},{"fundingRate":"NaN"},
+                            {"instId":"OTHER-USDT-SWAP"}):
+                response.json.return_value={"code":"0","data":[dict(row,**changes)]}
+                with self.assertRaises(ValueError):
+                    ctx._fetch_funding("TEST-USDT-SWAP",get)
+
+    def test_unready_spot_cannot_be_replaced_by_cached_bearish_value(self):
+        ev={"futures_taker_5m_imbalance_pct":-30,"futures_taker_5m_delta_quote":-1000,
+            "spot_taker_5m_imbalance_pct":-80,"spot_taker_5m_delta_quote":-5000}
+        result=ctx.classify_bounded_cvd(ev,{"ready":False,"reason":"STALE"})
+        self.assertEqual(result["state"],"INSUFFICIENT_DATA")
+        self.assertIsNone(result["spot_delta_quote"])
+
+    def test_candidate_refresh_is_bounded_and_isolates_failures(self):
+        import post_pump_market_context as market
+        import sys
+        liq=Mock(side_effect=[Exception(),True,True])
+        module=Mock(fetch_okx_liquidations=liq)
+        with patch.dict(sys.modules,{'liquidation_engine':module}), \
+             patch.object(ctx,'funding_context') as funding:
+            market.collect(['AAAUSDT','BBBUSDT','CCCUSDT','DDDUSDT'])
+        self.assertEqual(liq.call_count,3)
+        self.assertEqual(funding.call_count,2)
 
     def test_capital_state_needs_bearish_structure(self):
         evidence={"agg_oi_5m_pct":0.42}

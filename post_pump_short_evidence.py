@@ -106,9 +106,11 @@ def take_cached_evidence(symbol, now=None, sources=None):
             w=(reader(symbol) or {}).get("5m") or {}
             quality[label]=str(w.get("quality","UNKNOWN"))
             stale=_finite(w.get("stream_stale_seconds"))
+            trade_age=_finite(w.get("last_trade_age_sec"))
             if (w.get("window_ready") is not True
                     or w.get("stream_healthy") is not True
-                    or stale is None or not 0<=stale<=MAX_FLOW_STALE_SEC):
+                    or stale is None or not 0<=stale<=MAX_FLOW_STALE_SEC
+                    or trade_age is None or not 0<=trade_age<=60):
                 continue
             imb=_finite(w.get("imbalance_pct"))
             delta=_finite(w.get("delta_quote"))

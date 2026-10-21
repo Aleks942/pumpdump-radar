@@ -68,27 +68,48 @@ def _research_lines(event):
         return ['Дополнительные данные: недоступны']
     if not isinstance(d,dict):
         return ['Дополнительные данные: недоступны']
-    lines=[]
+    def val(value, suffix=''):
+        n=_num(value)
+        return f'{n:+,.2f}{suffix}' if n is not None else 'нет свежих данных'
+    lines=['Проверки данных:']
     capital=d.get('capital_state') or {}
     if isinstance(capital,dict):
         lines.append('OI / капитал: '+escape(str(capital.get('state') or 'НЕТ ДАННЫХ')[:70]))
+        lines.append('OI 5м: '+val(capital.get('oi_5m_pct'), '%')+' · '+escape(str(capital.get('oi_source') or 'нет источника')))
     cvd=d.get('bounded_cvd_5m') or {}
     if isinstance(cvd,dict):
         lines.append('Дельта сделок 5м: '+escape(str(cvd.get('state') or 'НЕТ ДАННЫХ')[:70])+
                      ' (не полный CVD)')
+        lines += ['OKX фьючерсы, Δ 5м: '+val(cvd.get('futures_delta_quote'), ' USDT')+
+                  ' · дисбаланс '+val(cvd.get('futures_imbalance_pct'), '%'),
+                  'OKX спот, Δ 5м: '+val(cvd.get('spot_delta_quote'), ' USDT')+
+                  ' · дисбаланс '+val(cvd.get('spot_imbalance_pct'), '%')]
     liq=d.get('liquidation_context') or {}
     if isinstance(liq,dict):
         lo=_num(liq.get('long_usdt'))
         sh=_num(liq.get('short_usdt'))
         if liq.get('available') is True and lo is not None and sh is not None:
-            lines.append(f'Ликвидации (частично): LONG ${lo:,.0f} / SHORT ${sh:,.0f}')
+            lines.append(f'Ликвидации (частично), 5м: LONG ${lo:,.0f} / SHORT ${sh:,.0f}')
         else:
             lines.append('Ликвидации: данных недостаточно')
+        sources=liq.get('sources') or {}
+        if isinstance(sources,dict):
+            active=[str(k) for k,v in sources.items() if v=='OBSERVED_PARTIAL']
+            if active:
+                lines.append('Источники ликвидаций: '+escape(', '.join(active)))
+        if liq.get('available') and lo==0 and sh==0:
+            lines.append('В доступной выборке событий нет; это не весь рынок.')
     funding=d.get('funding_context') or {}
     if isinstance(funding,dict):
         pct=_num(funding.get('funding_pct'))
         lines.append(f'Funding: {pct:+.4f}%' if pct is not None and funding.get('available') is True
                      else 'Funding: нет данных')
+        if funding.get('available') is True:
+            age=_num(funding.get('age_sec'))
+            lines.append('Funding: OKX, за период биржи'+(f' · возраст {age:.0f} с' if age is not None else ''))
+            when=_num(funding.get('funding_at'))
+            if when is not None:
+                lines.append('Расчёт funding: '+datetime.fromtimestamp(when,ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M')+' (Польша)')
     return lines or ['Дополнительные данные: пока недоступны']
 
 
@@ -103,7 +124,10 @@ def message(event):
         lines.append(CANCEL_REASONS[event['reason']])
         lines.append('Предыдущий сценарий больше не актуален. Это не исполнение сделки.')
     elif kind == 'READY_RESEARCH':
-        lines += ['Продажи: фьючерсы 1м/5м + спот 5м. Структура и ретест подтверждены.',
+        lines += ['✅ Пробой и ретест; тренд 5м/15м, 1ч не против шорта.',
+                  '✅ OI доступен; продавцы подтверждены локальной проверкой.',
+                  'Ликвидации и funding — контекст, не отдельное разрешение на вход.',
+                  'Продажи: фьючерсы 1м/5м + спот 5м. Структура и ретест подтверждены.',
                   f"Расчётный вход: {event['entry']:.8g}",
                   f"Стоп: {event['stop']:.8g}",
                   f"Цель 1: {event['tp1']:.8g} | цель 2: {event['tp2']:.8g}",
