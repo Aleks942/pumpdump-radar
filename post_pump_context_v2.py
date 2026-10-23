@@ -154,6 +154,28 @@ def classify_capital(evidence,structure):
             "requires_price_structure":True}
 
 
+def final_short_confirmation(order_flow,bounded,capital):
+    """Strict final gate for a post-pump short research signal.
+
+    READY requires a sequence-confirmed seller takeover, simultaneous spot +
+    futures selling, and OI that confirms either new short buildup or long
+    unwind. Missing/neutral evidence fails closed.
+    """
+    flow=order_flow if isinstance(order_flow,dict) else {}
+    cvd=bounded if isinstance(bounded,dict) else {}
+    cap=capital if isinstance(capital,dict) else {}
+    if (flow.get("status")!="CONFIRMED"
+            or flow.get("evidence_event")!="SELLER_TAKEOVER_CONFIRMED"):
+        return {"ready":False,"reason":"SELLER_TAKEOVER_NOT_CONFIRMED"}
+    if cvd.get("state")!="SPOT_AND_FUTURES_SELL":
+        return {"ready":False,"reason":"SPOT_FUTURES_SELL_NOT_ALIGNED"}
+    if cap.get("state") not in (
+            "NEW_SHORTS_WITH_BEARISH_STRUCTURE",
+            "LONG_UNWIND_WITH_BEARISH_STRUCTURE"):
+        return {"ready":False,"reason":"OI_DIRECTION_NOT_CONFIRMED"}
+    return {"ready":True,"reason":"SELLER_TAKEOVER_CVD_OI_CONFIRMED"}
+
+
 def classify_liquidations(liquidations):
     liq=liquidations if isinstance(liquidations,dict) else {}
     long_usdt=_num(liq.get("long_usdt"))
@@ -290,6 +312,15 @@ def enrich(symbol,now,evidence,spot,structure,liquidations=None,db_path=None,
                                episode_at=episode_at)
     bounded=classify_bounded_cvd(out,spot or {})
     capital=classify_capital(out,structure or {})
+    final_confirmation=final_short_confirmation(order_flow,bounded,capital)
+    # Existing strategy already requires order_flow.status == CONFIRMED.
+    # Make that status mean the complete seller-takeover + CVD + OI sequence,
+    # instead of a single sell-aggression tick.
+    order_flow=dict(order_flow)
+    order_flow["final_gate_reason"]=final_confirmation["reason"]
+    if not final_confirmation["ready"]:
+        order_flow["ready"]=False
+        order_flow["status"]="INSUFFICIENT_DATA"
     liq=classify_liquidations(liquidations or out.get("liquidations") or {})
     funding=funding_context(symbol,now=now,getter=funding_getter)
     tags=[
@@ -301,6 +332,7 @@ def enrich(symbol,now,evidence,spot,structure,liquidations=None,db_path=None,
         "FUNDING_"+funding["state"],
     ]
     out["order_flow"]=order_flow
+    out["final_short_confirmation"]=final_confirmation
     out["bounded_cvd_5m"]=bounded
     out["capital_state"]=capital
     out["liquidation_context"]=liq
