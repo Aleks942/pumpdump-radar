@@ -18,6 +18,8 @@ import sqlite3
 import threading
 import time
 
+from post_pump_volume import analyze_volume_windows
+
 _lock=threading.Lock()
 _recent={}
 COOLDOWN_SEC=120
@@ -165,6 +167,7 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None,
             s5=fallback
             spot_source=str((verified_spot or {}).get("reason"))
     response,bearish=_price_response(structure,price)
+    volume_analysis=analyze_volume_windows(fw,sw)
 
     base={"finished_at":now,
           "delta_ratio":round(f1/100,6) if f1 is not None else None,
@@ -174,6 +177,7 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None,
           "research_only":True,
           "source":"PUMPDUMP_LOCAL_TAKER_FLOW",
           "spot_source":spot_source,
+          "volume_analysis":volume_analysis,
           "orderbook_verified":False}
 
     if f1 is None or f5 is None or s5 is None:
@@ -294,5 +298,9 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
           f"event={result.get('evidence_event')} stored={ok} "
           f"missing_windows={','.join(result.get('missing_windows') or []) or 'NONE'} "
           f"spot_source={result.get('spot_source')} "
+          f"volume_state={(result.get('volume_analysis') or {}).get('state')} "
+          f"volume_ratio={(result.get('volume_analysis') or {}).get('activity_ratio')} "
+          f"volume_fade={(result.get('volume_analysis') or {}).get('volume_fade')} "
+          f"seller_shift={(result.get('volume_analysis') or {}).get('seller_shift')} "
           "no_external_service=true research_only=true",flush=True)
     return ok
