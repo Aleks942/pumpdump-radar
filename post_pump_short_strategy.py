@@ -82,6 +82,32 @@ def safe_profile(t):
                 liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS))
 
 
+
+def live_market_profile(t):
+    """Current quote/liquidity for an already-observed pump episode.
+
+    Unlike safe_profile(), this does not require the rolling 24h move to remain
+    above +30%. Once an episode has been discovered, a later pullback must keep
+    using the real ticker volume/spread instead of an artificial illiquid
+    placeholder. Invalid/missing market fields still fail closed.
+    """
+    if not isinstance(t,dict):
+        return None
+    inst=t.get("instId")
+    if not isinstance(inst,str) or re.fullmatch(r"[A-Z0-9]{2,25}-USDT-SWAP",inst) is None:
+        return None
+    last=num(t.get("last"))
+    vol=approx_quote_volume_usdt(t)
+    spread=spread_bps(t)
+    if (last is None or last<=0 or vol is None or vol<=0
+            or spread is None or spread<0):
+        return None
+    return dict(symbol=inst[:-10]+"USDT",inst=inst,last=last,
+                notional=vol,spread=spread,
+                liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS),
+                liquidity_source="LIVE_TICKER")
+
+
 def setup(db):
     db.execute("""CREATE TABLE IF NOT EXISTS post_pump_short_strategy(
         symbol TEXT PRIMARY KEY,
@@ -588,6 +614,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     equity_usdt=equity_usdt if equity_usdt is not None else os.getenv("POST_PUMP_EQUITY_USDT")
     quotes={}
     eligible={}
+    live_profiles={}
     diagnostics=dict(tickers=0,over30=0,liquid=0,active=0,
                      context_checks=0,new=0,outcomes=0,paper_checks=0)
     pending_flow=[]
@@ -597,7 +624,11 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         inst=ticker.get("instId","")
         last=num(ticker.get("last"))
         if isinstance(inst,str) and inst.endswith("-USDT-SWAP") and last and last>0:
-            quotes[inst[:-10]+"USDT"]=last
+            symbol=inst[:-10]+"USDT"
+            quotes[symbol]=last
+            live=live_market_profile(ticker)
+            if live is not None:
+                live_profiles[symbol]=live
         diagnostics["tickers"]+=1
         item=safe_profile(ticker)
         if not item:
@@ -673,18 +704,17 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 symbol=st["symbol"]
                 profile=eligible.get(symbol)
                 if profile is None:
-                    price=quotes.get(symbol)
-                    if not price or not st["peak"]:
+                    live=live_profiles.get(symbol)
+                    if live is None or not st["peak"]:
                         continue
-                    # Losing the +30% rolling threshold must not erase the
-                    # already observed episode, but must NEVER imply free
-                    # spread/liquidity at a proposed paper entry.
-                    profile=dict(symbol=symbol,inst=symbol[:-4]+"-USDT-SWAP",
-                                 last=price,high=st["peak"],
+                    # The +30% condition is a DISCOVERY gate, not a permanent
+                    # liquidity gate. Keep the episode alive after pullback and
+                    # re-check the real current ticker volume/spread every scan.
+                    profile=dict(live,
+                                 high=st["peak"],
                                  opening=st["reference_open"],
                                  rise=st["rise_max"],band=st["band"],
-                                 spread=MAX_SPREAD_BPS+1,
-                                 notional=0,liquid=False)
+                                 retrace=100*(1-live["last"]/st["peak"]))
                 status,structure=_advance(db,st,profile,now,context,spot_fetch,
                                            evidence,equity_usdt,db_path=path)
                 if structure is not None:
