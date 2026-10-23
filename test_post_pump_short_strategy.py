@@ -364,5 +364,32 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertNotIn("READY_RESEARCH",[e["phase"] for e in events])
 
 
+    def test_retest_reclaim_cancels_short_even_with_lagging_bearish_trend(self):
+        # A rally above broken support must cancel the setup before the
+        # otherwise-confirming spot/OI/order-flow gates can approve it.
+        def mk(at):
+            out=structure(at,broken=at>=NOW+130)
+            if at>=NOW+390:
+                out["last5"]={**out["last5"],"c":114.0,"h":114.5}
+            return out
+        with patch.object(strat,"analyze_structure",
+                          side_effect=lambda a,b,c,now:mk(now)):
+            with patch.object(strat,"spot_status",return_value={
+                "ready":True,"imbalance_pct":-45,
+                "reason":"OVERLAP_VERIFIED_5M"}):
+                self.drive(NOW,last=115,equity_usdt=50)
+                self.drive(NOW+130,last=111,equity_usdt=50)
+                self.drive(NOW+260,last=110,equity_usdt=50)
+                self.assertEqual(self.data()[0][0]["phase"],"RETEST")
+                self.drive(NOW+390,last=114,equity_usdt=50)
+        states,events=self.data()
+        self.assertEqual(states[0]["phase"],"WEAKENING")
+        self.assertIsNone(states[0]["break_level"])
+        self.assertIn("RETEST_LEVEL_RECLAIMED",
+                      [event["reason"] for event in events])
+        self.assertNotIn("READY_RESEARCH",
+                         [event["phase"] for event in events])
+
+
 if __name__=="__main__":
     unittest.main()
