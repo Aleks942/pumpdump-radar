@@ -7,7 +7,7 @@ import requests
 import websocket
 
 
-VERSION = "2026-09-26-event-time-v1"
+VERSION = "2026-10-23-dynamic-bybit-v2"
 
 WINDOW = 300
 SOURCE_TTL = 60
@@ -27,6 +27,9 @@ _CONTRACTS = {}
 
 _LOCK = threading.RLock()
 _STARTED = False
+_BYBIT_WS = None
+_BYBIT_WATCH = set(BYBIT_SYMBOLS)
+_BYBIT_SUBSCRIBED = set()
 
 
 def norm_symbol(symbol):
@@ -173,7 +176,7 @@ def get_liquidation_summary(symbol):
             else states.get((exchange, "*"))
         )
 
-        if exchange == "Bybit" and symbol not in BYBIT_SYMBOLS:
+        if exchange == "Bybit" and symbol not in _BYBIT_WATCH:
             sources[exchange] = "NOT_SUBSCRIBED"
 
         elif not state:
@@ -481,18 +484,56 @@ def binance_on_message(ws, message):
         )
 
 
+def _subscribe_bybit(ws, symbols):
+    """Subscribe only to symbols the radar actively watches; deduplicate safely."""
+    if ws is None:
+        return False
+    wanted=[]
+    with _LOCK:
+        for symbol in symbols:
+            symbol=norm_symbol(symbol)
+            if symbol.endswith("USDT") and symbol not in _BYBIT_SUBSCRIBED:
+                wanted.append(symbol)
+        if not wanted:
+            return True
+    # Keep messages small and compatible with Bybit public WS limits.
+    for i in range(0,len(wanted),10):
+        batch=wanted[i:i+10]
+        ws.send(json.dumps({
+            "op":"subscribe",
+            "args":["allLiquidation."+symbol for symbol in batch],
+        }))
+    with _LOCK:
+        _BYBIT_SUBSCRIBED.update(wanted)
+    print("[BYBIT_LIQ_SUBSCRIBE] symbols=",",".join(wanted),flush=True)
+    return True
+
+
+def watch_bybit_symbol(symbol):
+    """Add a live post-pump candidate to Bybit liquidation coverage."""
+    global _BYBIT_WS
+    symbol=norm_symbol(symbol)
+    if not symbol.endswith("USDT"):
+        return False
+    with _LOCK:
+        _BYBIT_WATCH.add(symbol)
+        ws=_BYBIT_WS
+    if ws is None:
+        return True
+    try:
+        return _subscribe_bybit(ws,[symbol])
+    except Exception as exc:
+        _status("Bybit","*",False,type(exc).__name__)
+        return False
+
+
 def bybit_on_open(ws):
-    ws.send(
-        json.dumps(
-            {
-                "op": "subscribe",
-                "args": [
-                    "allLiquidation." + symbol
-                    for symbol in BYBIT_SYMBOLS
-                ],
-            }
-        )
-    )
+    global _BYBIT_WS
+    with _LOCK:
+        _BYBIT_WS=ws
+        _BYBIT_SUBSCRIBED.clear()
+        symbols=tuple(sorted(_BYBIT_WATCH))
+    _subscribe_bybit(ws,symbols)
 
 
 def bybit_on_message(ws, message):
@@ -519,7 +560,7 @@ def bybit_on_message(ws, message):
 
         symbol = topic.split(".", 1)[1]
 
-        if symbol not in BYBIT_SYMBOLS:
+        if symbol not in _BYBIT_WATCH:
             return
 
         rows = payload.get("data", [])
