@@ -218,6 +218,20 @@ def _sync_subscriptions(ws):
               "retained=", ",".join(sorted(target-added)) or "NONE",flush=True)
 
 
+def _heartbeat(ws,*_):
+    """Treat WebSocket ping/pong as transport activity, not as market trades.
+
+    Trade channels can be legitimately quiet for >30s. Without heartbeat
+    activity that silence looked like a broken connection and reset the whole
+    5m Spot window. Per-symbol last_trade_age_sec still prevents stale/quiet
+    markets from confirming a SHORT.
+    """
+    with _LOCK:
+        current=(ws is _socket and _socket_ready)
+    if current:
+        mark_stream_activity("spot")
+
+
 def _message(message):
     try:
         data=json.loads(message)
@@ -293,6 +307,7 @@ def _worker():
         try:
             ws=websocket.WebSocketApp(
                 _WS,on_open=on_open,on_message=on_message,on_close=on_close,
+                on_ping=_heartbeat,on_pong=_heartbeat,
                 on_error=lambda ws,e:print(
                     "[POST_PUMP_SPOT_WS_ERROR]",type(e).__name__,flush=True))
             with _LOCK:
