@@ -131,6 +131,23 @@ class LocalFlowTests(unittest.TestCase):
         self.assertFalse(flow.dispatch("TESTUSDT",98,AT-1800,
                                       self.path,AT+30,readers=readers))
 
+    def test_seller_takeover_requires_prior_buy_absorption_sequence(self):
+        buy_readers=(lambda symbol:{"1m":window(40),"5m":window(25)},
+                     lambda symbol:{"5m":window(15)})
+        sell_readers=(lambda symbol:{"1m":window(-40),"5m":window(-30)},
+                      lambda symbol:{"5m":window(-25)})
+
+        self.assertTrue(flow.dispatch("TESTUSDT",99,AT-1800,
+                                     self.path,AT,readers=buy_readers))
+        first=flow.latest(self.db,"TESTUSDT",AT,AT-1800)
+        self.assertEqual(first["evidence_event"],"BUY_ABSORPTION_CANDIDATE")
+
+        self.assertTrue(flow.dispatch("TESTUSDT",98,AT-1800,
+                                     self.path,AT+180,readers=sell_readers))
+        second=flow.latest(self.db,"TESTUSDT",AT+180,AT-1800)
+        self.assertEqual(second["status"],"CONFIRMED")
+        self.assertEqual(second["evidence_event"],"SELLER_TAKEOVER_CONFIRMED")
+
     def test_context_reads_local_source(self):
         readers=(lambda symbol:{"1m":window(40),"5m":window(25)},
                  lambda symbol:{"5m":window(15)})
