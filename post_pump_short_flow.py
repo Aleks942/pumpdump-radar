@@ -134,8 +134,14 @@ def _verified_spot_imbalance(snapshot):
     """Accept only a separately verified 5m Spot sample from the strategy."""
     if not isinstance(snapshot,dict) or snapshot.get("ready") is not True:
         return None
-    if snapshot.get("reason") not in ("OKX_SPOT_WS_5M","OVERLAP_VERIFIED_5M"):
+    reason=snapshot.get("reason")
+    if reason not in ("OKX_SPOT_WS_5M","OVERLAP_VERIFIED_5M","SNAPSHOT_FALLBACK"):
         return None
+    if reason=="SNAPSHOT_FALLBACK":
+        age=_num(snapshot.get("last_trade_age_sec"))
+        if (snapshot.get("source_reason")!="OKX_SPOT_WS_5M"
+                or age is None or not 0<=age<=300):
+            return None
     count=_num(snapshot.get("count"))
     value=_num(snapshot.get("imbalance_pct"))
     if count is None or count<MIN_5M_TRADES or value is None or not -100<=value<=100:
