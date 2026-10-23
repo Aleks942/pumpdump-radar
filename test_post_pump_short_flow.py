@@ -94,6 +94,31 @@ class LocalFlowTests(unittest.TestCase):
         self.assertEqual(result["spot_source"],"OVERLAP_VERIFIED_5M")
         self.assertNotIn("SPOT_5M",result.get("missing_windows",[]))
 
+    def test_snapshot_fallback_is_accepted_only_when_bounded_and_live_sourced(self):
+        result=flow.verify_local(98,
+            {"1m":window(-40),"5m":window(-30)}, {},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT,
+            verified_spot={"ready":True,
+                           "reason":"SNAPSHOT_FALLBACK",
+                           "source_reason":"OKX_SPOT_WS_5M",
+                           "last_trade_age_sec":180,
+                           "count":25,"imbalance_pct":-22})
+        self.assertEqual(result["status"],"CONFIRMED")
+        self.assertEqual(result["spot_source"],"SNAPSHOT_FALLBACK")
+
+        stale=flow.verify_local(98,
+            {"1m":window(-40),"5m":window(-30)}, {},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT,
+            verified_spot={"ready":True,
+                           "reason":"SNAPSHOT_FALLBACK",
+                           "source_reason":"OKX_SPOT_WS_5M",
+                           "last_trade_age_sec":301,
+                           "count":25,"imbalance_pct":-22})
+        self.assertEqual(stale["status"],"INSUFFICIENT_DATA")
+        self.assertEqual(stale["missing_windows"],["SPOT_5M"])
+
     def test_dispatch_uses_local_readers_and_episode_scoped_storage(self):
         readers=(lambda symbol:{"1m":window(-40),"5m":window(-30)},
                  lambda symbol:{"5m":window(-25)})
