@@ -32,6 +32,7 @@ from post_pump_early_weakening import is_early_weakening
 from post_pump_spot_stream import (
     watch as watch_spot_stream,
     verified as verified_spot_stream,
+    snapshot_fallback as spot_snapshot_fallback,
 )
 
 DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
@@ -455,7 +456,15 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         st["last_spot_poll_at"]=now
     else:
         status="WAIT_POLL"
-    spot=ws_spot if ws_spot.get("ready") else spot_status(db,sym,now)
+    if ws_spot.get("ready"):
+        spot=ws_spot
+    else:
+        overlap_spot=spot_status(db,sym,now)
+        snapshot=(spot_snapshot_fallback(sym) if spot_reader is _fetch_spot
+                  else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
+        spot=(overlap_spot if overlap_spot.get("ready")
+              else snapshot if snapshot.get("ready")
+              else overlap_spot)
     if now-st["last_context_at"]<CONTEXT_INTERVAL_SEC:
         return status,None
     st["last_context_at"]=now
