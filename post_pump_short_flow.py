@@ -130,7 +130,21 @@ def _price_response(structure,price):
     return response,bearish
 
 
-def verify_local(price,futures_windows,spot_windows,structure,now=None):
+def _verified_spot_imbalance(snapshot):
+    """Accept only a separately verified 5m Spot sample from the strategy."""
+    if not isinstance(snapshot,dict) or snapshot.get("ready") is not True:
+        return None
+    if snapshot.get("reason") not in ("OKX_SPOT_WS_5M","OVERLAP_VERIFIED_5M"):
+        return None
+    count=_num(snapshot.get("count"))
+    value=_num(snapshot.get("imbalance_pct"))
+    if count is None or count<MIN_5M_TRADES or value is None or not -100<=value<=100:
+        return None
+    return value
+
+
+def verify_local(price,futures_windows,spot_windows,structure,now=None,
+                 verified_spot=None):
     """Classify cached taker aggression and price response, fail-closed."""
     now=time.time() if now is None else float(now)
     fw=futures_windows if isinstance(futures_windows,dict) else {}
@@ -138,6 +152,12 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None):
     f1=_window(fw.get("1m"),MIN_1M_TRADES,MIN_1M_NOTIONAL)
     f5=_window(fw.get("5m"),MIN_5M_TRADES,MIN_5M_NOTIONAL)
     s5=_window(sw.get("5m"),MIN_5M_TRADES,MIN_5M_NOTIONAL)
+    spot_source="TRADE_FLOW_CACHE"
+    if s5 is None:
+        fallback=_verified_spot_imbalance(verified_spot)
+        if fallback is not None:
+            s5=fallback
+            spot_source=str((verified_spot or {}).get("reason"))
     response,bearish=_price_response(structure,price)
 
     base={"finished_at":now,
@@ -147,6 +167,7 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None):
           "evidence_event":"NONE",
           "research_only":True,
           "source":"PUMPDUMP_LOCAL_TAKER_FLOW",
+          "spot_source":spot_source,
           "orderbook_verified":False}
 
     if f1 is None or f5 is None or s5 is None:
@@ -197,6 +218,27 @@ def _read_structure(path,symbol,episode_at):
         return {}
 
 
+def _read_verified_spot(path,symbol,episode_at,now):
+    """Read the strategy's fresh, already-validated 5m Spot snapshot."""
+    try:
+        with sqlite3.connect(path,timeout=3) as db:
+            db.row_factory=sqlite3.Row
+            row=db.execute("""SELECT last_context_at,last_evidence_json
+                FROM post_pump_short_strategy
+                WHERE symbol=? AND episode_at=?""",
+                (symbol,episode_at)).fetchone()
+        if not row or not row["last_evidence_json"]:
+            return None
+        at=_num(row["last_context_at"])
+        if at is None or not 0<=now-at<=MAX_RESULT_AGE_SEC:
+            return None
+        evidence=json.loads(row["last_evidence_json"])
+        spot=evidence.get("verified_spot") if isinstance(evidence,dict) else None
+        return spot if _verified_spot_imbalance(spot) is not None else None
+    except (sqlite3.Error,ValueError,TypeError):
+        return None
+
+
 def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
     """Refresh local verification at most once per 120s per pump episode."""
     now=time.time() if now is None else float(now)
@@ -231,7 +273,9 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
     except Exception:
         spot={}
     structure=_read_structure(path,symbol,ep)
-    result=verify_local(p,futures,spot,structure,now=now)
+    verified_spot=_read_verified_spot(path,symbol,ep,now)
+    result=verify_local(p,futures,spot,structure,now=now,
+                        verified_spot=verified_spot)
     try:
         with sqlite3.connect(path,timeout=5) as db:
             db.row_factory=sqlite3.Row
@@ -243,5 +287,6 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
           f"status={result.get('status')} reason={result.get('reason')} "
           f"event={result.get('evidence_event')} stored={ok} "
           f"missing_windows={','.join(result.get('missing_windows') or []) or 'NONE'} "
+          f"spot_source={result.get('spot_source')} "
           "no_external_service=true research_only=true",flush=True)
     return ok
