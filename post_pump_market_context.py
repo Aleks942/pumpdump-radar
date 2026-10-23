@@ -9,14 +9,16 @@ _thread = None
 
 
 def collect(symbols):
-    from liquidation_engine import fetch_okx_liquidations
+    from liquidation_engine import fetch_okx_liquidations, watch_bybit_symbol
     from post_pump_context_v2 import funding_context
     for symbol in symbols[:3]:
         try:
+            bybit = watch_bybit_symbol(symbol)
             ok = fetch_okx_liquidations(symbol)
             funding_context(symbol)
             print('[POST_PUMP_CONTEXT_REFRESH]', symbol,
-                  'okx_liquidations=', ok, flush=True)
+                  'okx_liquidations=', ok,
+                  'bybit_liquidations=', bybit, flush=True)
         except Exception as exc:
             print('[POST_PUMP_CONTEXT_ERROR]', symbol, type(exc).__name__, flush=True)
 
