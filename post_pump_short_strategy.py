@@ -53,6 +53,12 @@ WINDOWS=(5,15,30,60)
 last_status_at=0.0
 
 
+def _watch_bybit_liquidations(symbol):
+    """Lazily attach a pump candidate to the existing Bybit liquidation stream."""
+    from liquidation_engine import watch_bybit_symbol
+    return watch_bybit_symbol(symbol)
+
+
 def num(value):
     try:
         n=float(value)
@@ -646,6 +652,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         if item["liquid"]:
             diagnostics["liquid"]+=1
             eligible[item["symbol"]]=item
+    # Extend Bybit liquidation coverage to every live +30% pump candidate.
+    # The stream itself remains read-only and deduplicates subscriptions.
+    for symbol in eligible:
+        try:
+            _watch_bybit_liquidations(symbol)
+        except Exception as liq_watch_exc:
+            print("[BYBIT_LIQ_WATCH_ERROR]",symbol,
+                  type(liq_watch_exc).__name__,flush=True)
+
     try:
         os.makedirs(os.path.dirname(path) or ".",exist_ok=True)
         with closing(sqlite3.connect(path,timeout=7)) as db:
