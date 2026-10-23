@@ -93,7 +93,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(events[0]["phase"],"DISCOVERED")
 
     def test_discovered_pump_subscribes_bybit_liquidations(self):
-        with patch.object(strat,"watch_bybit_symbol",return_value=True) as watch:
+        with patch.object(strat,"_watch_bybit_liquidations",return_value=True) as watch:
             self.drive(NOW)
         watch.assert_called_once_with("TESTUSDT")
 
