@@ -307,6 +307,30 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertIsNone(st[0]["break_level"])
         self.assertIn("BUYERS_RECLAIMED_NEW_HIGH",[x["reason"] for x in events])
 
+    def test_active_episode_keeps_real_liquidity_after_30pct_window_rolls_off(self):
+        self.assertIsNone(strat.safe_profile(ticker(last=110,high=125,opening=100)))
+        live=strat.live_market_profile(ticker(last=110,high=125,opening=100))
+        self.assertTrue(live["liquid"])
+        with patch.object(strat,"analyze_structure",
+            side_effect=lambda a,b,c,now:structure(now,broken=now>NOW)):
+            with patch.object(strat,"spot_status",return_value={
+                "ready":True,"imbalance_pct":-60,"count":30,
+                "reason":"OVERLAP_VERIFIED_5M"}):
+                self.drive(NOW,last=115,high=150,equity_usdt=50)
+                self.drive(NOW+130,last=111,high=150,equity_usdt=50)
+                self.drive(NOW+260,last=110,high=150,equity_usdt=50)
+                # The old +30% 24h high has rolled away, but the CURRENT
+                # ticker is still liquid. This must not fabricate illiquidity.
+                rolled=ticker(last=110,high=125,opening=100,volume=200000)
+                strat.observe([rolled],NOW+390,self.path,
+                    fetch_context=lambda symbol:{"5m":[],"15m":[],"1H":[]},
+                    fetch_spot=lambda symbol:[],
+                    evidence_reader=evidence,equity_usdt=50)
+        st,events=self.data()
+        self.assertEqual(st[0]["phase"],"READY_RESEARCH")
+        self.assertNotEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
+        self.assertIn("READY_RESEARCH",[x["phase"] for x in events])
+
     def test_no_approval_after_market_liquidity_disappears(self):
         with patch.object(strat,"analyze_structure",
             side_effect=lambda a,b,c,now:structure(now,broken=now>NOW)):
