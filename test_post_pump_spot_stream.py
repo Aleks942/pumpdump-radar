@@ -32,6 +32,20 @@ class SpotStreamTests(unittest.TestCase):
                 stream._message(json.dumps(msg))
                 save.assert_not_called()
 
+    def test_websocket_heartbeat_keeps_transport_continuity_without_fake_trade(self):
+        ws=object()
+        with patch.object(stream,"_socket",ws), \
+             patch.object(stream,"_socket_ready",True), \
+             patch.object(stream,"mark_stream_activity") as activity:
+            stream._heartbeat(ws,b"pong")
+            activity.assert_called_once_with("spot")
+        other=object()
+        with patch.object(stream,"_socket",ws), \
+             patch.object(stream,"_socket_ready",True), \
+             patch.object(stream,"mark_stream_activity") as activity:
+            stream._heartbeat(other,b"pong")
+            activity.assert_not_called()
+
     def test_rotation_keeps_retained_window_and_warms_new_symbol(self):
         import trade_flow_collector_v3 as flow
         ws=Mock()
