@@ -338,6 +338,46 @@ def _worker():
         time.sleep(delay)
 
 
+
+def snapshot_fallback(symbol):
+    """Bounded 5m Spot snapshot for quiet symbols with a healthy live stream.
+
+    This is deliberately weaker than verified(): a pair may have had no trade
+    in the last 60s, but the already-completed rolling 5m window can still be
+    representative when it has enough real trades/notional and the websocket
+    itself is healthy. It never substitutes for a disconnected/warming stream.
+    """
+    pair=(symbol[:-4]+"-USDT" if isinstance(symbol,str) and symbol.endswith("USDT")
+          else str(symbol or ""))
+    availability=spot_availability(pair)
+    if not availability.get("available"):
+        return {"ready":False,"reason":availability.get("reason","SPOT_DATA_ERROR")}
+    try:
+        item=(get_spot_windows(symbol) or {}).get("5m") or {}
+        age=item.get("stream_stale_seconds")
+        symbol_age=item.get("last_trade_age_sec")
+        count=item.get("trade_count")
+        total=item.get("total_quote")
+        value=item.get("imbalance_pct")
+        if (item.get("quality")!="READY"
+            or item.get("window_ready") is not True
+            or item.get("stream_healthy") is not True
+            or age is None or not 0<=age<=30
+            or symbol_age is None or not 0<=symbol_age<=300
+            or count is None or count<15
+            or total is None or total<1000
+            or value is None or not math.isfinite(float(value))):
+            return {"ready":False,"reason":"SNAPSHOT_FALLBACK_NOT_READY",
+                    "diagnostic":_spot_gap_reason(item)}
+        return {"ready":True,"reason":"SNAPSHOT_FALLBACK",
+                "source_reason":"OKX_SPOT_WS_5M",
+                "imbalance_pct":float(value),
+                "delta_quote":float(item.get("delta_quote") or 0),
+                "count":count,
+                "last_trade_age_sec":float(symbol_age)}
+    except (ValueError,TypeError,OverflowError):
+        return {"ready":False,"reason":"SNAPSHOT_FALLBACK_BAD_DATA"}
+
 def verified(symbol):
     """5-minute *streamed* taker imbalance, not an unsupported CVD assertion."""
     pair=(symbol[:-4]+"-USDT" if isinstance(symbol,str) and symbol.endswith("USDT")
