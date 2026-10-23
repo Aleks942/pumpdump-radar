@@ -111,6 +111,33 @@ class SpotStreamTests(unittest.TestCase):
                 with patch.object(stream,"get_spot_windows",return_value=item):
                     self.assertFalse(stream.verified("TESTUSDT")["ready"])
 
+    def test_snapshot_fallback_accepts_quiet_complete_5m_window(self):
+        item={"5m":{"window_ready":True,"stream_healthy":True,
+                     "quality":"READY","stream_stale_seconds":2,
+                     "last_trade_age_sec":180,"trade_count":22,
+                     "total_quote":4200,"imbalance_pct":-31.5,
+                     "delta_quote":-1323}}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=({"TEST-USDT"},"READY")):
+            with patch.object(stream,"get_spot_windows",return_value=item):
+                self.assertFalse(stream.verified("TESTUSDT")["ready"])
+                fallback=stream.snapshot_fallback("TESTUSDT")
+        self.assertTrue(fallback["ready"])
+        self.assertEqual(fallback["reason"],"SNAPSHOT_FALLBACK")
+        self.assertEqual(fallback["last_trade_age_sec"],180)
+
+    def test_snapshot_fallback_rejects_data_older_than_5m(self):
+        item={"5m":{"window_ready":True,"stream_healthy":True,
+                     "quality":"READY","stream_stale_seconds":2,
+                     "last_trade_age_sec":301,"trade_count":22,
+                     "total_quote":4200,"imbalance_pct":-31.5,
+                     "delta_quote":-1323}}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=({"TEST-USDT"},"READY")):
+            with patch.object(stream,"get_spot_windows",return_value=item):
+                fallback=stream.snapshot_fallback("TESTUSDT")
+        self.assertFalse(fallback["ready"])
+
     def test_subscription_is_stable_for_warmup(self):
         universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
         with patch.object(stream,"_refresh_spot_universe",
