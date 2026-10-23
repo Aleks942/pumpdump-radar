@@ -29,6 +29,7 @@ from post_pump_context_v2 import enrich as enrich_research_evidence
 from post_pump_context_v2 import maybe_report_cohorts
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from post_pump_early_weakening import is_early_weakening
+from liquidation_engine import watch_bybit_symbol
 from post_pump_spot_stream import (
     watch as watch_spot_stream,
     verified as verified_spot_stream,
@@ -646,6 +647,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         if item["liquid"]:
             diagnostics["liquid"]+=1
             eligible[item["symbol"]]=item
+    # Extend Bybit liquidation coverage to every live +30% pump candidate.
+    # The stream itself remains read-only and deduplicates subscriptions.
+    for symbol in eligible:
+        try:
+            watch_bybit_symbol(symbol)
+        except Exception as liq_watch_exc:
+            print("[BYBIT_LIQ_WATCH_ERROR]",symbol,
+                  type(liq_watch_exc).__name__,flush=True)
+
     try:
         os.makedirs(os.path.dirname(path) or ".",exist_ok=True)
         with closing(sqlite3.connect(path,timeout=7)) as db:
