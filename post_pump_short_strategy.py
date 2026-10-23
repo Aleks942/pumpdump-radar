@@ -29,7 +29,6 @@ from post_pump_context_v2 import enrich as enrich_research_evidence
 from post_pump_context_v2 import maybe_report_cohorts
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from post_pump_early_weakening import is_early_weakening
-from liquidation_engine import watch_bybit_symbol
 from post_pump_spot_stream import (
     watch as watch_spot_stream,
     verified as verified_spot_stream,
@@ -52,6 +51,12 @@ RISK_FRACTION=0.005
 MAX_LATE_ATR=1.0
 WINDOWS=(5,15,30,60)
 last_status_at=0.0
+
+
+def _watch_bybit_liquidations(symbol):
+    """Lazily attach a pump candidate to the existing Bybit liquidation stream."""
+    from liquidation_engine import watch_bybit_symbol
+    return watch_bybit_symbol(symbol)
 
 
 def num(value):
@@ -651,7 +656,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     # The stream itself remains read-only and deduplicates subscriptions.
     for symbol in eligible:
         try:
-            watch_bybit_symbol(symbol)
+            _watch_bybit_liquidations(symbol)
         except Exception as liq_watch_exc:
             print("[BYBIT_LIQ_WATCH_ERROR]",symbol,
                   type(liq_watch_exc).__name__,flush=True)
