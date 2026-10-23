@@ -29,6 +29,7 @@ MIN_1M_TRADES=5
 MIN_5M_TRADES=15
 MIN_1M_NOTIONAL=500.0
 MIN_5M_NOTIONAL=1000.0
+TAKEOVER_LOOKBACK_SEC=30*60
 
 
 def _num(value):
@@ -50,6 +51,33 @@ def setup(db):
     )""")
     db.execute("""CREATE INDEX IF NOT EXISTS idx_post_pump_flow_lookup
         ON post_pump_short_flow_results(symbol,verified_at)""")
+
+
+
+def promote_seller_takeover(db,symbol,episode_at,result,now):
+    """Promote a sell confirmation only after a recent absorbed-buy phase.
+
+    This keeps SELLER_TAKEOVER as a sequence, not a one-tick label:
+    absorbed BUY aggression -> later confirmed SELL aggression with bearish
+    structure. It remains research-only and does not change strategy gates.
+    """
+    if (not isinstance(result,dict)
+            or result.get("status")!="CONFIRMED"
+            or result.get("evidence_event")!="SELL_AGGRESSION_CONFIRMED"):
+        return result
+    setup(db)
+    row=db.execute("""SELECT verified_at,evidence_event FROM post_pump_short_flow_results
+        WHERE symbol=? AND episode_at=? AND verified_at>=? AND verified_at<?
+        AND evidence_event='BUY_ABSORPTION_CANDIDATE'
+        ORDER BY verified_at DESC LIMIT 1""",
+        (symbol,float(episode_at),float(now)-TAKEOVER_LOOKBACK_SEC,float(now))).fetchone()
+    if row is None:
+        return result
+    promoted=dict(result)
+    promoted["evidence_event"]="SELLER_TAKEOVER_CONFIRMED"
+    promoted["takeover_from"]="BUY_ABSORPTION_CANDIDATE"
+    promoted["takeover_delay_sec"]=round(max(0.0,float(now)-float(row["verified_at"])),3)
+    return promoted
 
 
 def latest(db,symbol,now,episode_at=None):
@@ -289,6 +317,7 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
     try:
         with sqlite3.connect(path,timeout=5) as db:
             db.row_factory=sqlite3.Row
+            result=promote_seller_takeover(db,symbol,ep,result,now)
             ok=store_result(db,symbol,ep,now,result,now)
             db.commit()
     except sqlite3.Error:
@@ -302,5 +331,7 @@ def dispatch(symbol,price,episode_at,db_path=None,now=None,readers=None):
           f"volume_ratio={(result.get('volume_analysis') or {}).get('activity_ratio')} "
           f"volume_fade={(result.get('volume_analysis') or {}).get('volume_fade')} "
           f"seller_shift={(result.get('volume_analysis') or {}).get('seller_shift')} "
+          f"seller_takeover={result.get('evidence_event')=='SELLER_TAKEOVER_CONFIRMED'} "
+          f"takeover_delay_sec={result.get('takeover_delay_sec')} "
           "no_external_service=true research_only=true",flush=True)
     return ok
