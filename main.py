@@ -29,6 +29,7 @@ from spot_cvd_engine import get_spot_cvd
 from telegram_builder import build_short_message, build_market_watch_message
 from coinglass_context import schedule as schedule_coinglass_context
 from public_exchange_context import schedule as schedule_public_exchange_context
+from bybit_move_verifier import schedule as schedule_bybit_move_verification
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_30_alerts import observe as observe_30_pumps, acknowledge as ack_30_pump, message as pump_30_message
 from post_pump_notifications import deliver as deliver_post_pump_notifications
@@ -182,6 +183,25 @@ def maybe_send_market_watch(signal, reason, now=None):
     except Exception as cg_exc:
         print("[COINGLASS_CONTEXT_SCHEDULE_ERROR]",
               symbol, type(cg_exc).__name__, flush=True)
+
+    # A successfully delivered Bybit price-only WATCH must immediately start
+    # its own data verification path.  This does not weaken the strict trade
+    # gate; it sends a separate research follow-up with OI/CVD/liquidations/
+    # funding/closed-candle trend and marks missing evidence as unavailable.
+    if str(signal.get("exchange") or "").upper() == "BYBIT":
+        try:
+            schedule_bybit_move_verification(
+                dict(signal),
+                send_telegram,
+                now=now,
+            )
+        except Exception as verify_exc:
+            print(
+                "[BYBIT_VERIFY_SCHEDULE_ERROR]",
+                symbol,
+                type(verify_exc).__name__,
+                flush=True,
+            )
     return True
 
 
