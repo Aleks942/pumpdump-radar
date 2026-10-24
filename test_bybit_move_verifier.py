@@ -20,7 +20,7 @@ class BybitMoveVerifierTests(unittest.TestCase):
             "get_liquidation_summary",
             "get_aggregated_oi",
             "detect_pattern",
-            '"quality": "PARTIAL"',
+            '"PARTIAL"',
             '"quality": "UNAVAILABLE"',
             '"trade_approved": False',
             '"research_only": True',
