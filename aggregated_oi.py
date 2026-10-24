@@ -336,10 +336,13 @@ def _worker(exchange):
                 with _lock:
                     mapping = dict(_maps[exchange])
 
+                    # Collect every watched symbol that exists on this
+                    # exchange. Overall aggregated READY still requires 3/3,
+                    # so this only improves partial diagnostics for Bybit-only
+                    # movers and never weakens the strict confirmation gate.
                     symbols = sorted(
                         _watched
                         & mapping.keys()
-                        & _maps.get("OKX", {}).keys()
                     )
 
                 saved = (
