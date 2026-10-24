@@ -1341,8 +1341,8 @@ test_binance()
 test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
-if TELEGRAM_POLICY == "LEGACY":
-    send_telegram("🚀 PumpDump Radar V2 ONLINE")
+startup_sent = send_telegram("🚀 PumpDump Radar V2 ONLINE", symbol="SYSTEM")
+print("[STARTUP_TELEGRAM] sent=", startup_sent is True, flush=True)
 
 start_liquidation_streams()
 
