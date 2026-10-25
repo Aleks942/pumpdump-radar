@@ -26,6 +26,11 @@ from liquidation_engine import (
     watch_bybit_symbol,
 )
 from pattern_detector import detect_pattern
+from spot_fallback_stream import (
+    get_flow as get_fallback_spot_flow,
+    unwatch_symbol as unwatch_fallback_spot,
+    watch_symbol as watch_fallback_spot,
+)
 
 
 BYBIT_BASE = "https://api.bybit.com"
@@ -204,13 +209,46 @@ def _rest_trade_flow(symbol, category, request_get=None, now=None):
         }
 
 
-def _flow(symbol, category, request_get=None, now=None):
-    """Prefer accumulated WebSocket flow; use REST only before live data arrive."""
-    live = get_live_flow(symbol, category=category, now=now)
+def _flow(symbol, category, request_get=None, now=None, since=None):
+    """Futures use Bybit; Spot can fail over Bybit -> OKX -> Binance."""
+    live = get_live_flow(symbol, category=category, now=now, since=since)
+
+    if category == "spot":
+        fallback = get_fallback_spot_flow(symbol, now=now, since=since)
+
+        # Prefer a real Bybit Spot stream whenever that market exists.
+        if live.get("ready") or (
+            live.get("trade_count", 0) > 0
+            and live.get("quality") == "PARTIAL"
+        ):
+            return live
+
+        # If Bybit has no Spot pair (common for mover contracts), use a
+        # real accumulated OKX/Binance Spot stream instead.
+        if fallback.get("ready") or (
+            fallback.get("trade_count", 0) > 0
+            and fallback.get("quality") == "PARTIAL"
+        ):
+            return fallback
+
+        # Preserve the most informative availability state. Missing data
+        # remain UNKNOWN and never become confirmation.
+        if fallback.get("quality") not in (
+            "NOT_WATCHED", "CHECKING", "UNAVAILABLE"
+        ):
+            return fallback
+        if live.get("quality") not in ("NOT_WATCHED", "WARMING"):
+            return live
+        return fallback if fallback else live
+
     if (
         live.get("trade_count", 0) > 0
-        or live.get("quality") in ("READY", "PARTIAL", "UNSUPPORTED")
+        or live.get("quality") in ("READY", "PARTIAL")
     ):
+        return live
+    if since is not None:
+        # Sequential checks must represent trades observed after this trigger,
+        # not a pre-trigger REST snapshot.
         return live
     return _rest_trade_flow(
         symbol,
@@ -319,9 +357,14 @@ def collect(signal, request_get=None, now=None):
     watch_symbol(symbol)
     watch_bybit_symbol(symbol)
 
+    since = _finite(signal.get("_verification_started_at"))
     oi = _oi_5m(symbol, request_get=request_get, now=now)
-    futures = _flow(symbol, "linear", request_get=request_get, now=now)
-    spot = _flow(symbol, "spot", request_get=request_get, now=now)
+    futures = _flow(
+        symbol, "linear", request_get=request_get, now=now, since=since
+    )
+    spot = _flow(
+        symbol, "spot", request_get=request_get, now=now, since=since
+    )
     funding = _funding(symbol, request_get=request_get)
     trend_5m = _closed_trend(symbol, 5, request_get=request_get, now=now)
     trend_60m = _closed_trend(symbol, 60, request_get=request_get, now=now)
@@ -471,11 +514,14 @@ def _num(value, signed=False, suffix=""):
 
 def _flow_line(data):
     quality = data.get("quality", "UNAVAILABLE")
-    if quality in ("UNAVAILABLE", "UNSUPPORTED", "CHECKING", "DISCONNECTED"):
+    if quality in (
+        "UNAVAILABLE", "UNSUPPORTED", "CHECKING", "DISCONNECTED", "DATA_ERROR"
+    ):
         return {
-            "UNSUPPORTED": "нет Spot-пары",
-            "CHECKING": "проверяется наличие Spot-пары",
-            "DISCONNECTED": "поток переподключается",
+            "UNSUPPORTED": "Spot-пары нет на Bybit/OKX/Binance",
+            "CHECKING": "ищем Spot: Bybit → OKX → Binance",
+            "DISCONNECTED": "Spot-поток переподключается",
+            "DATA_ERROR": "Spot-проверка временно недоступна",
         }.get(quality, "нет данных")
     return (
         f"{_num(data.get('imbalance_pct'), signed=True, suffix='%')} "
@@ -576,6 +622,9 @@ def schedule(signal, sender, now=None):
     watch_symbol(symbol)
     watch_bybit_symbol(symbol)
     watch_flow_symbol(symbol, started_at=at)
+    watch_fallback_spot(symbol, started_at=at)
+    verification_signal = dict(signal)
+    verification_signal["_verification_started_at"] = at
 
     def worker():
         try:
@@ -583,7 +632,7 @@ def schedule(signal, sender, now=None):
                 delay = max(0.0, at + target_sec - time.time())
                 if delay:
                     time.sleep(delay)
-                result = collect(dict(signal), now=time.time())
+                result = collect(verification_signal, now=time.time())
                 if result.get("status") != "OK":
                     print("[BYBIT_VERIFY_INVALID]", symbol, checkpoint, flush=True)
                     return
@@ -604,6 +653,7 @@ def schedule(signal, sender, now=None):
                         float(result["futures"].get("coverage_sec") or 0), 1
                     ),
                     "spot_ready=", result["spot"].get("ready"),
+                    "spot_source=", result["spot"].get("source"),
                     "spot_coverage_sec=", round(
                         float(result["spot"].get("coverage_sec") or 0), 1
                     ),
@@ -620,6 +670,7 @@ def schedule(signal, sender, now=None):
             )
         finally:
             unwatch_flow_symbol(symbol)
+            unwatch_fallback_spot(symbol)
 
     try:
         threading.Thread(
@@ -637,6 +688,7 @@ def schedule(signal, sender, now=None):
         return True
     except Exception:
         unwatch_flow_symbol(symbol)
+        unwatch_fallback_spot(symbol)
         with _lock:
             _last_started.pop(key, None)
         return False
