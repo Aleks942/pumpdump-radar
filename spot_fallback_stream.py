@@ -25,7 +25,7 @@ MAX_EVENTS_PER_SYMBOL = 120000
 OKX_UNIVERSE_TTL_SEC = 30 * 60
 
 _lock = threading.RLock()
-_started = False
+_started_exchanges = set()
 _ws = {"OKX": None, "Binance": None}
 _connected = {"OKX": False, "Binance": False}
 _subscribed = {"OKX": set(), "Binance": set()}
@@ -157,6 +157,7 @@ def _resolve(symbol):
             _source[symbol] = source
             _events.setdefault(symbol, deque(maxlen=MAX_EVENTS_PER_SYMBOL))
         if source in ("OKX", "Binance"):
+            _ensure_started(source)
             _subscribe(source, [symbol])
         print("[SPOT_FALLBACK_SOURCE]", symbol, source, flush=True)
     finally:
@@ -179,8 +180,8 @@ def watch_symbol(symbol, started_at=None):
             _resolving.add(symbol)
         else:
             need_resolve = False
-    _ensure_started()
     if source in ("OKX", "Binance"):
+        _ensure_started(source)
         _subscribe(source, [symbol])
     elif need_resolve:
         threading.Thread(
@@ -400,25 +401,21 @@ def _run(exchange, url):
         time.sleep(5)
 
 
-def _ensure_started():
-    global _started
+def _ensure_started(exchange):
+    if exchange not in ("OKX", "Binance"):
+        return
     with _lock:
-        if _started:
+        if exchange in _started_exchanges:
             return
-        _started = True
+        _started_exchanges.add(exchange)
+    url = OKX_WS if exchange == "OKX" else BINANCE_WS
     threading.Thread(
         target=_run,
-        args=("OKX", OKX_WS),
-        name="spot-fallback-okx",
+        args=(exchange, url),
+        name="spot-fallback-" + exchange.lower(),
         daemon=True,
     ).start()
-    threading.Thread(
-        target=_run,
-        args=("Binance", BINANCE_WS),
-        name="spot-fallback-binance",
-        daemon=True,
-    ).start()
-    print("[SPOT_FALLBACK_STREAM_STARTED]", flush=True)
+    print("[SPOT_FALLBACK_STREAM_STARTED]", exchange, flush=True)
 
 
 def get_flow(symbol, now=None):
