@@ -141,7 +141,7 @@ def maybe_send_market_watch(signal, reason, now=None):
     # CONFIRMED_ONLY means exactly that: raw price-threshold WATCH events stay
     # internal. Bybit still starts the full verification pipeline, but Telegram
     # receives nothing until the verifier has a confirmed 5-minute result.
-    if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+    if globals().get("TELEGRAM_POLICY", "LEGACY") == "CONFIRMED_ONLY":
         if str(signal.get("exchange") or "").upper() == "BYBIT":
             try:
                 scheduled = schedule_bybit_move_verification(
