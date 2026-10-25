@@ -209,12 +209,12 @@ def _rest_trade_flow(symbol, category, request_get=None, now=None):
         }
 
 
-def _flow(symbol, category, request_get=None, now=None):
+def _flow(symbol, category, request_get=None, now=None, since=None):
     """Futures use Bybit; Spot can fail over Bybit -> OKX -> Binance."""
-    live = get_live_flow(symbol, category=category, now=now)
+    live = get_live_flow(symbol, category=category, now=now, since=since)
 
     if category == "spot":
-        fallback = get_fallback_spot_flow(symbol, now=now)
+        fallback = get_fallback_spot_flow(symbol, now=now, since=since)
 
         # Prefer a real Bybit Spot stream whenever that market exists.
         if live.get("ready") or (
@@ -245,6 +245,10 @@ def _flow(symbol, category, request_get=None, now=None):
         live.get("trade_count", 0) > 0
         or live.get("quality") in ("READY", "PARTIAL")
     ):
+        return live
+    if since is not None:
+        # Sequential checks must represent trades observed after this trigger,
+        # not a pre-trigger REST snapshot.
         return live
     return _rest_trade_flow(
         symbol,
@@ -353,9 +357,14 @@ def collect(signal, request_get=None, now=None):
     watch_symbol(symbol)
     watch_bybit_symbol(symbol)
 
+    since = _finite(signal.get("_verification_started_at"))
     oi = _oi_5m(symbol, request_get=request_get, now=now)
-    futures = _flow(symbol, "linear", request_get=request_get, now=now)
-    spot = _flow(symbol, "spot", request_get=request_get, now=now)
+    futures = _flow(
+        symbol, "linear", request_get=request_get, now=now, since=since
+    )
+    spot = _flow(
+        symbol, "spot", request_get=request_get, now=now, since=since
+    )
     funding = _funding(symbol, request_get=request_get)
     trend_5m = _closed_trend(symbol, 5, request_get=request_get, now=now)
     trend_60m = _closed_trend(symbol, 60, request_get=request_get, now=now)
@@ -614,6 +623,8 @@ def schedule(signal, sender, now=None):
     watch_bybit_symbol(symbol)
     watch_flow_symbol(symbol, started_at=at)
     watch_fallback_spot(symbol, started_at=at)
+    verification_signal = dict(signal)
+    verification_signal["_verification_started_at"] = at
 
     def worker():
         try:
@@ -621,7 +632,7 @@ def schedule(signal, sender, now=None):
                 delay = max(0.0, at + target_sec - time.time())
                 if delay:
                     time.sleep(delay)
-                result = collect(dict(signal), now=time.time())
+                result = collect(verification_signal, now=time.time())
                 if result.get("status") != "OK":
                     print("[BYBIT_VERIFY_INVALID]", symbol, checkpoint, flush=True)
                     return
