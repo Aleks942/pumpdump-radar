@@ -42,6 +42,9 @@ class BybitMoveVerifierTests(unittest.TestCase):
         )
         self.assertIn("watch_flow_symbol(symbol, started_at=at)", code)
         self.assertIn("get_live_flow", code)
+        self.assertIn("get_fallback_spot_flow", code)
+        self.assertIn("watch_fallback_spot(symbol, started_at=at)", code)
+        self.assertIn("unwatch_fallback_spot(symbol)", code)
         self.assertIn("unwatch_flow_symbol(symbol)", code)
         self.assertIn("futures_coverage_sec=", code)
         stream = Path(__file__).with_name("bybit_taker_stream.py").read_text(
