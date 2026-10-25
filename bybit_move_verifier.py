@@ -636,16 +636,23 @@ def schedule(signal, sender, now=None):
                 if result.get("status") != "OK":
                     print("[BYBIT_VERIFY_INVALID]", symbol, checkpoint, flush=True)
                     return
-                sent = sender(
-                    build_message(result, checkpoint=checkpoint),
-                    symbol=symbol,
+                verdict_code = result["verdict"].get("code")
+                should_send = (
+                    checkpoint == "5m"
+                    and verdict_code == "CONFIRMED"
                 )
+                sent = False
+                if should_send:
+                    sent = sender(
+                        build_message(result, checkpoint=checkpoint),
+                        symbol=symbol,
+                    )
                 print(
-                    "[BYBIT_VERIFY_SENT]",
+                    "[BYBIT_VERIFY_SENT]" if should_send else "[BYBIT_VERIFY_INTERNAL]",
                     symbol,
                     "checkpoint=", checkpoint,
                     "sent=", sent is True,
-                    "verdict=", result["verdict"].get("code"),
+                    "verdict=", verdict_code,
                     "pattern=", result["pattern"].get("pattern"),
                     "oi_ready=", result["oi"].get("ready"),
                     "futures_ready=", result["futures"].get("ready"),
@@ -682,7 +689,7 @@ def schedule(signal, sender, now=None):
             "[BYBIT_VERIFY_SCHEDULED]",
             symbol,
             kind,
-            "checkpoints=NOW,1m,3m,5m",
+            "checkpoints=NOW,1m,3m,5m internal; telegram=confirmed_5m_only",
             flush=True,
         )
         return True
