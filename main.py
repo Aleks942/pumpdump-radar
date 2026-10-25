@@ -891,10 +891,18 @@ def refresh_signal_price(signal):
 
 def analyze(ticker):
     try:
-        raw_symbol = ticker["instId"]
+        raw_symbol = ticker.get("instId") if isinstance(ticker, dict) else None
+        if (
+            not isinstance(raw_symbol, str)
+            or not raw_symbol.endswith("-USDT-SWAP")
+        ):
+            return None
         symbol = raw_symbol.replace("-USDT-SWAP", "USDT")
 
-        price = float(ticker["last"])
+        raw_price = ticker.get("last")
+        if raw_price in (None, ""):
+            return None
+        price = float(raw_price)
 
         if not math.isfinite(price) or price <= 0:
             return None
@@ -913,8 +921,12 @@ def analyze(ticker):
         if volume_24h is None or volume_24h < MIN_VOLUME_24H:
             return None
 
+    except (KeyError, TypeError, ValueError, OverflowError):
+        # Empty/invalid exchange rows are expected occasionally; skip them
+        # without flooding production logs.
+        return None
     except Exception as e:
-        print("[ANALYZE TICKER ERROR]", e)
+        print("[ANALYZE TICKER ERROR]", type(e).__name__, str(e)[:120], flush=True)
         return None
 
     best_signal = None
