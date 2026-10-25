@@ -418,7 +418,7 @@ def _ensure_started(exchange):
     print("[SPOT_FALLBACK_STREAM_STARTED]", exchange, flush=True)
 
 
-def get_flow(symbol, now=None):
+def get_flow(symbol, now=None, since=None):
     symbol = _norm(symbol)
     now = time.time() if now is None else float(now)
     with _lock:
@@ -443,19 +443,28 @@ def get_flow(symbol, now=None):
             "source": source + "_SPOT_WS",
         }
 
-    rows = [row for row in rows if 0 <= now - row[0] <= WINDOW_SEC]
+    start_at = watch_at
+    if since is not None:
+        try:
+            start_at = max(start_at, float(since))
+        except (TypeError, ValueError, OverflowError):
+            pass
+    rows = [
+        row for row in rows
+        if 0 <= now - row[0] <= WINDOW_SEC and row[0] >= start_at
+    ]
     if not rows:
         return {
             "quality": "WARMING",
             "ready": False,
             "trade_count": 0,
-            "coverage_sec": max(0.0, min(WINDOW_SEC, now - watch_at)),
+            "coverage_sec": max(0.0, min(WINDOW_SEC, now - start_at)),
             "source": source + "_SPOT_WS",
         }
 
     oldest = min(row[0] for row in rows)
     newest = max(row[0] for row in rows)
-    observed_from = max(watch_at, oldest)
+    observed_from = max(start_at, oldest)
     coverage = max(0.0, min(WINDOW_SEC, newest - observed_from))
     stale = max(0.0, now - newest)
     buy = sum(value for _, value in rows if value > 0)
