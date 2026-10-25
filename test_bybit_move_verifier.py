@@ -33,6 +33,19 @@ class BybitMoveVerifierTests(unittest.TestCase):
         ):
             self.assertIn(required, code)
 
+    def test_confirmed_only_telegram_suppresses_watch_noise(self):
+        main = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
+        strict = main.index('if TELEGRAM_POLICY == "CONFIRMED_ONLY":')
+        legacy_send = main.index("message = build_market_watch_message")
+        self.assertLess(strict, legacy_send)
+        self.assertIn("[PUMP_INFO_SILENT]", main)
+
+        code = self.source()
+        self.assertIn('checkpoint == "5m"', code)
+        self.assertIn('verdict_code == "CONFIRMED"', code)
+        self.assertIn("[BYBIT_VERIFY_INTERNAL]", code)
+        self.assertIn("telegram=confirmed_5m_only", code)
+
     def test_sequential_checkpoints_and_live_stream_are_wired(self):
         code = self.source()
         self.assertIn(
