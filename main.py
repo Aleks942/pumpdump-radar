@@ -42,6 +42,9 @@ from post_pump_short_research import (
 )
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
+from pump_retrace_stats import (register_event as register_retrace_event,
+                                observe_tickers as observe_retrace_tickers,
+                                hourly_report as report_retrace_stats)
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
 from flow_bridge import (enqueue_candidate as enqueue_flow_candidate,
@@ -1418,6 +1421,7 @@ while True:
         print_exit_research()
         print_factor_edge()
         report_forward_oi()
+        report_retrace_stats()
         if TELEGRAM_POLICY == "CONFIRMED_ONLY":
             report_trend_study()
             report_horizon_audit()
@@ -1427,6 +1431,10 @@ while True:
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
+    try:
+        observe_retrace_tickers(tickers, "OKX")
+    except Exception as retrace_exc:
+        print("[PUMP_RETRACE_OKX_ERROR]", type(retrace_exc).__name__, flush=True)
     # Quote markouts use the same OKX market snapshot. No new REST calls.
     try:
         observe_pump_info_quotes(tickers, "OKX")
@@ -1470,6 +1478,13 @@ while True:
         # observed 5m percentage thresholds. The stronger continuation study
         # remains separate and never gates these notices.
         for market_move in first_moves:
+            market_move["exchange"] = "OKX"
+            try:
+                register_retrace_event(market_move)
+            except Exception as retrace_exc:
+                print("[PUMP_RETRACE_REGISTER_ERROR]",
+                      market_move.get("symbol"),
+                      type(retrace_exc).__name__, flush=True)
             maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
     except Exception as info_exc:
         print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
@@ -1490,6 +1505,11 @@ while True:
         bybit_tickers = fetch_bybit_movers()
         if bybit_tickers is not None:
             try:
+                observe_retrace_tickers(bybit_tickers, "Bybit")
+            except Exception as retrace_exc:
+                print("[PUMP_RETRACE_BYBIT_ERROR]",
+                      type(retrace_exc).__name__, flush=True)
+            try:
                 observe_pump_info_quotes(bybit_tickers, "Bybit")
             except Exception as audit_error:
                 print("[PUMP_INFO_AUDIT_BYBIT_ERROR]",
@@ -1504,6 +1524,12 @@ while True:
                   "threshold_moves=", len(bybit_moves), flush=True)
             for market_move in bybit_moves:
                 market_move["exchange"] = "Bybit"
+                try:
+                    register_retrace_event(market_move)
+                except Exception as retrace_exc:
+                    print("[PUMP_RETRACE_REGISTER_ERROR]",
+                          market_move.get("symbol"),
+                          type(retrace_exc).__name__, flush=True)
                 maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
     except Exception as bybit_exc:
         print("[BYBIT_WATCH_ERROR]", type(bybit_exc).__name__, flush=True)
@@ -1516,6 +1542,12 @@ while True:
               len(extended_events), "okx_quotes=", len(extended_okx_quotes),
               "bybit_quotes=", len(extended_bybit_quotes), flush=True)
         for event in extended_events:
+            try:
+                register_retrace_event(event)
+            except Exception as retrace_exc:
+                print("[PUMP_RETRACE_REGISTER_ERROR]",
+                      event.get("symbol"),
+                      type(retrace_exc).__name__, flush=True)
             if maybe_send_market_watch(event, "PRICE_THRESHOLD"):
                 mark_multi_window_sent(event)
     except Exception as extended_exc:
