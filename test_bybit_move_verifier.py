@@ -109,12 +109,39 @@ class BybitMoveVerifierTests(unittest.TestCase):
             "spot": {"ready": True, "imbalance_pct": -8},
             "trend_5m": {"trend": "DOWN"},
             "trend_60m": {"trend": "DOWN"},
-            "pattern": {"direction": "DOWN"},
+            "pattern": {
+                "pattern": "NEW_SHORT_BUILDUP",
+                "direction": "DOWN",
+            },
+            "agg_5m": {
+                "ready": True,
+                "change_pct": 1.2,
+                "confidence": "MEDIUM",
+                "consensus_mode": "2/2_SUPPORTED",
+            },
         }
         self.assertEqual(classify(base)["code"], "CONFIRMED")
+
         partial = dict(base)
         partial["futures"] = {"ready": False, "imbalance_pct": -40}
         self.assertEqual(classify(partial)["code"], "WATCH")
+
+        no_consensus = dict(base)
+        no_consensus["agg_5m"] = {
+            "ready": False,
+            "change_pct": None,
+            "confidence": "BLOCK",
+        }
+        self.assertEqual(classify(no_consensus)["code"], "WATCH")
+
+        wrong_oi = dict(base)
+        wrong_oi["agg_5m"] = {
+            "ready": True,
+            "change_pct": -1.2,
+            "confidence": "HIGH",
+            "consensus_mode": "3/3",
+        }
+        self.assertEqual(classify(wrong_oi)["code"], "WATCH")
 
     def test_classification_breaks_on_real_reversal(self):
         classify = self.classification_namespace()
