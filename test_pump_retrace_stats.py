@@ -83,7 +83,7 @@ class PumpRetraceStatsTests(unittest.TestCase):
                 for r in db.execute("""SELECT * FROM pump_retrace_milestone
                     WHERE episode_id=?""", (ep["id"],)).fetchall()
             }
-            self.assertEqual(set(levels), {15, 20, 30, 50})
+            self.assertEqual(set(levels), {15, 20, 30, 50, 70})
             self.assertAlmostEqual(levels[50]["max_price"], 170.0)
             self.assertIsNotNone(levels[50]["retrace15_at"])
 
