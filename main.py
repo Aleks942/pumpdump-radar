@@ -1213,8 +1213,9 @@ def analyze(ticker):
             continue
 
         # Aggregated OI is a mandatory confirmation layer.
-        # New position buildup requires OI expansion; liquidation/squeeze
-        # requires OI contraction across OKX + Binance + Bybit.
+        # Accept HIGH 3/3, or MEDIUM 2/2 only when the third exchange is
+        # confirmed UNSUPPORTED. Errors, stale data and OI direction
+        # disagreement stay blocked.
         aggregated_oi = get_aggregated_oi(symbol)
         agg_5m = (
             (aggregated_oi.get("windows") or {}).get("5m")
@@ -1230,6 +1231,9 @@ def analyze(ticker):
                 "pattern=", pattern_name,
                 "quality=", agg_5m.get("quality"),
                 "ready_sources=", agg_5m.get("ready_sources"),
+                "supported_sources=", agg_5m.get("supported_sources"),
+                "confidence=", agg_5m.get("confidence"),
+                "mode=", agg_5m.get("consensus_mode"),
                 flush=True,
             )
             continue
@@ -1266,6 +1270,9 @@ def analyze(ticker):
             "pattern=", pattern_name,
             "local_oi_5m=", round(oi_short_change, 3),
             "aggregated_oi_5m=", round(agg_5m_change, 3),
+            "confidence=", agg_5m.get("confidence"),
+            "mode=", agg_5m.get("consensus_mode"),
+            "direction_consensus=", agg_5m.get("direction_consensus"),
             flush=True,
         )
 
