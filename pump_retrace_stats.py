@@ -590,11 +590,14 @@ def pending_daily_digest(now=None, db_path=None):
         if last is not None and int(last) >= target_day:
             return None
 
-        episodes = db.execute("""SELECT id,symbol,peak_move_pct,peak_at,
-                max_retrace_pct,closed_at
-            FROM pump_retrace_episode
-            WHERE basis='UTC_DAY' AND session_key=? AND status='CLOSED'
-            ORDER BY peak_move_pct DESC""", (target_day,)).fetchall()
+        episodes = db.execute("""SELECT e.id,e.symbol,e.peak_move_pct,e.peak_at,
+                e.closed_at,m.retrace_pct AS final_retrace_pct
+            FROM pump_retrace_episode e
+            JOIN pump_retrace_milestone m
+              ON m.episode_id=e.id AND m.threshold_pct=15
+            WHERE e.basis='UTC_DAY' AND e.session_key=?
+              AND e.status='CLOSED'
+            ORDER BY e.peak_move_pct DESC""", (target_day,)).fetchall()
 
     if not episodes:
         return None
@@ -615,7 +618,7 @@ def pending_daily_digest(now=None, db_path=None):
     for row in episodes[:10]:
         lines.append(
             f"• {row['symbol']}: пик +{float(row['peak_move_pct']):.1f}%"
-            f" → откат −{float(row['max_retrace_pct']):.1f}%"
+            f" → откат −{float(row['final_retrace_pct']):.1f}%"
         )
 
     if bands:
