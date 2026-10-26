@@ -87,6 +87,85 @@ class PumpRetraceStatsTests(unittest.TestCase):
             self.assertAlmostEqual(levels[50]["max_price"], 170.0)
             self.assertIsNotNone(levels[50]["retrace15_at"])
 
+    def test_utc_day_survives_six_hours_and_closes_at_day_rollover(self):
+        day0 = 10
+        start = day0 * 86400 + 3600
+        stats.observe_tickers(
+            [{"instId": "DAY-USDT-SWAP", "last": "150", "sodUtc0": "100"}],
+            "OKX", now=start, db_path=self.path,
+        )
+
+        # More than six hours later: UTC-day study must still be ACTIVE.
+        stats.observe_tickers(
+            [{"instId": "DAY-USDT-SWAP", "last": "400", "sodUtc0": "100"}],
+            "OKX", now=start + 7 * 3600, db_path=self.path,
+        )
+        with sqlite3.connect(self.path) as db:
+            row = db.execute("""SELECT status,peak_move_pct FROM pump_retrace_episode
+                WHERE basis='UTC_DAY' AND session_key=?""", (day0,)).fetchone()
+            self.assertEqual(row[0], "ACTIVE")
+            self.assertAlmostEqual(row[1], 300.0)
+
+        # First quote of next UTC day closes yesterday without applying the
+        # new day's price to yesterday's peak.
+        stats.observe_tickers(
+            [{"instId": "DAY-USDT-SWAP", "last": "120", "sodUtc0": "110"}],
+            "OKX", now=(day0 + 1) * 86400 + 60, db_path=self.path,
+        )
+        with sqlite3.connect(self.path) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute("""SELECT * FROM pump_retrace_episode
+                WHERE basis='UTC_DAY' AND session_key=?""", (day0,)).fetchone()
+            self.assertEqual(row["status"], "CLOSED")
+            self.assertEqual(row["close_reason"], "UTC_DAY_END")
+            self.assertAlmostEqual(row["peak_move_pct"], 300.0)
+
+    def test_300pct_day_pump_then_15pct_final_retrace_is_in_300_plus_band(self):
+        day0 = 12
+        start = day0 * 86400 + 3600
+        stats.observe_tickers(
+            [{"instId": "MOON-USDT-SWAP", "last": "400", "sodUtc0": "100"}],
+            "OKX", now=start, db_path=self.path,
+        )
+        stats.observe_tickers(
+            [{"instId": "MOON-USDT-SWAP", "last": "500", "sodUtc0": "100"}],
+            "OKX", now=start + 60, db_path=self.path,
+        )
+        stats.observe_tickers(
+            [{"instId": "MOON-USDT-SWAP", "last": "425", "sodUtc0": "100"}],
+            "OKX", now=start + 120, db_path=self.path,
+        )
+        stats.observe_tickers(
+            [{"instId": "MOON-USDT-SWAP", "last": "110", "sodUtc0": "110"}],
+            "OKX", now=(day0 + 1) * 86400 + 60, db_path=self.path,
+        )
+
+        bands = stats.peak_band_summary(
+            now=(day0 + 1) * 86400 + 120,
+            db_path=self.path,
+            basis="UTC_DAY",
+            session_key=day0,
+        )
+        row = next(r for r in bands if r["peak_band"] == "300%+")
+        self.assertEqual(row["n"], 1)
+        self.assertEqual(row["retrace15_hits"], 1)
+        self.assertAlmostEqual(row["median_final_retrace_pct"], 15.0)
+
+        digest = stats.pending_daily_digest(
+            now=(day0 + 1) * 86400 + 120,
+            db_path=self.path,
+        )
+        self.assertIsNotNone(digest)
+        self.assertIn("MOONUSDT: пик +400.0% → откат −15.0%", digest["text"])
+        self.assertIn("300%+", digest["text"])
+        self.assertTrue(stats.acknowledge_daily_digest(
+            digest["session_key"], True, db_path=self.path
+        ))
+        self.assertIsNone(stats.pending_daily_digest(
+            now=(day0 + 1) * 86400 + 180,
+            db_path=self.path,
+        ))
+
     def test_dump_is_not_registered_as_pump_stats(self):
         event = {
             "symbol": "DOWNUSDT",

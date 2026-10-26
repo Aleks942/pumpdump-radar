@@ -44,7 +44,9 @@ from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
-                                hourly_report as report_retrace_stats)
+                                hourly_report as report_retrace_stats,
+                                pending_daily_digest as pending_retrace_daily_digest,
+                                acknowledge_daily_digest as ack_retrace_daily_digest)
 from trend_probability_gate import consider as confirm_trend_edge, advance as advance_trend_study, hourly_report as report_trend_study
 from horizon_audit import record as record_horizon_case, advance as advance_horizon_audit, hourly_report as report_horizon_audit
 from flow_bridge import (enqueue_candidate as enqueue_flow_candidate,
@@ -1433,6 +1435,20 @@ while True:
     print(f"[TICKERS] {len(tickers)}")
     try:
         observe_retrace_tickers(tickers, "OKX")
+        daily_retrace = pending_retrace_daily_digest()
+        if daily_retrace:
+            daily_sent = send_telegram(
+                daily_retrace["text"], symbol="PUMP_STATS"
+            )
+            ack_retrace_daily_digest(
+                daily_retrace["session_key"], daily_sent
+            )
+            print(
+                "[PUMP_RETRACE_DAILY]",
+                "session=", daily_retrace["session_key"],
+                "sent=", daily_sent is True,
+                flush=True,
+            )
     except Exception as retrace_exc:
         print("[PUMP_RETRACE_OKX_ERROR]", type(retrace_exc).__name__, flush=True)
     # Quote markouts use the same OKX market snapshot. No new REST calls.
