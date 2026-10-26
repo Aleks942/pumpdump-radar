@@ -207,17 +207,23 @@ def build_market_watch_message(signal, reason):
         if (window not in bounds or not math.isfinite(age_sec)
                 or not bounds[window][0] <= age_sec <= bounds[window][1]):
             raise ValueError("Invalid quote sampling age or window")
+
         minutes = int(window[:-1])
+        if move_type == "PUMP":
+            move_label = "ПАМП"
+            move_icon = "📈"
+        else:
+            move_label = "ДАМП"
+            move_icon = "📉"
+
         return "\n".join((
-            heading,
-            f"🪙 {symbol} | {escape(str(signal.get('exchange') or 'OKX'))} SWAP",
-            f"Цена: {price_text(signal.get('price'))} USDT",
-            f"Движение: {number(signal.get('change'), signed=True, suffix='%')}",
-            f"Период наблюдения: около {minutes} минут ({age_sec/60:.1f} мин)",
+            f"🟡 <b>{move_label} ОБНАРУЖЕН — {symbol}</b>",
+            f"{move_icon} Движение: <b>{number(signal.get('change'), signed=True, suffix='%')}</b> за ~{minutes} мин",
+            f"💰 Цена: <b>{price_text(signal.get('price'))}</b>",
             "",
-            "ℹ️ Порог цены из Railway Variables достигнут.",
-            ("⚠️ НЕ сигнал для входа. 🔬 Автопроверка OI/CVD/ликвидаций/funding/тренда запускается сразу." if str(signal.get("exchange") or "").upper() == "BYBIT" else "⚠️ НЕ сигнал для входа. OI, CVD и тренд в этом первичном сообщении не проверялись."),
-            "Резкое движение может продолжиться или развернуться.",
+            "🔎 Бот проверяет OI · фьючерсы · спот · ликвидации",
+            "⚠️ Это факт движения рынка, а не вход.",
+            "➡️ Если сценарий подтвердится — придёт отдельный 🟢 LONG или 🔴 SHORT.",
         ))
 
     reason_text = {

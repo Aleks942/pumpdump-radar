@@ -163,9 +163,12 @@ class MultiWindowWatchTests(TestCase):
             "type":"PUMP", "decision":{"direction":"UP"},
             "window":"30m", "sample_age_sec":1800, "exchange":"Bybit",
         }, "PRICE_THRESHOLD")
-        self.assertIn("около 30 минут", msg)
-        self.assertIn("Bybit SWAP", msg)
-        self.assertIn("НЕ сигнал для входа", msg)
+        self.assertIn("🟡 <b>ПАМП ОБНАРУЖЕН — PUFFERUSDT</b>", msg)
+        self.assertIn("за ~30 мин", msg)
+        self.assertIn("Это факт движения рынка, а не вход", msg)
+        self.assertIn("🟢 LONG или 🔴 SHORT", msg)
+        self.assertNotIn("READY", msg)
+        self.assertNotIn("Bybit SWAP", msg)
         main_code = Path(__file__).with_name("main.py").read_text()
         self.assertIn("select_multi_window_events(", main_code)
         self.assertIn("mark_multi_window_sent(event)", main_code)

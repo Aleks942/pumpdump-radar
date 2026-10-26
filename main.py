@@ -138,41 +138,10 @@ def maybe_send_market_watch(signal, reason, now=None):
             or (kind, side) not in (("PUMP", "UP"), ("DUMP", "DOWN"))):
         return False
 
-    # CONFIRMED_ONLY means exactly that: raw price-threshold WATCH events stay
-    # internal. Bybit still starts the full verification pipeline, but Telegram
-    # receives nothing until the verifier has a confirmed 5-minute result.
-    if globals().get("TELEGRAM_POLICY", "LEGACY") == "CONFIRMED_ONLY":
-        if str(signal.get("exchange") or "").upper() == "BYBIT":
-            try:
-                scheduled = schedule_bybit_move_verification(
-                    dict(signal),
-                    send_telegram,
-                    now=now,
-                )
-                print(
-                    "[PUMP_INFO_SILENT]",
-                    symbol,
-                    "type=", kind,
-                    "verification_scheduled=", scheduled is True,
-                    flush=True,
-                )
-            except Exception as verify_exc:
-                print(
-                    "[BYBIT_VERIFY_SCHEDULE_ERROR]",
-                    symbol,
-                    type(verify_exc).__name__,
-                    flush=True,
-                )
-                return False
-        else:
-            print(
-                "[PUMP_INFO_SILENT]",
-                symbol,
-                "type=", kind,
-                "reason=CONFIRMED_ONLY",
-                flush=True,
-            )
-        return True
+    # CONFIRMED_ONLY applies to trade-direction alerts, not to factual market
+    # movement notices. A threshold crossing may be shown as a yellow
+    # informational card; LONG/SHORT still requires the strict confirmation
+    # pipeline below. Existing per-symbol/per-window dedup prevents spam.
 
     day = int(now // 86400)
     state = _market_watch_delivery
