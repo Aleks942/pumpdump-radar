@@ -66,21 +66,31 @@ class BybitMoveVerifierTests(unittest.TestCase):
         self.assertIn("BYBIT_PUBLIC_TRADE_WS", stream)
         self.assertIn("coverage >= 240.0", stream)
 
-    def test_followup_message_reports_all_layers(self):
+    def test_confirmed_message_is_compact_russian_trader_card(self):
         code = self.source()
         for label in (
-            "OI Bybit",
-            "Aggregated OI",
-            "Futures CVD",
-            "Spot CVD",
-            "Funding Bybit",
-            "Тренд закрытых 5м",
-            "Тренд закрытых H1",
-            "Ликвидации 5м",
-            "Research-only: это не команда на сделку",
-            "ФИНАЛ 5М",
+            "<b>{side} — {symbol}</b>",
+            "СИГНАЛ ПОДТВЕРЖДЁН",
+            "сила:",
+            "OI 5м",
+            "OI рынка",
+            "Фьючерсы:",
+            "Спот:",
+            "Сейчас:",
+            "Не догонять свечу",
+            "Отмена идеи",
         ):
             self.assertIn(label, code)
+
+        for technical_noise in (
+            "Funding Bybit:",
+            "Тренд закрытых H1:",
+            "Ликвидации 5м:",
+            "Research-only: это не команда на сделку.",
+            "Aggregated OI ≈5м:",
+            "Futures CVD/дельта:",
+        ):
+            self.assertNotIn(technical_noise, code)
 
     def classification_namespace(self):
         tree = ast.parse(self.source())
