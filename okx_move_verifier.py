@@ -392,6 +392,7 @@ def schedule(signal, sender, now=None):
                     checkpoint == "5m"
                     and verdict_code == "CONFIRMED"
                     and not pre_active
+                    and maturity.get("continue_watch") is not True
                 )
                 sent = False
                 if should_send:
