@@ -9,10 +9,14 @@ class BybitMoveVerifierTests(unittest.TestCase):
         return Path(__file__).with_name("bybit_move_verifier.py").read_text(
             encoding="utf-8")
 
-    def test_main_wires_bybit_watch_into_verifier(self):
+    def test_main_routes_all_delivered_moves_into_exchange_verifier(self):
         code = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
-        self.assertIn("schedule_bybit_move_verification", code)
-        self.assertIn('str(signal.get("exchange") or "").upper() == "BYBIT"', code)
+        self.assertIn("schedule_move_verification", code)
+        self.assertIn("[MOVE_VERIFY_ROUTE]", code)
+        self.assertNotIn(
+            'if str(signal.get("exchange") or "").upper() == "BYBIT":',
+            code,
+        )
 
     def test_verifier_checks_required_context_and_fails_closed(self):
         code = self.source()
