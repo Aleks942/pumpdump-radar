@@ -564,78 +564,96 @@ def trend_text(value):
     }.get(value, "нет данных")
 
 
+def _signal_traffic(value, expected):
+    value = _finite(value)
+    if value is None:
+        return "🟡", "нет данных"
+    aligned = value > 0 if expected == "UP" else value < 0
+    return ("🟢", "подтверждает") if aligned else ("🔴", "против сигнала")
+
+
 def build_message(result, checkpoint="NOW"):
+    """Compact Telegram card. Raw diagnostics remain in Railway logs."""
     symbol = escape(result["symbol"])
     kind = result["type"]
-    oi = result["oi"]
-    futures = result["futures"]
-    spot = result["spot"]
-    funding = result["funding"]
-    liq = result["liquidations"]
-    agg = result["agg_5m"]
-    pattern = result["pattern"]
-    verdict = result["verdict"]
+    expected = "UP" if kind == "PUMP" else "DOWN"
+    side = "LONG" if expected == "UP" else "SHORT"
+    icon = "🟢" if side == "LONG" else "🔴"
 
-    title = "ПАМП" if kind == "PUMP" else "ДАМП"
-    if checkpoint == "NOW":
-        heading = f"🔬 АВТОПРОВЕРКА {title} — {symbol}"
-    elif checkpoint == "5m":
-        heading = f"⏱ ФИНАЛ 5М — {title} — {symbol}"
+    oi = result.get("oi") or {}
+    futures = result.get("futures") or {}
+    spot = result.get("spot") or {}
+    agg = result.get("agg_5m") or {}
+    pattern = result.get("pattern") or {}
+
+    pattern_name = pattern.get("pattern") or "NONE"
+    pattern_text = {
+        "NEW_LONG_BUILDUP": "Новые лонги заходят в рынок",
+        "NEW_SHORT_BUILDUP": "Новые шорты заходят в рынок",
+        "SHORT_SQUEEZE": "Шорты закрываются и толкают цену вверх",
+        "LONG_LIQUIDATION": "Лонги закрываются и усиливают падение",
+        "NONE": "Движение подтверждено потоком, без отдельного паттерна",
+    }.get(pattern_name, "Рынок подтвердил направление")
+
+    confidence = agg.get("confidence")
+    confidence_text = {
+        "HIGH": "🟢 ВЫСОКАЯ",
+        "MEDIUM": "🟡 СРЕДНЯЯ",
+    }.get(confidence, "🟡 СРЕДНЯЯ")
+
+    agg_mode = agg.get("consensus_mode")
+    if agg_mode == "3/3":
+        agg_source = "3/3 биржи"
+    elif agg_mode == "2/2_SUPPORTED":
+        agg_source = "2/2 доступных биржи"
     else:
-        heading = f"⏱ ПРОВЕРКА +{checkpoint} — {title} — {symbol}"
+        agg_source = "консенсус бирж"
 
-    if agg.get("ready"):
-        agg_mode = agg.get("consensus_mode") or "CONSENSUS"
-        if agg_mode == "2/2_SUPPORTED":
-            agg_mode = "2/2 доступных"
-        agg_text = (
-            _num(agg.get("change_pct"), signed=True, suffix="%")
-            + f" ({agg_mode}; {agg.get('confidence') or 'UNKNOWN'})"
-        )
+    f_icon, f_note = _signal_traffic(futures.get("imbalance_pct"), expected)
+    s_icon, s_note = _signal_traffic(spot.get("imbalance_pct"), expected)
+
+    requires_expansion = pattern_name in (
+        "NEW_LONG_BUILDUP",
+        "NEW_SHORT_BUILDUP",
+    )
+    requires_contraction = pattern_name in (
+        "SHORT_SQUEEZE",
+        "LONG_LIQUIDATION",
+    )
+
+    def oi_icon(value):
+        value = _finite(value)
+        if value is None:
+            return "🟡"
+        if requires_expansion:
+            return "🟢" if value > 0 else "🔴"
+        if requires_contraction:
+            return "🟢" if value < 0 else "🔴"
+        return "🟡"
+
+    if side == "LONG":
+        now_text = "Покупатели контролируют движение."
+        cancel_text = "Отмена идеи: 5м поток и OI разворачиваются вниз."
     else:
-        agg_text = (
-            f"нет консенсуса; {agg.get('quality') or 'INCOMPLETE'}; "
-            f"готово {int(agg.get('ready_sources') or 0)}/"
-            f"{int(agg.get('supported_sources') or 0)} поддерживаемых"
-        )
+        now_text = "Продавцы контролируют движение."
+        cancel_text = "Отмена идеи: 5м поток и OI разворачиваются вверх."
 
-    lines = [
-        heading,
-        f"{verdict['icon']} {verdict['label']}",
-        f"Исходный импульс: {_num(result.get('change'), signed=True, suffix='%')}",
-        f"После триггера: {_num(result.get('post_trigger_pct'), signed=True, suffix='%')}",
+    return "\n".join((
+        f"{icon} <b>{side} — {symbol}</b>",
+        f"✅ <b>СИГНАЛ ПОДТВЕРЖДЁН</b> · сила: {confidence_text}",
+        f"💰 Цена: <b>{_num(result.get('current_price'))}</b>",
+        f"⚡ Импульс: {_num(result.get('change'), signed=True, suffix='%')}",
         "",
-        f"OI Bybit ≈5м: {_num(oi.get('change_pct'), signed=True, suffix='%')} · {oi.get('quality')}",
-        f"Aggregated OI ≈5м: {agg_text}",
-        f"Futures CVD/дельта: {_flow_line(futures)}",
-        f"Spot CVD: {_flow_line(spot)}",
-        f"Funding Bybit: {_num(funding.get('rate_pct'), signed=True, suffix='%')}",
-        f"Тренд закрытых 5м: {trend_text(result['trend_5m'].get('trend'))}",
-        f"Тренд закрытых H1: {trend_text(result['trend_60m'].get('trend'))}",
-        (
-            "Ликвидации 5м: long "
-            + _num(liq.get("long_liq"))
-            + " / short "
-            + _num(liq.get("short_liq"))
-            + " USDT · "
-            + escape(str(liq.get("quality") or "UNAVAILABLE"))
-        ),
-    ]
-    if pattern.get("pattern") != "NONE":
-        lines.append("Паттерн: " + escape(str(pattern.get("pattern"))))
-    if not result.get("anti_late_ok"):
-        lines.append("⚠️ Anti-late: движение уже растянуто; не догонять.")
-    if result["trend_5m"].get("trend") not in (
-        "DOWN" if kind == "DUMP" else "UP",
-        "UNKNOWN",
-    ):
-        lines.append("⚠️ Закрытый 5м тренд не подтверждает исходное направление.")
-    lines.extend((
+        f"📌 {escape(pattern_text)}",
+        f"{oi_icon(oi.get('change_pct'))} OI 5м: {_num(oi.get('change_pct'), signed=True, suffix='%')}",
+        f"{oi_icon(agg.get('change_pct'))} OI рынка: {_num(agg.get('change_pct'), signed=True, suffix='%')} · {agg_source}",
+        f"{f_icon} Фьючерсы: {_num(futures.get('imbalance_pct'), signed=True, suffix='%')} · {f_note}",
+        f"{s_icon} Спот: {_num(spot.get('imbalance_pct'), signed=True, suffix='%')} · {s_note}",
         "",
-        "Research-only: это не команда на сделку.",
-        "READY требует реального накопленного окна; PARTIAL не считается подтверждением.",
+        f"🎯 <b>Сейчас:</b> {escape(now_text)}",
+        "⚠️ Не догонять свечу — лучше дождаться отката/ретеста.",
+        f"❌ {escape(cancel_text)}",
     ))
-    return "\n".join(lines)
 
 
 def schedule(signal, sender, now=None):
