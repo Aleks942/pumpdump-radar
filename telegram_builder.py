@@ -29,158 +29,128 @@ def number(value, signed=False, suffix=""):
     return text + suffix
 
 
+def _price_text(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return "нет данных"
+
+    if not math.isfinite(value) or value <= 0:
+        return "нет данных"
+
+    return f"{value:.8f}".rstrip("0").rstrip(".")
+
+
+def _signed_value(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _traffic(value, expected):
+    value = _signed_value(value)
+    if value is None:
+        return "🟡", "нет данных"
+    aligned = value > 0 if expected == "UP" else value < 0
+    return ("🟢", "подтверждает") if aligned else ("🔴", "против сигнала")
+
+
 def build_short_message(signal):
+    """Compact professional Telegram card for a confirmed PumpDump signal."""
     decision = signal.get("decision") or {}
-    spot = signal.get("spot_cvd") or {}
-    futures = signal.get("futures_flow") or {}
-    liquidations = signal.get("liquidations") or {}
-
-    ready = futures.get("window_ready")
-
-    futures_status = {
-        True: "готово",
-        False: "не готово",
-    }.get(ready, "нет данных")
-
-    liq_available = liquidations.get("available", True)
-
-    liq_note = (
-        "Ликвидации — 5м, доступная неполная выборка (USDT):"
-        if liq_available
-        else "Ликвидации — нет свежих доступных данных"
-    )
-
-    pattern = decision.get("pattern") or "NONE"
     direction = decision.get("direction") or "NONE"
+    pattern = decision.get("pattern") or "NONE"
+    symbol = escape(str(signal.get("symbol") or "UNKNOWN"))
+    price = _price_text(signal.get("price"))
+    move = number(signal.get("change"), signed=True, suffix="%")
 
-    direction_text = {
-        "UP": "⬆️ Вверх",
-        "DOWN": "⬇️ Вниз",
-        "NONE": "⚪ Не определено",
-    }.get(direction, "⚪ Не определено")
+    if direction == "UP":
+        side = "LONG"
+        icon = "🟢"
+        expected = "UP"
+        action = "Покупатели контролируют движение."
+        cancel = "Отмена идеи: 5м поток и OI разворачиваются вниз."
+    elif direction == "DOWN":
+        side = "SHORT"
+        icon = "🔴"
+        expected = "DOWN"
+        action = "Продавцы контролируют движение."
+        cancel = "Отмена идеи: 5м поток и OI разворачиваются вверх."
+    else:
+        side = "ЖДАТЬ"
+        icon = "🟡"
+        expected = "UP"
+        action = "Направление пока не подтверждено."
+        cancel = "Ждём нового подтверждения."
 
-    alert_side = {
-        "UP": "UP",
-        "DOWN": "DOWN",
-        "NONE": "SIGNAL",
-    }.get(direction, "SIGNAL")
-
-    alert_icon = {
-        "UP": "🟢",
-        "DOWN": "🔴",
-        "NONE": "🚨",
-    }.get(direction, "🚨")
-
-    symbol = escape(
-        str(signal.get("symbol") or "UNKNOWN")
-    )
-
-    window = escape(
-        str(signal.get("window") or "—")
-    )
-
-    pattern_text = escape(str(pattern))
-
-    description = PATTERN_NAMES.get(
-        pattern,
-        "Неизвестный паттерн",
-    )
-
-    parts = [
-        f"🚨🚨🚨 PUMPDUMP SIGNAL — {alert_side}",
-        f"{alert_icon} ВНИМАНИЕ: ПОДТВЕРЖДЁННЫЙ СИГНАЛ",
-        f"🪙 {symbol}",
-        "✅ Полный паттерн прошёл фильтры",
-        "",
-        f"Окно движения: {window}",
-        f"🧩 {pattern_text}",
-        description,
-        f"Направление: {direction_text}",
-        "",
-        "━━━━━━━━━━━━",
-        "",
-        "Изменение цены: "
-        + number(
-            signal.get("change"),
-            signed=True,
-            suffix="%",
-        ),
-        "OI 5м (основной расчёт): "
-        + number(
-            signal.get("oi_change"),
-            signed=True,
-            suffix="%",
-        ),
-        "",
-        "📊 " + format_aggregated_oi(signal.get("aggregated_oi")),
-        "",
-        f"Фьючерсы — окно 5м: {futures_status}",
-        "Дельта объёма: "
-        + number(
-            futures.get("delta_quote"),
-            signed=True,
-        ),
-        "Дисбаланс покупок/продаж: "
-        + number(
-            futures.get("imbalance_pct"),
-            signed=True,
-            suffix="%",
-        ),
-        "",
-        "Spot CVD: "
-        + number(
-            spot.get("cvd_percent"),
-            signed=True,
-            suffix="%",
-        ),
-        "",
-        liq_note,
-        "Ликвидации лонгов: "
-        + number(
-            liquidations.get("long_liq")
-            if liq_available
-            else None
-        ),
-        "Ликвидации шортов: "
-        + number(
-            liquidations.get("short_liq")
-            if liq_available
-            else None
-        ),
-        "",
-        "Источники: "
-        + escape(
-            str(
-                liquidations.get(
-                    "exchanges",
-                    "нет данных",
-                )
-            )
-        ),
-        "━━━━━━━━━━━━",
-        "",
-        "Паттерн описывает наблюдаемое движение.",
-        "Продолжение проверяем через 5 / 10 / 20 / 30 минут.",
-    ]
-
-    message = "\n".join(parts)
+    pattern_text = {
+        "NEW_LONG_BUILDUP": "Новые лонги заходят в рынок",
+        "NEW_SHORT_BUILDUP": "Новые шорты заходят в рынок",
+        "SHORT_SQUEEZE": "Шорты закрываются и толкают цену вверх",
+        "LONG_LIQUIDATION": "Лонги закрываются и усиливают падение",
+        "NONE": "Чёткого паттерна пока нет",
+    }.get(pattern, "Паттерн подтверждён фильтрами")
 
     aggregated = signal.get("aggregated_oi") or {}
-    windows = aggregated.get("windows") or {}
-    oi_5m = windows.get("5m") or {}
-    oi_30m = windows.get("30m") or {}
+    agg_5m = (aggregated.get("windows") or {}).get("5m") or {}
+    agg_change = agg_5m.get("change_pct")
+    confidence = agg_5m.get("confidence")
+    confidence_text = {
+        "HIGH": "🟢 ВЫСОКАЯ",
+        "MEDIUM": "🟡 СРЕДНЯЯ",
+    }.get(confidence, "🟡 СРЕДНЯЯ")
 
-    print(
-        "[TG_OI_BLOCK]",
-        signal.get("symbol"),
-        "agg_5m_ready=", oi_5m.get("ready"),
-        "agg_5m_pct=", oi_5m.get("change_pct"),
-        "agg_30m_ready=", oi_30m.get("ready"),
-        "agg_30m_pct=", oi_30m.get("change_pct"),
-        flush=True,
-    )
+    futures = signal.get("futures_flow") or {}
+    spot = signal.get("spot_cvd") or {}
 
-    return message
+    futures_value = futures.get("imbalance_pct")
+    spot_value = spot.get("cvd_percent")
+    local_oi = signal.get("oi_change")
+
+    futures_icon, futures_note = _traffic(futures_value, expected)
+    spot_icon, spot_note = _traffic(spot_value, expected)
+
+    oi_value = _signed_value(local_oi)
+    agg_value = _signed_value(agg_change)
+    requires_expansion = pattern in ("NEW_LONG_BUILDUP", "NEW_SHORT_BUILDUP")
+    requires_contraction = pattern in ("SHORT_SQUEEZE", "LONG_LIQUIDATION")
+
+    def oi_line_icon(value):
+        if value is None:
+            return "🟡"
+        if requires_expansion:
+            return "🟢" if value > 0 else "🔴"
+        if requires_contraction:
+            return "🟢" if value < 0 else "🔴"
+        return "🟡"
+
+    oi_icon = oi_line_icon(oi_value)
+    agg_icon = oi_line_icon(agg_value)
+
+    if confidence == "HIGH":
+        agg_source = "3/3 биржи"
+    elif agg_5m.get("consensus_mode") == "2/2_SUPPORTED":
+        agg_source = "2/2 доступных биржи"
+    else:
+        agg_source = "консенсус бирж"
+
+    return "\n".join((
+        f"{icon} <b>{side} — {symbol}</b>",
+        f"✅ <b>СИГНАЛ ПОДТВЕРЖДЁН</b> · сила: {confidence_text}",
+        f"💰 Цена: <b>{price}</b> · импульс {move}",
+        "",
+        f"📌 {escape(pattern_text)}",
+        f"{oi_icon} OI 5м: {number(local_oi, signed=True, suffix='%')}",
+        f"{agg_icon} OI рынка: {number(agg_change, signed=True, suffix='%')} · {agg_source}",
+        f"{futures_icon} Фьючерсы: {number(futures_value, signed=True, suffix='%')} · {futures_note}",
+        f"{spot_icon} Спот: {number(spot_value, signed=True, suffix='%')} · {spot_note}",
+        "",
+        f"🎯 <b>Сейчас:</b> {escape(action)}",
+        "⚠️ Не догонять свечу — лучше дождаться отката/ретеста.",
+        f"❌ {escape(cancel)}",
+    ))
 
 
 def build_market_watch_message(signal, reason):
