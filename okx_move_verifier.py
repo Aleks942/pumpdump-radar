@@ -24,6 +24,7 @@ from move_reversal_maturity import (
     FOLLOWUP_TTL_SEC,
     build_cancel_message as build_reversal_cancel_message,
     build_confirmed_message as build_reversal_confirmed_message,
+    build_early_message as build_reversal_early_message,
     build_pre_message as build_reversal_pre_message,
     evaluate as evaluate_reversal,
     reversal_from_extreme_pct,
@@ -271,12 +272,13 @@ def schedule(signal, sender, now=None):
         extreme = _finite(signal.get("price"))
         pre_active = False
         pre_notified = False
+        early_notified = False
         last_result = None
         last_maturity = None
         weak_followups = 0
 
         def inspect_reversal(result, checkpoint):
-            nonlocal extreme, pre_active, pre_notified, last_result, last_maturity
+            nonlocal extreme, pre_active, pre_notified, early_notified, last_result, last_maturity
             previous_extreme = extreme
             extreme, reclaimed = update_reversal_extreme(
                 kind,
@@ -333,6 +335,25 @@ def schedule(signal, sender, now=None):
                     return "CONFIRMED", maturity
                 pre_active = True
                 return "CONTINUE", maturity
+
+            if maturity.get("code") == "EARLY":
+                if not early_notified:
+                    sent = sender(
+                        build_reversal_early_message(
+                            result, maturity, checkpoint
+                        ),
+                        symbol=symbol,
+                    )
+                    if sent is not False:
+                        early_notified = True
+                print(
+                    "[OKX_REVERSAL_EARLY]",
+                    symbol,
+                    "checkpoint=", checkpoint,
+                    "early_score=", maturity.get("early_score"),
+                    "strong_score=", maturity.get("strong_score"),
+                    flush=True,
+                )
 
             if maturity.get("code") == "PRE":
                 pre_active = True

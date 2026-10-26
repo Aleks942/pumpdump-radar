@@ -19,6 +19,21 @@ def flow(value, ready=True, quality="READY", coverage=300, trades=40, stale=2):
 
 
 class ReversalMaturityTests(unittest.TestCase):
+    def test_two_of_five_becomes_early_not_pre(self):
+        result = {
+            "type": "PUMP",
+            "reversal_from_extreme_pct": -0.8,
+            "futures": flow(-15, ready=False, quality="PARTIAL", coverage=120),
+            "spot": flow(3),
+            "agg_5m": {"ready": False, "change_pct": None},
+            "trend_5m": {"trend": "MIXED"},
+        }
+        out = evaluate(result)
+        self.assertEqual(out["code"], "EARLY")
+        self.assertEqual(out["side"], "SHORT")
+        self.assertEqual(out["early_score"], 2)
+        self.assertTrue(out["continue_watch"])
+
     def test_pump_can_become_pre_short_from_early_evidence(self):
         result = {
             "type": "PUMP",

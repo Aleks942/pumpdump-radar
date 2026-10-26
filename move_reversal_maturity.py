@@ -2,7 +2,7 @@
 
 This module does NOT place orders.  It converts already collected market data
 into a transparent lifecycle:
-WATCH -> PRE_SHORT/PRE_LONG -> CONFIRMED or CANCELLED/EXPIRED.
+WATCH -> EARLY -> PRE_SHORT/PRE_LONG -> CONFIRMED or CANCELLED/EXPIRED.
 
 The layer is deliberately separate from the existing continuation verifier:
 a PUMP continuation can still be LONG, while this module watches for a later
@@ -215,6 +215,11 @@ def evaluate(result):
         and structure_hint
     ):
         code = "PRE"
+    elif (
+        early_score >= 2
+        and (flow_early or structure_hint)
+    ):
+        code = "EARLY"
     else:
         code = "WATCH"
 
@@ -223,14 +228,7 @@ def evaluate(result):
         for row in signs.values()
         if not row["strong"]
     ]
-    continue_watch = bool(
-        code == "PRE"
-        or (
-            code == "WATCH"
-            and early_score >= 2
-            and (structure_hint or flow_early)
-        )
-    )
+    continue_watch = code in ("EARLY", "PRE")
     return {
         "code": code,
         "side": side,
@@ -262,6 +260,30 @@ def _sign_line(sign):
         suffix = "%" if sign.get("label") != "Структура 5м" else ""
         tail = _fmt(value, suffix)
     return f"{icon} {escape(str(sign.get('label') or 'Признак'))}: {escape(str(tail))}"
+
+
+def build_early_message(result, maturity, checkpoint):
+    side = maturity["side"]
+    symbol = escape(str(result.get("symbol") or ""))
+    title = "EARLY-SHORT" if side == "SHORT" else "EARLY-LONG"
+    lines = [
+        f"🟡 <b>{title} — {symbol}</b>",
+        "<b>Ранние признаки появились. Это ещё НЕ PRE и НЕ вход.</b>",
+        f"Контроль: {escape(str(checkpoint))}",
+        f"Ранние признаки: <b>{maturity['early_score']}/5</b> · строгие: <b>{maturity['strong_score']}/5</b>",
+        f"От экстремума: <b>{_fmt(maturity.get('reversal_pct'), '%')}</b>",
+        "",
+    ]
+    lines.extend(_sign_line(maturity["signs"][key]) for key in (
+        "futures", "spot", "oi", "structure", "trend5"
+    ))
+    if maturity.get("missing"):
+        lines += [
+            "",
+            "🔎 <b>До PRE ещё ждём:</b> " + escape(", ".join(maturity["missing"][:3])),
+            "👀 Бот усилил наблюдение. PRE требует 3/5, CONFIRMED — строгого набора 4/5.",
+        ]
+    return "\n".join(lines)
 
 
 def build_pre_message(result, maturity, checkpoint):
