@@ -444,7 +444,12 @@ def classify(result):
     spot = result.get("spot") or {}
     trend5 = (result.get("trend_5m") or {}).get("trend")
     trend60 = (result.get("trend_60m") or {}).get("trend")
-    pattern_dir = (result.get("pattern") or {}).get("direction")
+    pattern = result.get("pattern") or {}
+    pattern_dir = pattern.get("direction")
+    pattern_name = pattern.get("pattern")
+    agg = result.get("agg_5m") or {}
+    agg_ready = agg.get("ready") is True
+    agg_change = _finite(agg.get("change_pct"))
     fimb = _finite(futures.get("imbalance_pct"))
     simb = _finite(spot.get("imbalance_pct"))
 
@@ -485,10 +490,29 @@ def classify(result):
     strong_pattern = pattern_dir == expected
     h1_blocks = trend60 == opposite
 
+    requires_oi_expansion = pattern_name in (
+        "NEW_LONG_BUILDUP",
+        "NEW_SHORT_BUILDUP",
+    )
+    requires_oi_contraction = pattern_name in (
+        "SHORT_SQUEEZE",
+        "LONG_LIQUIDATION",
+    )
+    agg_pattern_aligned = (
+        agg_ready
+        and agg_change is not None
+        and (
+            (requires_oi_expansion and agg_change > 0)
+            or (requires_oi_contraction and agg_change < 0)
+            or not strong_pattern
+        )
+    )
+
     if (
         futures_aligned
         and trend5 == expected
         and (strong_pattern or spot_aligned)
+        and agg_pattern_aligned
         and not h1_blocks
     ):
         label = (
@@ -560,11 +584,20 @@ def build_message(result, checkpoint="NOW"):
     else:
         heading = f"⏱ ПРОВЕРКА +{checkpoint} — {title} — {symbol}"
 
-    agg_text = (
-        _num(agg.get("change_pct"), signed=True, suffix="%") + " (3/3)"
-        if agg.get("ready")
-        else f"нет общего 3/3; готово источников {int(agg.get('ready_sources') or 0)}/3"
-    )
+    if agg.get("ready"):
+        agg_mode = agg.get("consensus_mode") or "CONSENSUS"
+        if agg_mode == "2/2_SUPPORTED":
+            agg_mode = "2/2 доступных"
+        agg_text = (
+            _num(agg.get("change_pct"), signed=True, suffix="%")
+            + f" ({agg_mode}; {agg.get('confidence') or 'UNKNOWN'})"
+        )
+    else:
+        agg_text = (
+            f"нет консенсуса; {agg.get('quality') or 'INCOMPLETE'}; "
+            f"готово {int(agg.get('ready_sources') or 0)}/"
+            f"{int(agg.get('supported_sources') or 0)} поддерживаемых"
+        )
 
     lines = [
         heading,
@@ -665,6 +698,8 @@ def schedule(signal, sender, now=None):
                         float(result["spot"].get("coverage_sec") or 0), 1
                     ),
                     "agg_ready=", result["agg_5m"].get("ready"),
+                    "agg_confidence=", result["agg_5m"].get("confidence"),
+                    "agg_mode=", result["agg_5m"].get("consensus_mode"),
                     flush=True,
                 )
         except Exception as exc:
