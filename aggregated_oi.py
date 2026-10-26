@@ -337,9 +337,9 @@ def _worker(exchange):
                     mapping = dict(_maps[exchange])
 
                     # Collect every watched symbol that exists on this
-                    # exchange. Overall aggregated READY still requires 3/3,
-                    # so this only improves partial diagnostics for Bybit-only
-                    # movers and never weakens the strict confirmation gate.
+                    # exchange. Consensus accepts 3/3, or 2/2 only when the
+                    # third exchange is confirmed UNSUPPORTED. Errors,
+                    # warming/stale data and disagreement still fail closed.
                     symbols = sorted(
                         _watched
                         & mapping.keys()
@@ -612,10 +612,102 @@ def format_aggregated_oi(data):
 
     return "\n".join(lines)
 
-# OI alignment extension. Add this block only once.
-VERSION = "2026-10-01-aligned-v2"
+# OI consensus/alignment extension.
+VERSION = "2026-10-26-consensus-v3"
 _get_latest_oi_v1 = get_aggregated_oi
-_format_oi_v1 = format_aggregated_oi
+
+
+def _contract_sets(symbol, now):
+    known = []
+    supported = []
+    unsupported = []
+
+    for exchange in EXCHANGES:
+        if now - _meta_at.get(exchange, 0) > 7200:
+            continue
+
+        known.append(exchange)
+        if symbol in _maps.get(exchange, {}):
+            supported.append(exchange)
+        else:
+            unsupported.append(exchange)
+
+    return known, supported, unsupported
+
+
+def _direction_consensus(items):
+    changes = []
+
+    for item in items:
+        if item.get("quality") != "READY":
+            return "UNKNOWN"
+
+        try:
+            value = float(item.get("change_pct"))
+        except (TypeError, ValueError, OverflowError):
+            return "UNKNOWN"
+
+        if not math.isfinite(value):
+            return "UNKNOWN"
+
+        changes.append(value)
+
+    if not changes:
+        return "UNKNOWN"
+
+    if all(value > 0 for value in changes):
+        return "EXPANSION"
+
+    if all(value < 0 for value in changes):
+        return "CONTRACTION"
+
+    return "MIXED"
+
+
+def _select_consensus_sources(symbol, exchanges, seconds, now, latest):
+    selected = {
+        exchange: latest.get(exchange, {})
+        for exchange in exchanges
+    }
+
+    if not all(
+        item.get("quality") == "READY"
+        for item in selected.values()
+    ):
+        return None, "INCOMPLETE", "LATEST"
+
+    ends = [item["end_ts"] for item in selected.values()]
+    starts = [item["start_ts"] for item in selected.values()]
+    end_skew = max(ends) - min(ends)
+    start_skew = max(starts) - min(starts)
+
+    if max(end_skew, start_skew) <= MAX_SKEW:
+        return selected, None, "LATEST"
+
+    anchor = min(ends)
+    aligned = {}
+
+    for exchange in exchanges:
+        points = [
+            point
+            for point in _history.get((exchange, symbol), ())
+            if point[0] <= anchor
+        ]
+        aligned[exchange] = _source_window(points, seconds, now)
+
+    if not all(
+        item.get("quality") == "READY"
+        for item in aligned.values()
+    ):
+        return None, "TIME_MISMATCH", "COMMON_PAST"
+
+    ends = [item["end_ts"] for item in aligned.values()]
+    starts = [item["start_ts"] for item in aligned.values()]
+
+    if max(max(ends) - min(ends), max(starts) - min(starts)) > MAX_SKEW:
+        return None, "TIME_MISMATCH", "COMMON_PAST"
+
+    return aligned, None, "COMMON_PAST"
 
 
 def get_aggregated_oi(symbol):
@@ -625,96 +717,183 @@ def get_aggregated_oi(symbol):
 
         for label, seconds in (("5m", 300), ("30m", 1800)):
             window = result["windows"][label]
-            window["alignment_method"] = "LATEST"
+            latest_sources = dict(window.get("sources") or {})
+            known, supported, unsupported = _contract_sets(symbol, now)
 
-            if window["quality"] == "TIME_MISMATCH":
-                latest = window["sources"]
-                anchor = min(
-                    s["end_ts"] for s in latest.values()
-                )
-                aligned = {}
+            ready_supported = sum(
+                1
+                for exchange in supported
+                if latest_sources.get(exchange, {}).get("quality") == "READY"
+            )
 
-                for exchange in EXCHANGES:
-                    points = [
-                        p
-                        for p in _history.get((exchange, symbol), ())
-                        if p[0] <= anchor
-                    ]
-                    aligned[exchange] = _source_window(
-                        points, seconds, now
-                    )
+            window.update(
+                ready=False,
+                quality="INCOMPLETE",
+                change_pct=None,
+                confidence="BLOCK",
+                consensus_mode="BLOCK",
+                direction_consensus="UNKNOWN",
+                metadata_known_sources=len(known),
+                supported_sources=len(supported),
+                supported_exchanges=list(supported),
+                unsupported_exchanges=list(unsupported),
+                ready_sources=ready_supported,
+                alignment_method="LATEST",
+            )
 
-                if all(
-                    s["quality"] == "READY"
-                    for s in aligned.values()
-                ):
-                    ends = [
-                        s["end_ts"] for s in aligned.values()
-                    ]
-                    starts = [
-                        s["start_ts"] for s in aligned.values()
-                    ]
-                    end_skew = max(ends) - min(ends)
-                    start_skew = max(starts) - min(starts)
+            # We must know the contract universe on all three exchanges.
+            # Unknown metadata is different from a confirmed absent contract.
+            if len(known) != len(EXCHANGES):
+                window["quality"] = "METADATA_UNAVAILABLE"
+                continue
 
-                    if max(end_skew, start_skew) <= MAX_SKEW:
-                        current = math.fsum(
-                            s["oi_coin"]
-                            for s in aligned.values()
-                        )
-                        previous = math.fsum(
-                            s["previous_coin"]
-                            for s in aligned.values()
-                        )
+            # One exchange is never enough for a cross-exchange confirmation.
+            if len(supported) < 2:
+                window["quality"] = "INSUFFICIENT_SOURCES"
+                continue
 
-                        window.update(
-                            ready=True,
-                            quality="READY",
-                            sources=aligned,
-                            latest_sources=latest,
-                            ready_sources=3,
-                            alignment_method="COMMON_PAST",
-                            alignment_anchor_ts=anchor,
-                            end_skew_sec=end_skew,
-                            start_skew_sec=start_skew,
-                            oi_coin=current,
-                            previous_coin=previous,
-                            change_pct=(
-                                current / previous - 1
-                            ) * 100,
-                        )
+            selected, error, method = _select_consensus_sources(
+                symbol,
+                supported,
+                seconds,
+                now,
+                latest_sources,
+            )
 
-            if window["ready"]:
-                ends = [
-                    s["end_ts"]
-                    for s in window["sources"].values()
-                ]
-                window["oldest_end_ts"] = min(ends)
-                window["newest_end_ts"] = max(ends)
-                window["age_sec"] = max(
-                    0.0, now - min(ends)
-                )
+            if selected is None:
+                window["quality"] = error or "INCOMPLETE"
+                window["alignment_method"] = method
+                continue
 
+            direction = _direction_consensus(selected.values())
+
+            # Opposite OI direction on any supported exchange is a veto.
+            if direction not in ("EXPANSION", "CONTRACTION"):
+                window["quality"] = "DIRECTION_MISMATCH"
+                window["direction_consensus"] = direction
+                continue
+
+            current = math.fsum(
+                item["oi_coin"]
+                for item in selected.values()
+            )
+            previous = math.fsum(
+                item["previous_coin"]
+                for item in selected.values()
+            )
+
+            if previous <= 0:
+                window["quality"] = "ZERO_BASELINE"
+                continue
+
+            merged_sources = dict(latest_sources)
+            merged_sources.update(selected)
+
+            if len(supported) == 3:
+                confidence = "HIGH"
+                consensus_mode = "3/3"
+            elif len(supported) == 2 and len(unsupported) == 1:
+                confidence = "MEDIUM"
+                consensus_mode = "2/2_SUPPORTED"
+            else:
+                # Defensive fail-closed branch for unexpected universe state.
+                window["quality"] = "INCOMPLETE"
+                continue
+
+            ends = [item["end_ts"] for item in selected.values()]
+            starts = [item["start_ts"] for item in selected.values()]
+
+            window.update(
+                ready=True,
+                quality="READY",
+                sources=merged_sources,
+                latest_sources=latest_sources,
+                ready_sources=len(selected),
+                confidence=confidence,
+                consensus_mode=consensus_mode,
+                direction_consensus=direction,
+                alignment_method=method,
+                end_skew_sec=max(ends) - min(ends),
+                start_skew_sec=max(starts) - min(starts),
+                oldest_end_ts=min(ends),
+                newest_end_ts=max(ends),
+                age_sec=max(0.0, now - min(ends)),
+                oi_coin=current,
+                previous_coin=previous,
+                change_pct=(current / previous - 1) * 100,
+            )
+
+        result["version"] = VERSION
         return result
 
 
 def format_aggregated_oi(data):
-    text = _format_oi_v1(data)
+    if not isinstance(data, dict):
+        return "OI OKX + Binance + Bybit: нет данных"
 
-    if isinstance(data, dict):
-        for label in ("5m", "30m"):
-            window = data.get("windows", {}).get(label, {})
-            age = window.get("age_sec")
+    lines = ["OI OKX + Binance + Bybit (USDT-контракты):"]
 
-            if window.get("ready") and age is not None:
-                method = (
-                    "подбор к общему времени"
-                    if window.get("alignment_method") == "COMMON_PAST"
-                    else "последние замеры"
+    statuses = {
+        "WARMING": "накопление",
+        "STALE": "устарело",
+        "ERROR": "ошибка API",
+        "UNSUPPORTED": "контракта нет",
+        "METADATA_UNAVAILABLE": "метаданные недоступны",
+        "ZERO_BASELINE": "нулевая база",
+        "TIME_MISMATCH": "время замеров не совпало",
+        "INCOMPLETE": "неполные данные",
+        "INSUFFICIENT_SOURCES": "меньше двух поддерживаемых бирж",
+        "DIRECTION_MISMATCH": "биржи расходятся по направлению OI",
+    }
+
+    for key, title in (("5m", "≈5м"), ("30m", "≈30м")):
+        window = data.get("windows", {}).get(key, {})
+
+        if window.get("ready"):
+            mode = window.get("consensus_mode") or "CONSENSUS"
+            confidence = window.get("confidence") or "UNKNOWN"
+            if mode == "2/2_SUPPORTED":
+                mode_text = "2/2 доступных"
+            else:
+                mode_text = mode
+
+            lines.append(
+                f"{title}: {window['change_pct']:+.2f}% · "
+                f"{confidence} · {mode_text}"
+            )
+        else:
+            quality = window.get("quality") or "INCOMPLETE"
+            note = statuses.get(quality, quality)
+            ready = int(window.get("ready_sources") or 0)
+            supported = int(window.get("supported_sources") or 0)
+            lines.append(
+                f"{title}: нет консенсуса · {note} · "
+                f"готово {ready}/{supported} поддерживаемых"
+            )
+
+        details = []
+        for exchange in EXCHANGES:
+            item = (window.get("sources") or {}).get(exchange, {})
+            if item.get("quality") == "READY":
+                value = f"{item['change_pct']:+.2f}%"
+            else:
+                value = statuses.get(
+                    item.get("quality"),
+                    item.get("quality") or "нет данных",
                 )
-                text += (
-                    f"\nOI {label}: возраст до "
-                    f"{math.ceil(age)} с; {method}"
-                )
+            details.append(exchange + " " + value)
 
-    return text
+        lines.append(" / ".join(details))
+
+        age = window.get("age_sec")
+        if window.get("ready") and age is not None:
+            method = (
+                "общее прошлое время"
+                if window.get("alignment_method") == "COMMON_PAST"
+                else "последние синхронные замеры"
+            )
+            lines.append(
+                f"OI {key}: возраст до {math.ceil(age)} с; {method}"
+            )
+
+    return "\n".join(lines)
