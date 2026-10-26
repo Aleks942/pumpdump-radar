@@ -26,6 +26,16 @@ from liquidation_engine import (
     watch_bybit_symbol,
 )
 from pattern_detector import detect_pattern
+from move_reversal_maturity import (
+    FOLLOWUP_INTERVAL_SEC,
+    FOLLOWUP_TTL_SEC,
+    build_cancel_message as build_reversal_cancel_message,
+    build_confirmed_message as build_reversal_confirmed_message,
+    build_pre_message as build_reversal_pre_message,
+    evaluate as evaluate_reversal,
+    reversal_from_extreme_pct,
+    update_extreme as update_reversal_extreme,
+)
 from spot_fallback_stream import (
     get_flow as get_fallback_spot_flow,
     unwatch_symbol as unwatch_fallback_spot,
@@ -678,6 +688,114 @@ def schedule(signal, sender, now=None):
     verification_signal["_verification_started_at"] = at
 
     def worker():
+        extreme = _finite(signal.get("price"))
+        pre_active = False
+        pre_notified = False
+        last_result = None
+        last_maturity = None
+        weak_followups = 0
+
+        def inspect_reversal(result, checkpoint):
+            nonlocal extreme, pre_active, pre_notified, last_result, last_maturity
+            previous_extreme = extreme
+            extreme, reclaimed = update_reversal_extreme(
+                kind,
+                result.get("current_price"),
+                extreme,
+                pre_active=pre_active,
+            )
+            result["reversal_extreme_price"] = extreme
+            result["reversal_from_extreme_pct"] = reversal_from_extreme_pct(
+                kind,
+                result.get("current_price"),
+                extreme,
+            )
+            maturity = evaluate_reversal(result)
+            last_result = result
+            last_maturity = maturity
+
+            if pre_active and reclaimed:
+                if pre_notified:
+                    sender(
+                        build_reversal_cancel_message(
+                            result, maturity, "NEW_EXTREME"
+                        ),
+                        symbol=symbol,
+                    )
+                print(
+                    "[BYBIT_REVERSAL_CANCELLED]",
+                    symbol,
+                    "checkpoint=", checkpoint,
+                    "reason=NEW_EXTREME",
+                    "old_extreme=", previous_extreme,
+                    "new_extreme=", extreme,
+                    flush=True,
+                )
+                return "STOP", maturity
+
+            if maturity.get("code") == "CONFIRMED":
+                sent = sender(
+                    build_reversal_confirmed_message(
+                        result, maturity, checkpoint
+                    ),
+                    symbol=symbol,
+                )
+                print(
+                    "[BYBIT_REVERSAL_CONFIRMED]",
+                    symbol,
+                    "checkpoint=", checkpoint,
+                    "sent=", sent is True,
+                    "strong_score=", maturity.get("strong_score"),
+                    "reversal_pct=", maturity.get("reversal_pct"),
+                    flush=True,
+                )
+                # False is an explicit delivery failure: keep the bounded
+                # observer alive so the next event can retry.  None is
+                # ambiguous and must not be blindly duplicated.
+                if sent is not False:
+                    return "CONFIRMED", maturity
+                pre_active = True
+                return "CONTINUE", maturity
+
+            if maturity.get("code") == "PRE":
+                pre_active = True
+                if not pre_notified:
+                    sent = sender(
+                        build_reversal_pre_message(
+                            result, maturity, checkpoint
+                        ),
+                        symbol=symbol,
+                    )
+                    if sent is not False:
+                        pre_notified = True
+                print(
+                    "[BYBIT_REVERSAL_PRE]",
+                    symbol,
+                    "checkpoint=", checkpoint,
+                    "early_score=", maturity.get("early_score"),
+                    "strong_score=", maturity.get("strong_score"),
+                    "missing=", ",".join(maturity.get("missing") or []),
+                    flush=True,
+                )
+            elif pre_active and maturity.get("code") == "BROKEN":
+                if pre_notified:
+                    sender(
+                        build_reversal_cancel_message(
+                            result, maturity, "BROKEN"
+                        ),
+                        symbol=symbol,
+                    )
+                print(
+                    "[BYBIT_REVERSAL_CANCELLED]",
+                    symbol,
+                    "checkpoint=", checkpoint,
+                    "reason=BROKEN",
+                    flush=True,
+                )
+                return "STOP", maturity
+
+            return "CONTINUE", maturity
+
         try:
             for target_sec, checkpoint in CHECKPOINTS:
                 delay = max(0.0, at + target_sec - time.time())
@@ -687,10 +805,16 @@ def schedule(signal, sender, now=None):
                 if result.get("status") != "OK":
                     print("[BYBIT_VERIFY_INVALID]", symbol, checkpoint, flush=True)
                     return
+
+                reversal_action, maturity = inspect_reversal(result, checkpoint)
+                if reversal_action in ("STOP", "CONFIRMED"):
+                    return
+
                 verdict_code = result["verdict"].get("code")
                 should_send = (
                     checkpoint == "5m"
                     and verdict_code == "CONFIRMED"
+                    and not pre_active
                 )
                 sent = False
                 if should_send:
@@ -704,6 +828,9 @@ def schedule(signal, sender, now=None):
                     "checkpoint=", checkpoint,
                     "sent=", sent is True,
                     "verdict=", verdict_code,
+                    "reversal=", maturity.get("code"),
+                    "reversal_early=", maturity.get("early_score"),
+                    "reversal_strong=", maturity.get("strong_score"),
                     "pattern=", result["pattern"].get("pattern"),
                     "oi_ready=", result["oi"].get("ready"),
                     "futures_ready=", result["futures"].get("ready"),
@@ -718,6 +845,74 @@ def schedule(signal, sender, now=None):
                     "agg_ready=", result["agg_5m"].get("ready"),
                     "agg_confidence=", result["agg_5m"].get("confidence"),
                     "agg_mode=", result["agg_5m"].get("consensus_mode"),
+                    flush=True,
+                )
+
+            # Five minutes is the main decision point, not a mandatory 15m wait.
+            # Continue only when at least a real early reversal story exists.
+            if not (
+                pre_active
+                or (
+                    last_maturity
+                    and last_maturity.get("continue_watch") is True
+                )
+            ):
+                print(
+                    "[BYBIT_REVERSAL_STOP]",
+                    symbol,
+                    "reason=NO_MATURING_EVIDENCE_AT_5M",
+                    flush=True,
+                )
+                return
+
+            next_target = 300.0 + FOLLOWUP_INTERVAL_SEC
+            while next_target <= FOLLOWUP_TTL_SEC:
+                delay = max(0.0, at + next_target - time.time())
+                if delay:
+                    time.sleep(delay)
+                checkpoint = f"{int(next_target // 60)}m"
+                result = collect(verification_signal, now=time.time())
+                if result.get("status") != "OK":
+                    return
+                reversal_action, maturity = inspect_reversal(result, checkpoint)
+                if reversal_action in ("STOP", "CONFIRMED"):
+                    return
+
+                if maturity.get("continue_watch") is True:
+                    weak_followups = 0
+                else:
+                    weak_followups += 1
+                    if pre_active and weak_followups >= 2:
+                        if pre_notified:
+                            sender(
+                                build_reversal_cancel_message(
+                                    result, maturity, "EVIDENCE_FADED"
+                                ),
+                                symbol=symbol,
+                            )
+                        print(
+                            "[BYBIT_REVERSAL_CANCELLED]",
+                            symbol,
+                            "checkpoint=", checkpoint,
+                            "reason=EVIDENCE_FADED",
+                            flush=True,
+                        )
+                        return
+                    if not pre_active and weak_followups >= 1:
+                        return
+                next_target += FOLLOWUP_INTERVAL_SEC
+
+            if pre_active and last_result is not None and pre_notified:
+                sender(
+                    build_reversal_cancel_message(
+                        last_result, last_maturity or {}, "TTL_EXPIRED"
+                    ),
+                    symbol=symbol,
+                )
+                print(
+                    "[BYBIT_REVERSAL_CANCELLED]",
+                    symbol,
+                    "reason=TTL_EXPIRED",
                     flush=True,
                 )
         except Exception as exc:
@@ -742,7 +937,7 @@ def schedule(signal, sender, now=None):
             "[BYBIT_VERIFY_SCHEDULED]",
             symbol,
             kind,
-            "checkpoints=NOW,1m,3m,5m internal; telegram=confirmed_5m_only",
+            "checkpoints=NOW,1m,3m,5m internal; telegram=confirmed_5m_only; reversal=PRE+event_followup_to_15m",
             flush=True,
         )
         return True
