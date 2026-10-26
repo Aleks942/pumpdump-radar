@@ -19,10 +19,20 @@ import sqlite3
 import statistics
 import time
 from contextlib import closing
+from datetime import datetime, UTC
 
 DB_PATH = os.getenv("PUMP_RETRACE_STATS_DB", "/data/pump_retrace_stats.sqlite3")
 ROLLING_MILESTONES = (15, 20, 30, 50)
-DAY_MILESTONES = (15, 20, 30, 50, 70, 100)
+DAY_MILESTONES = (15, 20, 30, 50, 70, 100, 150, 200, 300, 500)
+PEAK_BANDS = (
+    (15, 20, "15–20%"),
+    (20, 30, "20–30%"),
+    (30, 50, "30–50%"),
+    (50, 100, "50–100%"),
+    (100, 200, "100–200%"),
+    (200, 300, "200–300%"),
+    (300, math.inf, "300%+"),
+)
 RETRACE_LEVELS = (4, 6, 8, 10, 15, 20)
 VALID_WINDOWS = ("5m", "10m", "20m", "30m")
 MAX_EPISODE_SEC = 6 * 3600
@@ -104,6 +114,10 @@ def _setup(db):
     )""")
     db.execute("""CREATE INDEX IF NOT EXISTS idx_pump_retrace_threshold
         ON pump_retrace_milestone(threshold_pct, reached_at)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS pump_retrace_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""")
 
 
 def _threshold_column(level):
@@ -266,11 +280,14 @@ def _update_episode(db, episode, price, now):
             _update_milestone(db, row, price, now),
         )
 
-    if now - float(episode["started_at"]) >= MAX_EPISODE_SEC:
-        _close(db, episode_id, now, "MAX_6H")
-    elif (current_max_retrace >= 20.0
-          and now - peak_at >= CLOSE_AFTER_20_RETRACE_SEC):
-        _close(db, episode_id, now, "RETRACE_20")
+    # Rolling intraday episodes are bounded. UTC_DAY deliberately survives
+    # the whole UTC session so a +300% move at hour 10 is not finalized early.
+    if basis != "UTC_DAY":
+        if now - float(episode["started_at"]) >= MAX_EPISODE_SEC:
+            _close(db, episode_id, now, "MAX_6H")
+        elif (current_max_retrace >= 20.0
+              and now - peak_at >= CLOSE_AFTER_20_RETRACE_SEC):
+            _close(db, episode_id, now, "RETRACE_20")
     return move_pct
 
 
@@ -352,16 +369,28 @@ def observe_tickers(tickers, exchange, now=None, db_path=None):
     with closing(_connect(db_path)) as db:
         _setup(db)
 
-        # Close stale active episodes even if the symbol disappeared.
+        # UTC-day studies close only at the UTC session boundary.
+        # Preserve the last pre-boundary quote already stored in the episode;
+        # never apply a next-day price to the previous day's statistics.
+        utc_boundary = utc_day * 86400.0
+        db.execute("""UPDATE pump_retrace_episode
+            SET status='CLOSED', close_reason='UTC_DAY_END', closed_at=?
+            WHERE status='ACTIVE' AND basis='UTC_DAY'
+              AND session_key IS NOT NULL AND session_key < ?""",
+            (utc_boundary, utc_day))
+
+        # Only rolling 5/10/20/30m studies have the six-hour cap.
         stale = db.execute("""SELECT id FROM pump_retrace_episode
-            WHERE status='ACTIVE' AND ? - started_at >= ?""",
+            WHERE status='ACTIVE' AND basis!='UTC_DAY'
+              AND ? - started_at >= ?""",
             (now, MAX_EPISODE_SEC)).fetchall()
         for item in stale:
             _close(db, int(item["id"]), now, "MAX_6H")
 
         for symbol, price, day_open in rows:
             active = db.execute("""SELECT * FROM pump_retrace_episode
-                WHERE status='ACTIVE' AND symbol=? AND exchange=?""",
+                WHERE status='ACTIVE' AND basis!='UTC_DAY'
+                  AND symbol=? AND exchange=?""",
                 (symbol, exchange)).fetchall()
             for episode in active:
                 _update_episode(db, episode, price, now)
@@ -468,6 +497,158 @@ def summary(now=None, db_path=None):
     return output
 
 
+def _peak_band(value):
+    value = _finite(value)
+    if value is None:
+        return None
+    for low, high, label in PEAK_BANDS:
+        if low <= value < high:
+            return label
+    return None
+
+
+def peak_band_summary(now=None, db_path=None, basis=None, session_key=None):
+    """One episode = one observation, grouped by its FINAL sampled peak."""
+    now = time.time() if now is None else _finite(now)
+    if now is None:
+        return []
+
+    where = ["e.status='CLOSED'", "e.closed_at>=?", "m.threshold_pct=15"]
+    params = [now - RETENTION_SEC]
+    if basis is not None:
+        where.append("e.basis=?")
+        params.append(str(basis))
+    if session_key is not None:
+        where.append("e.session_key=?")
+        params.append(int(session_key))
+
+    with closing(_connect(db_path)) as db:
+        _setup(db)
+        rows = db.execute("""SELECT
+                e.id,e.symbol,e.basis,e.exchange,e.session_key,
+                e.peak_move_pct,e.peak_at,e.closed_at,
+                m.retrace_pct,m.retrace4_at,m.retrace6_at,m.retrace8_at,
+                m.retrace10_at,m.retrace15_at,m.retrace20_at
+            FROM pump_retrace_episode e
+            JOIN pump_retrace_milestone m ON m.episode_id=e.id
+            WHERE """ + " AND ".join(where), params).fetchall()
+
+    grouped = {}
+    for row in rows:
+        label = _peak_band(row["peak_move_pct"])
+        if label is None:
+            continue
+        key = (row["basis"], label)
+        grouped.setdefault(key, []).append(row)
+
+    out = []
+    labels = [item[2] for item in PEAK_BANDS]
+    for (basis_name, label), items in sorted(
+            grouped.items(),
+            key=lambda pair: (str(pair[0][0]), labels.index(pair[0][1]))):
+        result = {
+            "basis": basis_name,
+            "peak_band": label,
+            "n": len(items),
+            "median_peak_pct": round(statistics.median(
+                float(r["peak_move_pct"]) for r in items), 2),
+            "median_final_retrace_pct": round(statistics.median(
+                float(r["retrace_pct"]) for r in items), 2),
+        }
+        for level in RETRACE_LEVELS:
+            column = _threshold_column(level)
+            hits = [r for r in items if r[column] is not None]
+            result[f"retrace{level}_hits"] = len(hits)
+            result[f"retrace{level}_pct"] = round(
+                100.0 * len(hits) / len(items), 1
+            ) if items else 0.0
+        out.append(result)
+    return out
+
+
+def _meta_get(db, key):
+    row = db.execute(
+        "SELECT value FROM pump_retrace_meta WHERE key=?",
+        (key,),
+    ).fetchone()
+    return row["value"] if row else None
+
+
+def pending_daily_digest(now=None, db_path=None):
+    """Build previous UTC-day digest once; caller ACKs after Telegram success."""
+    now = time.time() if now is None else _finite(now)
+    if now is None:
+        return None
+
+    current_day = int(now // 86400)
+    target_day = current_day - 1
+    key = "last_daily_digest_session"
+
+    with closing(_connect(db_path)) as db:
+        _setup(db)
+        last = _meta_get(db, key)
+        if last is not None and int(last) >= target_day:
+            return None
+
+        episodes = db.execute("""SELECT id,symbol,peak_move_pct,peak_at,
+                max_retrace_pct,closed_at
+            FROM pump_retrace_episode
+            WHERE basis='UTC_DAY' AND session_key=? AND status='CLOSED'
+            ORDER BY peak_move_pct DESC""", (target_day,)).fetchall()
+
+    if not episodes:
+        return None
+
+    bands = peak_band_summary(
+        now=now, db_path=db_path, basis="UTC_DAY", session_key=target_day
+    )
+    day_label = datetime.fromtimestamp(
+        target_day * 86400, UTC
+    ).strftime("%Y-%m-%d")
+
+    lines = [
+        f"📊 <b>СТАТИСТИКА ПАМПОВ — {day_label} UTC</b>",
+        f"Монет с ростом ≥15% от начала UTC-дня: <b>{len(episodes)}</b>",
+        "",
+        "<b>Самые сильные движения:</b>",
+    ]
+    for row in episodes[:10]:
+        lines.append(
+            f"• {row['symbol']}: пик +{float(row['peak_move_pct']):.1f}%"
+            f" → откат −{float(row['max_retrace_pct']):.1f}%"
+        )
+
+    if bands:
+        lines.extend(("", "<b>По диапазонам финального пика:</b>"))
+        for row in bands:
+            if row["basis"] != "UTC_DAY":
+                continue
+            lines.append(
+                f"• {row['peak_band']}: n={row['n']} · "
+                f"≥8% {row['retrace8_pct']:.0f}% · "
+                f"≥15% {row['retrace15_pct']:.0f}%"
+            )
+
+    lines.extend((
+        "",
+        "ℹ️ Это статистика фактических движений, не сигнал на вход.",
+    ))
+    return {"session_key": target_day, "text": "\n".join(lines)}
+
+
+def acknowledge_daily_digest(session_key, sent, db_path=None):
+    if sent is not True:
+        return False
+    with closing(_connect(db_path)) as db:
+        _setup(db)
+        db.execute("""INSERT INTO pump_retrace_meta(key,value)
+            VALUES ('last_daily_digest_session',?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (str(int(session_key)),))
+        db.commit()
+    return True
+
+
 def hourly_report(now=None, db_path=None):
     global _last_report
     now = time.time() if now is None else _finite(now)
@@ -488,6 +669,22 @@ def hourly_report(now=None, db_path=None):
             "r10=", f'{row["retrace10_hits"]}/{row["n"]}',
             "r15=", f'{row["retrace15_hits"]}/{row["n"]}',
             "r20=", f'{row["retrace20_hits"]}/{row["n"]}',
+            "research_only=true",
+            flush=True,
+        )
+
+    for row in peak_band_summary(now=now, db_path=db_path):
+        print(
+            "[PUMP_RETRACE_BAND]",
+            "basis=", row["basis"],
+            "band=", row["peak_band"],
+            "n=", row["n"],
+            "peak_med=", row["median_peak_pct"],
+            "retrace_med=", row["median_final_retrace_pct"],
+            "r6_pct=", row["retrace6_pct"],
+            "r8_pct=", row["retrace8_pct"],
+            "r10_pct=", row["retrace10_pct"],
+            "r15_pct=", row["retrace15_pct"],
             "research_only=true",
             flush=True,
         )
