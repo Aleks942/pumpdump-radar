@@ -58,17 +58,26 @@ def update_extreme(kind, current_price, previous_extreme, pre_active=False):
 
     reclaimed = False
     if kind == "PUMP" and current > extreme:
-        reclaimed = bool(
-            pre_active
-            and current >= extreme * (1.0 + EXTREME_RECLAIM_PCT / 100.0)
-        )
-        extreme = current
+        if pre_active:
+            reclaimed = bool(
+                current >= extreme * (1.0 + EXTREME_RECLAIM_PCT / 100.0)
+            )
+            # Freeze the PRE anchor through tiny probes. Otherwise a staircase
+            # of +0.10% prints could keep moving the anchor and never trigger
+            # the intended +0.15% cancellation threshold.
+            if reclaimed:
+                extreme = current
+        else:
+            extreme = current
     elif kind == "DUMP" and current < extreme:
-        reclaimed = bool(
-            pre_active
-            and current <= extreme * (1.0 - EXTREME_RECLAIM_PCT / 100.0)
-        )
-        extreme = current
+        if pre_active:
+            reclaimed = bool(
+                current <= extreme * (1.0 - EXTREME_RECLAIM_PCT / 100.0)
+            )
+            if reclaimed:
+                extreme = current
+        else:
+            extreme = current
     return extreme, reclaimed
 
 
