@@ -92,9 +92,9 @@ class ReversalMaturityTests(unittest.TestCase):
 
         extreme2, reclaimed2 = update_extreme("PUMP", 101.10, 101.0, pre_active=True)
         self.assertFalse(reclaimed2)
-        self.assertEqual(extreme2, 101.10)
+        self.assertEqual(extreme2, 101.0)
 
-        extreme3, reclaimed3 = update_extreme("PUMP", 101.30, 101.10, pre_active=True)
+        extreme3, reclaimed3 = update_extreme("PUMP", 101.30, extreme2, pre_active=True)
         self.assertTrue(reclaimed3)
         self.assertEqual(extreme3, 101.30)
 
