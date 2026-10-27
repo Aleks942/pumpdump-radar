@@ -116,6 +116,29 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertTrue(strat._candidate_priority_snapshot(
             hot,{},profiles)["urgent"])
 
+    def test_fresh_hot_candidate_gets_one_deep_pass_before_older_stage(self):
+        fresh={"symbol":"FRESHUSDT","phase":"WATCH","peak":150,
+               "rise_max":50,"last_price":135,"last_context_at":0}
+        mature={"symbol":"MATUREUSDT","phase":"TREND_SHIFT","peak":150,
+                "rise_max":50,"last_price":132,"last_context_at":NOW-30}
+        profiles={
+            "FRESHUSDT":{"last":135},
+            "MATUREUSDT":{"last":132},
+        }
+        ranked=sorted(
+            [mature,fresh],
+            key=lambda z:strat._candidate_sort_key(z,{},profiles)
+        )
+        self.assertEqual(ranked[0]["symbol"],"FRESHUSDT")
+        # Once the fresh symbol has received its deep pass, mature lifecycle
+        # priority resumes and the established TREND_SHIFT comes first.
+        fresh["last_context_at"]=NOW
+        ranked=sorted(
+            [mature,fresh],
+            key=lambda z:strat._candidate_sort_key(z,{},profiles)
+        )
+        self.assertEqual(ranked[0]["symbol"],"MATUREUSDT")
+
     def test_entry_zone_rejects_price_that_already_chased_too_far(self):
         st=structure(NOW)
         self.assertIsNone(strat._plan(109,st,112,20,6,50))
