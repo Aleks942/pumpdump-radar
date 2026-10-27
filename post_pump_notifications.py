@@ -15,12 +15,14 @@ from zoneinfo import ZoneInfo
 
 DB_PATH = os.getenv('PUMP_WATCH_DB', '/data/pump_watch.sqlite3')
 TITLES = {
-    'DISCOVERED': '🛰 ПАМП — НАБЛЮДЕНИЕ',
-    'EARLY_WEAKENING': '⚠️ РАННЕЕ ОСЛАБЛЕНИЕ ЦЕНЫ',
-    'WEAKENING': '⚠️ ОТКАТ ПОСЛЕ ПАМПА',
-    'TREND_SHIFT': '📉 ПРОБОЙ ПОДДЕРЖКИ — ЖДЁМ РЕТЕСТ',
-    'RETEST': '🔎 РЕТЕСТ — ЖДЁМ ПОДТВЕРЖДЕНИЕ ПРОДАВЦОВ',
-    'READY_RESEARCH': '🧪 ПРОДАВЦЫ ПОДТВЕРЖДЕНЫ — ТЕСТОВЫЙ SHORT',
+    'DISCOVERED': '🛰 EXTREME PUMP — TOP WATCH',
+    'EARLY_WEAKENING': '🟡 EARLY-SHORT — ПОКУПАТЕЛЬ СЛАБЕЕТ',
+    'WEAKENING': '⚠️ ОСЛАБЛЕНИЕ ПАМПА — SHORT WATCH',
+    'TREND_SHIFT': '📉 ПРОБОЙ ПОДДЕРЖКИ — ЖДЁМ ПОДТВЕРЖДЕНИЕ',
+    'SHORT_CONFIRMED': '🔴 SHORT CONFIRMED — ЖДЁМ РЕТЕСТ',
+    'RETEST': '🔎 RETEST — ПРОВЕРКА ПРОДАВЦОВ',
+    'ENTRY_ZONE': '🎯 SHORT ENTRY ZONE',
+    'READY_RESEARCH': '🧪 LEGACY SHORT PLAN',
     'CANCELLED': '⛔ СЦЕНАРИЙ ОТМЕНЁН',
 }
 CANCEL_REASONS = {
@@ -145,17 +147,30 @@ def message(event):
     if kind == 'CANCELLED':
         lines.append(CANCEL_REASONS[event['reason']])
         lines.append('Предыдущий сценарий больше не актуален. Это не исполнение сделки.')
-    elif kind == 'READY_RESEARCH':
-        lines += ['✅ Пробой и ретест; тренд 5м/15м, 1ч не против шорта.',
-                  '✅ OI доступен; продавцы подтверждены локальной проверкой.',
-                  'Ликвидации и funding — контекст, не отдельное разрешение на вход.',
-                  'Продажи: фьючерсы 1м/5м + спот 5м. Структура и ретест подтверждены.',
-                  f"Расчётный вход: {event['entry']:.8g}",
-                  f"Стоп: {event['stop']:.8g}",
+    elif kind == 'SHORT_CONFIRMED':
+        lines += ['✅ Продавцы подтверждены: Futures + Spot + OI + структура.',
+                  '⏳ Вход не догоняем. Ждём отдельный закрытый 5м ретест.',
+                  'SHORT подтверждён как сценарий, но ENTRY ZONE ещё нет.']
+    elif kind in ('ENTRY_ZONE','READY_RESEARCH'):
+        try:
+            d=json.loads(event.get('evidence_json') or '{}')
+        except (ValueError,TypeError):
+            d={}
+        z=d.get('entry_zone') if isinstance(d,dict) else {}
+        low=_num((z or {}).get('zone_low'))
+        high=_num((z or {}).get('zone_high'))
+        zone=(f'{low:.8g} — {high:.8g}'
+              if low is not None and high is not None
+              else f"{event['entry']:.8g}")
+        lines += ['✅ Пробой подтверждён, закрытый 5м ретест отклонён продавцами.',
+                  '✅ Futures + Spot + OI повторно подтверждают давление вниз.',
+                  f"🎯 Зона входа SHORT: {zone}",
+                  f"Текущая расчётная цена: {event['entry']:.8g}",
+                  f"🛑 Стоп / отмена: {event['stop']:.8g}",
                   f"Цель 1: {event['tp1']:.8g} | цель 2: {event['tp2']:.8g}",
-                  'ТЕСТОВЫЙ ПЛАН. Прибыльность не доказана. Ордера не выставляются.']
+                  'Бот ордер не выставляет. Это зона входа по модели, не гарантия падения.']
     else:
-        lines.append('Наблюдение, не подтверждённый вход SHORT.')
+        lines.append('Наблюдение, вход SHORT ещё не подтверждён.')
     if kind != 'CANCELLED':
         lines.extend(_research_lines(event))
     return '\n'.join(lines)
@@ -196,7 +211,7 @@ def deliver(sender, tickers, now=None, db_path=None):
             kind = 'CANCELLED' if e['reason'] in CANCEL_REASONS else e['phase']
             if kind in TITLES and 0 <= now-e['at'] <= 600:
                 e['kind'] = kind
-                if kind != 'READY_RESEARCH' or _valid_plan(e):
+                if kind not in ('ENTRY_ZONE','READY_RESEARCH') or _valid_plan(e):
                     db.execute('''INSERT OR IGNORE INTO post_pump_notify_outbox
                         (audit_id,symbol,episode_at,kind,payload) VALUES (?,?,?,?,?)''',
                         (e['id'],e['symbol'],e['episode_at'],kind,json.dumps(e)))
@@ -211,14 +226,29 @@ def deliver(sender, tickers, now=None, db_path=None):
                 WHERE symbol=? AND episode_at=? ORDER BY id DESC LIMIT 1''',
                 (row['symbol'],row['episode_at'])).fetchone()
             state = db.execute('SELECT * FROM post_pump_short_strategy WHERE symbol=?', (row['symbol'],)).fetchone()
-            ttl = 120 if row['kind'] == 'READY_RESEARCH' else 600
+            ttl = 180 if row['kind'] == 'ENTRY_ZONE' else 120 if row['kind'] == 'READY_RESEARCH' else 600
             valid = (latest is not None and latest['id'] == row['audit_id']
                      and state is not None and state['episode_at'] == row['episode_at']
                      and 0 <= now-e['at'] <= ttl)
-            if row['kind'] == 'READY_RESEARCH':
+            if row['kind'] in ('ENTRY_ZONE','READY_RESEARCH'):
                 px = prices.get(row['symbol'])
-                valid = (valid and state['phase'] == 'READY_RESEARCH' and px is not None
-                         and abs(px/e['entry']-1) <= .003 and e['tp1'] < px < e['stop'])
+                phase_ok=(state['phase']==row['kind'])
+                zone_ok=False
+                if px is not None:
+                    try:
+                        evidence=json.loads(e.get('evidence_json') or '{}')
+                    except (ValueError,TypeError):
+                        evidence={}
+                    zone=(evidence.get('entry_zone') or {}
+                          if isinstance(evidence,dict) else {})
+                    low=_num(zone.get('zone_low'))
+                    high=_num(zone.get('zone_high'))
+                    zone_ok=(low is not None and high is not None
+                             and low<=px<=high)
+                    if row['kind']=='READY_RESEARCH' and low is None:
+                        zone_ok=abs(px/e['entry']-1)<=.003
+                valid=(valid and phase_ok and px is not None and zone_ok
+                       and e['tp1']<px<e['stop'])
             if row['kind'] == 'CANCELLED':
                 # Never notify cancellation of a scenario the user has not seen.
                 prior = db.execute('''SELECT 1 FROM post_pump_notify_outbox

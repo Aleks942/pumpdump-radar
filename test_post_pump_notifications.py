@@ -24,7 +24,8 @@ class NotificationsTests(unittest.TestCase):
 
     def event(self, phase, at=NOW+1, reason='TEST', **overrides):
         ev = {'order_flow': {'ready': True, 'status': 'CONFIRMED',
-                            'source': 'PUMPDUMP_LOCAL_TAKER_FLOW'}}
+                            'source': 'PUMPDUMP_LOCAL_TAKER_FLOW'},
+              'entry_zone': {'zone_low': 99.5, 'zone_high': 100.5}}
         data = dict(entry=100,stop=104,tp1=92,tp2=88,evidence_json=json.dumps(ev))
         data.update(overrides)
         with sqlite3.connect(self.path) as db:
@@ -70,16 +71,25 @@ class NotificationsTests(unittest.TestCase):
         self.assertIn('свежий кэш',msg)
         self.assertIn('-18.50%',msg)
 
+    def test_short_confirmed_waits_for_retest_not_entry(self):
+        event={'kind':'SHORT_CONFIRMED','symbol':'TESTUSDT','at':NOW,
+               'rise_pct':55.0,'retrace_pct':8.5,'evidence_json':'{}'}
+        msg=notify.message(event)
+        self.assertIn('SHORT CONFIRMED',msg)
+        self.assertIn('Ждём отдельный закрытый 5м ретест',msg)
+        self.assertNotIn('Зона входа SHORT:',msg)
+
     def test_full_lifecycle_and_restart_dedup(self):
-        for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT','RETEST','READY_RESEARCH')):
+        for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT',
+                                  'SHORT_CONFIRMED','RETEST','ENTRY_ZONE')):
             self.event(phase,NOW+1+i)
             self.run_delivery(NOW+1+i)
             self.run_delivery(NOW+1+i)
-        self.assertEqual(self.sender.call_count,5)
-        self.assertIn('ТЕСТОВЫЙ ПЛАН',self.sender.call_args.args[0])
+        self.assertEqual(self.sender.call_count,6)
+        self.assertIn('SHORT ENTRY ZONE',self.sender.call_args.args[0])
         self.event('CANCELLED',NOW+10,'BREAK_INVALIDATED')
         self.run_delivery(NOW+10)
-        self.assertEqual(self.sender.call_count,6)
+        self.assertEqual(self.sender.call_count,7)
         self.assertIn('СЦЕНАРИЙ ОТМЕНЁН',self.sender.call_args.args[0])
 
     def test_later_plan_can_be_cancelled_after_earlier_warning_cancel(self):
@@ -90,7 +100,7 @@ class NotificationsTests(unittest.TestCase):
         self.event('WATCH',NOW+3,'BUYERS_RECOVERED_EARLY_WEAKENING')
         self.run_delivery(NOW+3)
         self.assertEqual(self.sender.call_count,2)
-        self.event('READY_RESEARCH',NOW+4)
+        self.event('ENTRY_ZONE',NOW+4)
         self.run_delivery(NOW+4)
         self.event('CANCELLED',NOW+5,'BREAK_INVALIDATED')
         self.run_delivery(NOW+5)
@@ -109,26 +119,26 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(self.sender.call_count,2)
 
     def test_expired_or_moved_plan_is_not_sent(self):
-        self.event('READY_RESEARCH')
+        self.event('ENTRY_ZONE')
         self.run_delivery(NOW+2,price=101)
         self.assertEqual(self.sender.call_count,0)
 
     def test_old_plan_is_not_sent(self):
-        self.event('READY_RESEARCH')
+        self.event('ENTRY_ZONE')
         self.run_delivery(NOW+122)
         self.assertEqual(self.sender.call_count,0)
 
     def test_unconfirmed_plan_is_not_sent(self):
-        self.event('READY_RESEARCH',evidence_json='{}')
+        self.event('ENTRY_ZONE',evidence_json='{}')
         self.run_delivery(NOW+2)
         self.assertEqual(self.sender.call_count,0)
 
     def test_superseded_stages_skipped(self):
         self.event('RETEST')
-        self.event('READY_RESEARCH',NOW+2)
+        self.event('ENTRY_ZONE',NOW+2)
         self.run_delivery(NOW+2)
         self.assertEqual(self.sender.call_count,1)
-        self.assertIn('ТЕСТОВЫЙ SHORT',self.sender.call_args.args[0])
+        self.assertIn('SHORT ENTRY ZONE',self.sender.call_args.args[0])
 
     def test_no_cancellation_without_prior_notification(self):
         self.event('CANCELLED',reason='BREAK_INVALIDATED')
@@ -136,7 +146,7 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(self.sender.call_count,0)
 
     def test_activation_skips_history(self):
-        self.event('READY_RESEARCH')
+        self.event('ENTRY_ZONE')
         with sqlite3.connect(self.path) as db:
             db.execute('DELETE FROM post_pump_notify_meta')
         self.run_delivery(NOW+1)
@@ -152,7 +162,7 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(self.sender.call_count,1)
 
     def test_plan_expiry_without_quote_or_active_slot(self):
-        self.event('READY_RESEARCH')
+        self.event('ENTRY_ZONE')
         with sqlite3.connect(self.path) as db:
             db.row_factory=sqlite3.Row
             db.execute("UPDATE post_pump_short_strategy SET last_price=100,last_retrace_pct=5")
@@ -161,7 +171,7 @@ class NotificationsTests(unittest.TestCase):
             self.assertEqual(tuple(row), ('CANCELLED','PAPER_PLAN_EXPIRED'))
 
     def test_plan_cancelled_even_without_candle_data(self):
-        self.event('READY_RESEARCH')
+        self.event('ENTRY_ZONE')
         with sqlite3.connect(self.path) as db:
             db.row_factory=sqlite3.Row
             st=dict(db.execute('SELECT * FROM post_pump_short_strategy').fetchone())

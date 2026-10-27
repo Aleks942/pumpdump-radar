@@ -116,6 +116,33 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertTrue(strat._candidate_priority_snapshot(
             hot,{},profiles)["urgent"])
 
+    def test_entry_zone_rejects_price_that_already_chased_too_far(self):
+        st=structure(NOW)
+        self.assertIsNone(strat._plan(109,st,112,20,6,50))
+        plan=strat._plan(110,st,112,20,6,50)
+        self.assertIsNotNone(plan)
+        self.assertLessEqual(plan["zone_low"],110)
+        self.assertGreaterEqual(plan["zone_high"],110)
+
+    def test_passive_candidate_keeps_peak_retrace_memory(self):
+        with sqlite3.connect(self.path) as db:
+            db.row_factory=sqlite3.Row
+            strat.setup(db)
+            db.execute("""INSERT INTO post_pump_short_strategy
+                (symbol,episode_at,last_seen_at,phase,phase_at,peak,rise_max,
+                 band,reference_open,last_price,last_retrace_pct,peak_at)
+                VALUES ('PASSIVEUSDT',?,?,?,?,150,50,'50_TO_99',100,145,3.33,?)""",
+                (NOW,NOW,'WATCH',NOW,NOW))
+            row=db.execute("SELECT * FROM post_pump_short_strategy WHERE symbol='PASSIVEUSDT'").fetchone()
+            strat._refresh_passive_state(
+                db,row,{"last":132,"high":150,"opening":100},NOW+600)
+            saved=db.execute("""SELECT last_seen_at,last_price,last_retrace_pct,peak
+                FROM post_pump_short_strategy WHERE symbol='PASSIVEUSDT'""").fetchone()
+        self.assertEqual(saved[0],NOW+600)
+        self.assertEqual(saved[1],132)
+        self.assertAlmostEqual(saved[2],12.0)
+        self.assertEqual(saved[3],150)
+
     def test_discovered_pump_subscribes_bybit_liquidations(self):
         with patch.object(strat,"_watch_bybit_liquidations",return_value=True) as watch:
             self.drive(NOW)
@@ -218,18 +245,22 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 self.drive(NOW+130,last=111,equity_usdt=50)
                 self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
                 self.drive(NOW+260,last=110,equity_usdt=50)
-                self.assertEqual(self.data()[0][0]["phase"],"RETEST")
+                self.assertEqual(self.data()[0][0]["phase"],"SHORT_CONFIRMED")
                 self.drive(NOW+390,last=110,equity_usdt=50)
+                self.assertEqual(self.data()[0][0]["phase"],"RETEST")
+                self.drive(NOW+520,last=110,equity_usdt=50)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"READY_RESEARCH")
+        self.assertEqual(state[0]["phase"],"ENTRY_ZONE")
         self.assertEqual([x["phase"] for x in events],
-            ["DISCOVERED","WEAKENING","TREND_SHIFT","RETEST","READY_RESEARCH"])
+            ["DISCOVERED","WEAKENING","TREND_SHIFT","SHORT_CONFIRMED",
+             "RETEST","ENTRY_ZONE"])
         plan=events[-1]
         self.assertEqual(plan["paper_only"],1)
         self.assertLess(plan["tp1"],plan["entry"])
         self.assertGreater(plan["stop"],plan["entry"])
         self.assertIsNotNone(plan["quantity"])
-        self.assertEqual(state[0]["watch_reason"],"STRUCTURE_RETEST_SPOT_FUTURES_OI_LOCAL_FLOW")
+        self.assertEqual(state[0]["watch_reason"],
+                         "RETEST_REJECTION_SPOT_FUTURES_OI_SELLERS_CONFIRMED")
 
     def test_early_weakening_is_research_only_before_full_retrace(self):
         def mk(at):
@@ -277,7 +308,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         states,events=self.data()
         self.assertEqual(states[0]["phase"],"WATCH")
         self.assertEqual(events[-1]["reason"],"BUYERS_RECOVERED_EARLY_WEAKENING")
-        self.assertNotIn("READY_RESEARCH",[x["phase"] for x in events])
+        self.assertNotIn("ENTRY_ZONE",[x["phase"] for x in events])
 
     def test_missing_local_aggression_confirmation_blocks_research_ready(self):
         with patch.object(strat,"analyze_structure",
@@ -300,7 +331,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(state[0]["phase"],"RETEST")
         self.assertEqual(state[0]["watch_reason"],
                          "WAITING_FOR_LOCAL_AGGRESSION_RESPONSE")
-        self.assertNotIn("READY_RESEARCH",[e["phase"] for e in events])
+        self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
     def test_paper_plan_registered_only_after_final_research_confirmation(self):
         with patch.object(strat,"analyze_structure",
@@ -356,9 +387,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                     fetch_spot=lambda symbol:[],
                     evidence_reader=evidence,equity_usdt=50)
         st,events=self.data()
-        self.assertEqual(st[0]["phase"],"READY_RESEARCH")
+        self.assertEqual(st[0]["phase"],"ENTRY_ZONE")
         self.assertNotEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
-        self.assertIn("READY_RESEARCH",[x["phase"] for x in events])
+        self.assertIn("ENTRY_ZONE",[x["phase"] for x in events])
 
     def test_no_approval_after_market_liquidity_disappears(self):
         with patch.object(strat,"analyze_structure",
@@ -380,7 +411,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         st,events=self.data()
         self.assertEqual(st[0]["phase"],"RETEST")
         self.assertEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
-        self.assertNotIn("READY_RESEARCH",[x["phase"] for x in events])
+        self.assertNotIn("ENTRY_ZONE",[x["phase"] for x in events])
 
     def test_no_real_decision_when_spot_missing_despite_break_and_retest(self):
         with patch.object(strat,"analyze_structure",
@@ -390,7 +421,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+260,last=110)
         state,events=self.data()
         self.assertEqual(state[0]["phase"],"RETEST")
-        self.assertNotIn("READY_RESEARCH",[e["phase"] for e in events])
+        self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
 
 if __name__=="__main__":

@@ -42,6 +42,10 @@ MAX_SPREAD_BPS=40.0
 MAX_ACTIVE=3
 PRIORITY_RETRACE_PCT=5.0
 CONTEXT_INTERVAL_SEC=120
+HOT_CONTEXT_INTERVAL_SEC=60
+MAX_EPISODE_SEC=72*3600
+ENTRY_ZONE_BELOW_ATR=0.70
+ENTRY_ZONE_ABOVE_ATR=0.15
 SPOT_POLL_INTERVAL_SEC=65
 STALE_SYMBOL_SEC=24*3600
 SPOT_WINDOW=300
@@ -105,24 +109,32 @@ def live_market_profile(t):
     if not isinstance(inst,str) or re.fullmatch(r"[A-Z0-9]{2,25}-USDT-SWAP",inst) is None:
         return None
     last=num(t.get("last"))
+    high=num(t.get("high24h"))
+    opening=num(t.get("open24h"))
     vol=approx_quote_volume_usdt(t)
     spread=spread_bps(t)
     if (last is None or last<=0 or vol is None or vol<=0
             or spread is None or spread<0):
         return None
+    rise=(100*(high/opening-1)
+          if high is not None and opening is not None
+          and high>0 and opening>0 else None)
     return dict(symbol=inst[:-10]+"USDT",inst=inst,last=last,
+                high=high,opening=opening,rise=rise,
                 notional=vol,spread=spread,
                 liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS),
                 liquidity_source="LIVE_TICKER")
 
 
 _PHASE_PRIORITY = {
-    "READY_RESEARCH": 0,
+    "ENTRY_ZONE": 0,
+    "READY_RESEARCH": 0,  # legacy rows from older deployments
     "RETEST": 1,
-    "TREND_SHIFT": 2,
-    "WEAKENING": 3,
-    "EARLY_WEAKENING": 4,
-    "WATCH": 5,
+    "SHORT_CONFIRMED": 2,
+    "TREND_SHIFT": 3,
+    "WEAKENING": 4,
+    "EARLY_WEAKENING": 5,
+    "WATCH": 6,
 }
 
 
@@ -151,7 +163,8 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
 
     retrace = max(0.0, 100.0 * (1.0 - price / peak)) if price and peak > 0 else 0.0
     urgent = (
-        phase in ("READY_RESEARCH", "RETEST", "TREND_SHIFT",
+        phase in ("ENTRY_ZONE", "READY_RESEARCH", "RETEST",
+                  "SHORT_CONFIRMED", "TREND_SHIFT",
                   "WEAKENING", "EARLY_WEAKENING")
         or retrace >= PRIORITY_RETRACE_PCT
     )
@@ -186,8 +199,15 @@ def setup(db):
         watch_reason TEXT, last_context_at REAL,
         last_spot_poll_at REAL, last_plan_at REAL,
         last_price REAL, last_retrace_pct REAL,
-        last_evidence_json TEXT, last_structure_json TEXT
+        last_evidence_json TEXT, last_structure_json TEXT,
+        peak_at REAL, entry_zone_at REAL
     )""")
+    cols={row[1] for row in db.execute(
+        "PRAGMA table_info(post_pump_short_strategy)")}
+    if "peak_at" not in cols:
+        db.execute("ALTER TABLE post_pump_short_strategy ADD COLUMN peak_at REAL")
+    if "entry_zone_at" not in cols:
+        db.execute("ALTER TABLE post_pump_short_strategy ADD COLUMN entry_zone_at REAL")
     db.execute("""CREATE TABLE IF NOT EXISTS post_pump_short_spot_trades(
         symbol TEXT NOT NULL, trade_id TEXT NOT NULL,
         ts REAL NOT NULL, side TEXT NOT NULL, quote REAL NOT NULL,
@@ -393,9 +413,11 @@ def _plan(price,structure,level,retrace,spread,equity):
     if (atr is None or atr<=0 or high is None or level is None
             or price<=0 or spread>MAX_SPREAD_BPS):
         return None
-    # An observed rally back above the retested support invalidates a
-    # delayed short entry, even if the previous 5m candle still looked weak.
-    if price<level-atr*MAX_LATE_ATR or price>level+0.20*atr:
+    # ENTRY ZONE is deliberately tighter than the old anti-late bound.
+    # Do not chase a candle that has already fallen far below the retested level.
+    zone_low=max(0.0,level-atr*ENTRY_ZONE_BELOW_ATR)
+    zone_high=level+atr*ENTRY_ZONE_ABOVE_ATR
+    if price<zone_low or price>zone_high:
         return None
     stop=max(high,level+0.35*atr)*(1+0.002)
     risk=stop-price
@@ -413,13 +435,37 @@ def _plan(price,structure,level,retrace,spread,equity):
     qty=(equity*RISK_FRACTION/(risk+fee_buffer)
          if equity is not None and equity>0 else None)
     return dict(entry=price,stop=stop,tp1=tp1,tp2=tp2,
+                zone_low=zone_low,zone_high=zone_high,break_level=level,
+                distance_from_break_pct=100*(price/level-1),
                 rr1=2.0,risk_fraction=RISK_FRACTION,quantity=qty,
-                validity="PAPER_ONLY_NOT_BACKTESTED",fee_model_pct=ROUND_TRIP_COST_PCT)
+                validity="DECISION_SUPPORT_NOT_BACKTESTED",
+                fee_model_pct=ROUND_TRIP_COST_PCT)
 
 
 def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=None):
-    evidence=evidence or {}
+    evidence=dict(evidence or {})
     structure=structure or {}
+    peak_at=num(state.get("peak_at")) or num(state.get("episode_at"))
+    lifecycle=dict(evidence.get("lifecycle") or {})
+    lifecycle.update({
+        "peak":num(state.get("peak")),
+        "peak_at":peak_at,
+        "peak_age_sec":max(0.0,now-peak_at) if peak_at is not None else None,
+        "retrace_pct":num(state.get("last_retrace_pct")),
+        "break_level":num(state.get("break_level")),
+    })
+    evidence["lifecycle"]=lifecycle
+    if plan is not None:
+        evidence["entry_zone"]={
+            "zone_low":plan.get("zone_low"),
+            "zone_high":plan.get("zone_high"),
+            "entry":plan.get("entry"),
+            "stop":plan.get("stop"),
+            "tp1":plan.get("tp1"),
+            "tp2":plan.get("tp2"),
+            "break_level":plan.get("break_level"),
+            "distance_from_break_pct":plan.get("distance_from_break_pct"),
+        }
     payload=json.dumps(evidence,default=str,sort_keys=True)
     structur=json.dumps(structure,default=str,sort_keys=True)
     new=phase!=state["phase"]
@@ -447,13 +493,60 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
     db.executemany("""INSERT OR IGNORE INTO post_pump_short_strategy_outcomes
         (audit_id,horizon_min) VALUES (?,?)""",
         [(audit_id,h) for h in WINDOWS])
-    if phase=="READY_RESEARCH" and plan is not None:
+    if phase in ("ENTRY_ZONE","READY_RESEARCH") and plan is not None:
         register_paper_plan(db,audit_id,state["symbol"],now,
                             plan["entry"],plan["stop"],plan["tp1"])
     print(f"[SHORT_STRATEGY_STAGE] symbol={state['symbol']} "
           f"{old}->{phase} reason={reason} rise={state['rise_max']:.1f}% "
           f"retrace={state['last_retrace_pct']:.1f}% "
           "research_only=true no_orders=true",flush=True)
+    return True
+
+
+def _context_interval(phase):
+    return (HOT_CONTEXT_INTERVAL_SEC
+            if phase in ("EARLY_WEAKENING","WEAKENING","TREND_SHIFT",
+                         "SHORT_CONFIRMED","RETEST")
+            else CONTEXT_INTERVAL_SEC)
+
+
+def _refresh_passive_state(db,row,profile,now):
+    """Cheap persistent peak/retrace memory for candidates outside 3 deep slots."""
+    if profile is None:
+        return False
+    st=dict(row)
+    price=num(profile.get("last"))
+    if price is None or price<=0:
+        return False
+    old_peak=num(st.get("peak")) or price
+    observed_high=num(profile.get("high"))
+    new_peak=(observed_high is not None and observed_high>old_peak*1.001)
+    if new_peak:
+        st["peak"]=observed_high
+        st["peak_at"]=now
+        opening=num(profile.get("opening")) or num(st.get("reference_open"))
+        if opening and opening>0:
+            st["rise_max"]=max(num(st.get("rise_max")) or 0.0,
+                               100*(observed_high/opening-1))
+    elif num(st.get("peak_at")) is None:
+        st["peak_at"]=num(st.get("episode_at")) or now
+    st["last_seen_at"]=now
+    st["last_price"]=price
+    st["last_retrace_pct"]=100*(1-price/st["peak"])
+    if new_peak and st["phase"]!="WATCH":
+        st["break_level"]=None
+        st["break_candle_ts"]=None
+        _record_phase(db,st,now,"WATCH","BUYERS_RECLAIMED_NEW_HIGH",
+                      {"passive_lifecycle":True})
+        st["entry_zone_at"]=None
+    db.execute("""UPDATE post_pump_short_strategy SET
+        last_seen_at=?,phase=?,phase_at=?,peak=?,peak_at=?,rise_max=?,
+        break_level=?,break_candle_ts=?,watch_reason=?,
+        last_price=?,last_retrace_pct=?,entry_zone_at=? WHERE symbol=?""",
+        (st["last_seen_at"],st["phase"],st["phase_at"],st["peak"],
+         st["peak_at"],st["rise_max"],st["break_level"],
+         st["break_candle_ts"],st.get("watch_reason"),st["last_price"],
+         st["last_retrace_pct"],st.get("entry_zone_at"),st["symbol"]))
     return True
 
 
@@ -491,15 +584,24 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     st["last_seen_at"]=now
     st["last_price"]=profile["last"]
     previous_peak=st["peak"]
-    st["rise_max"]=max(st["rise_max"],profile["rise"])
-    st["peak"]=max(st["peak"],profile["high"])
+    observed_high=num(profile.get("high")) or previous_peak
+    new_peak=observed_high>previous_peak*1.001
+    if new_peak:
+        st["peak_at"]=now
+    elif num(st.get("peak_at")) is None:
+        st["peak_at"]=num(st.get("episode_at")) or now
+    rise_now=num(profile.get("rise"))
+    if rise_now is not None:
+        st["rise_max"]=max(st["rise_max"],rise_now)
+    st["peak"]=max(st["peak"],observed_high)
     st["band"]=profile["band"]
     st["last_retrace_pct"]=100*(1-profile["last"]/st["peak"])
     # A published paper plan must keep a live cancellation path. This cheap
     # check also runs while candle/flow collectors are warming or unavailable.
-    if st["phase"] == "READY_RESEARCH":
+    if st["phase"] in ("ENTRY_ZONE","READY_RESEARCH"):
         plan_row = db.execute("""SELECT stop FROM post_pump_short_strategy_audit
-            WHERE symbol=? AND episode_at=? AND phase='READY_RESEARCH'
+            WHERE symbol=? AND episode_at=?
+              AND phase IN ('ENTRY_ZONE','READY_RESEARCH')
             ORDER BY id DESC LIMIT 1""", (sym, st["episode_at"])).fetchone()
         stop = num(plan_row["stop"]) if plan_row else None
         level = num(st.get("break_level"))
@@ -531,7 +633,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         spot=(overlap_spot if overlap_spot.get("ready")
               else snapshot if snapshot.get("ready")
               else overlap_spot)
-    if now-st["last_context_at"]<CONTEXT_INTERVAL_SEC:
+    if now-st["last_context_at"]<_context_interval(st["phase"]):
         return status,None
     st["last_context_at"]=now
     try:
@@ -573,11 +675,11 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
         return status,struct
-    if st["phase"] == "READY_RESEARCH":
+    if st["phase"] in ("ENTRY_ZONE","READY_RESEARCH"):
         if not struct["trend_shift"] or struct["h1"] == "UP":
             _record_phase(db,st,now,"CANCELLED","TREND_NOT_ALIGNED",ev,struct)
         return status,struct
-    if (profile["last"]>=previous_peak*1.001 and st["phase"]!="WATCH"):
+    if (new_peak and st["phase"]!="WATCH"):
         st["break_level"]=None
         st["break_candle_ts"]=None
         _record_phase(db,st,now,"WATCH","BUYERS_RECLAIMED_NEW_HIGH",ev,struct)
@@ -603,7 +705,19 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         st["break_level"]=struct["support"]
         st["break_candle_ts"]=struct["last5"]["ts"]
         _record_phase(db,st,now,"TREND_SHIFT","CLOSED_5M_BREAK_15M_H1_ALIGNED",ev,struct)
-    if st["phase"]=="TREND_SHIFT" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
+    promoted_confirmed=False
+    strict_short=((ev.get("final_short_confirmation") or {}).get("ready") is True
+                  or ((ev.get("order_flow") or {}).get("status")=="CONFIRMED"
+                      and (ev.get("order_flow") or {}).get("ready") is True))
+    if (st["phase"]=="TREND_SHIFT"
+            and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
+            and strict_short):
+        promoted_confirmed=_record_phase(
+            db,st,now,"SHORT_CONFIRMED",
+            "SELLER_TAKEOVER_CVD_OI_CONFIRMED_WAIT_RETEST",ev,struct)
+    if (not promoted_confirmed
+            and st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED")
+            and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC):
         level=st["break_level"]
         last5=struct["last5"]
         if (level is not None and st["break_candle_ts"] is not None
@@ -615,7 +729,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
             elif (last5["h"]>=level*0.997 and last5["c"]<level
                   and struct["trend_shift"]):
                 _record_phase(db,st,now,"RETEST","CLOSED_5M_RETEST_REJECTED",ev,struct)
-    if st["phase"]=="RETEST" and now-st["phase_at"]>=CONTEXT_INTERVAL_SEC:
+    if st["phase"]=="RETEST" and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC:
         if not profile.get("liquid"):
             st["watch_reason"]="WAITING_FOR_LIQUID_MARKET"
         elif not struct["trend_shift"] or struct["h1"]=="UP":
@@ -633,14 +747,18 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
             plan=_plan(profile["last"],struct,st["break_level"],
                        st["last_retrace_pct"],profile["spread"],equity)
             if plan is not None:
-                if _record_phase(db,st,now,"READY_RESEARCH",
-                                 "STRUCTURE_RETEST_SPOT_FUTURES_OI_LOCAL_FLOW",ev,struct,plan):
+                if _record_phase(db,st,now,"ENTRY_ZONE",
+                                 "RETEST_REJECTION_SPOT_FUTURES_OI_SELLERS_CONFIRMED",
+                                 ev,struct,plan):
                     st["last_plan_at"]=now
-                    print(f"[SHORT_PLAN_PAPER] {sym} "
+                    st["entry_zone_at"]=now
+                    print(f"[SHORT_ENTRY_ZONE] {sym} "
+                          f"zone={plan['zone_low']:.8g}-{plan['zone_high']:.8g} "
                           f"entry={plan['entry']:.8g} stop={plan['stop']:.8g} "
                           f"tp1={plan['tp1']:.8g} tp2={plan['tp2']:.8g} "
+                          f"retrace={st['last_retrace_pct']:.2f}% "
                           f"qty={plan['quantity']} risk={100*RISK_FRACTION:.2f}% "
-                          "NO_LIVE_ORDER=true NOT_PROVEN=true",flush=True)
+                          "NO_LIVE_ORDER=true DECISION_SUPPORT=true",flush=True)
     return status,struct
 
 
@@ -651,11 +769,13 @@ def _fetch_paper_1m(symbol):
 
 def _cancel_published_plans(db, quotes, now):
     """All paper plans get cheap invalidation, regardless of the 3-symbol cap."""
-    for row in db.execute("SELECT * FROM post_pump_short_strategy WHERE phase='READY_RESEARCH'").fetchall():
+    for row in db.execute("""SELECT * FROM post_pump_short_strategy
+        WHERE phase IN ('ENTRY_ZONE','READY_RESEARCH')""").fetchall():
         st = dict(row)
         px = quotes.get(st['symbol'])
         plan = db.execute("""SELECT stop FROM post_pump_short_strategy_audit
-            WHERE symbol=? AND episode_at=? AND phase='READY_RESEARCH'
+            WHERE symbol=? AND episode_at=?
+              AND phase IN ('ENTRY_ZONE','READY_RESEARCH')
             ORDER BY id DESC LIMIT 1""", (st['symbol'],st['episode_at'])).fetchone()
         stop = num(plan['stop']) if plan else None
         level = num(st.get('break_level'))
@@ -732,7 +852,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             for symbol,item in eligible.items():
                 old=db.execute("""SELECT * FROM post_pump_short_strategy
                                   WHERE symbol=?""",(symbol,)).fetchone()
-                if old is None or now-old["last_seen_at"]>STALE_SYMBOL_SEC or now-old["episode_at"]>72*3600:
+                if (old is None or old["phase"] in ("CANCELLED","EXPIRED")
+                        or now-old["last_seen_at"]>STALE_SYMBOL_SEC
+                        or now-old["episode_at"]>MAX_EPISODE_SEC):
                     if old is not None:
                         db.execute("DELETE FROM post_pump_short_strategy WHERE symbol=?",
                                    (symbol,))
@@ -751,14 +873,16 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                             last_retrace_pct=item["retrace"],
                             last_evidence_json=json.dumps(
                                 discovery_evidence,sort_keys=True,default=str),
-                            last_structure_json=None)
+                            last_structure_json=None,peak_at=now,
+                            entry_zone_at=None)
                     db.execute("""INSERT INTO post_pump_short_strategy(
                         symbol,episode_at,last_seen_at,phase,phase_at,
                         peak,rise_max,band,reference_open,break_level,
                         break_candle_ts,watch_reason,last_context_at,
                         last_spot_poll_at,last_plan_at,last_price,
-                        last_retrace_pct,last_evidence_json,last_structure_json)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        last_retrace_pct,last_evidence_json,last_structure_json,
+                        peak_at,entry_zone_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         tuple(st.values()))
                     _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT",
                                   discovery_evidence)
@@ -775,8 +899,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             # Evaluate existing + fresh assets even after the 24h window rolls;
             # at most one 72h research episode, never immortal on stale momentum.
             candidates=list(db.execute("""SELECT * FROM post_pump_short_strategy
-                WHERE last_seen_at>=? AND phase NOT IN ('CANCELLED','EXPIRED')
-                LIMIT 120""",(now-STALE_SYMBOL_SEC,)).fetchall())
+                WHERE episode_at>=? AND phase NOT IN ('CANCELLED','EXPIRED')
+                LIMIT 120""",(now-MAX_EPISODE_SEC,)).fetchall())
+            candidates=[z for z in candidates if z["symbol"] in live_profiles]
             candidates.sort(
                 key=lambda z:_candidate_sort_key(z,eligible,live_profiles)
             )
@@ -797,6 +922,14 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                       if z["symbol"][:-4]+"-USDT" in selected]
             else:
                 rows=candidates[:MAX_ACTIVE]  # deterministic offline tests
+            selected_symbols={z["symbol"] for z in rows}
+            for passive in candidates:
+                if passive["symbol"] in selected_symbols:
+                    continue
+                symbol=passive["symbol"]
+                profile=eligible.get(symbol) or live_profiles.get(symbol)
+                _refresh_passive_state(db,passive,profile,now)
+            diagnostics["tracked"]=len(candidates)
             diagnostics["active"]=len(rows)
             for row in rows:
                 st=dict(row)
@@ -809,10 +942,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     # The +30% condition is a DISCOVERY gate, not a permanent
                     # liquidity gate. Keep the episode alive after pullback and
                     # re-check the real current ticker volume/spread every scan.
+                    live_high=num(live.get("high")) or st["peak"]
+                    live_open=num(live.get("opening")) or st["reference_open"]
+                    live_rise=num(live.get("rise"))
                     profile=dict(live,
-                                 high=st["peak"],
-                                 opening=st["reference_open"],
-                                 rise=st["rise_max"],band=st["band"],
+                                 high=max(st["peak"],live_high),
+                                 opening=live_open,
+                                 rise=max(st["rise_max"],live_rise)
+                                      if live_rise is not None else st["rise_max"],
+                                 band=st["band"],
                                  retrace=100*(1-live["last"]/st["peak"]))
                 status,structure=_advance(db,st,profile,now,context,spot_fetch,
                                            evidence,equity_usdt,db_path=path)
@@ -821,21 +959,23 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 # The autonomous local verifier reads only in-process caches
                 # and is refreshed while the setup is structurally relevant.
                 # Cooldown inside dispatch bounds repeated work.
-                if st["phase"] in ("TREND_SHIFT","RETEST"):
+                if st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED","RETEST"):
                     pending_flow.append((symbol,profile["last"],st["episode_at"]))
                 db.execute("""UPDATE post_pump_short_strategy SET
                     last_seen_at=?,phase=?,phase_at=?,peak=?,rise_max=?,band=?,
                     break_level=?,break_candle_ts=?,watch_reason=?,
                     last_context_at=?,last_spot_poll_at=?,last_plan_at=?,
                     last_price=?,last_retrace_pct=?,
-                    last_evidence_json=?,last_structure_json=? WHERE symbol=?""",
+                    last_evidence_json=?,last_structure_json=?,
+                    peak_at=?,entry_zone_at=? WHERE symbol=?""",
                     (st["last_seen_at"],st["phase"],st["phase_at"],
                      st["peak"],st["rise_max"],st["band"],
                      st["break_level"],st["break_candle_ts"],
                      st["watch_reason"],st["last_context_at"],
                      st["last_spot_poll_at"],st["last_plan_at"],
                      st["last_price"],st["last_retrace_pct"],
-                     st["last_evidence_json"],st["last_structure_json"],symbol))
+                     st["last_evidence_json"],st["last_structure_json"],
+                     st.get("peak_at"),st.get("entry_zone_at"),symbol))
             # Forward quote markouts; not TP/SL first-touch execution.
             due=db.execute("""SELECT o.audit_id,o.horizon_min,
                 a.symbol,a.at,a.reference_price FROM post_pump_short_strategy_outcomes o
