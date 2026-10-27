@@ -125,7 +125,7 @@ class NotificationsTests(unittest.TestCase):
 
     def test_old_plan_is_not_sent(self):
         self.event('ENTRY_ZONE')
-        self.run_delivery(NOW+122)
+        self.run_delivery(NOW+182)
         self.assertEqual(self.sender.call_count,0)
 
     def test_unconfirmed_plan_is_not_sent(self):

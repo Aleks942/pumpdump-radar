@@ -344,6 +344,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+130,last=111,equity_usdt=50)
             self.drive(NOW+260,last=110,equity_usdt=50)
             self.drive(NOW+390,last=110,equity_usdt=50)
+            self.drive(NOW+520,last=110,equity_usdt=50)
         with sqlite3.connect(self.path) as db:
             rows=db.execute("""SELECT status,signal_price,stop,tp1,model_only
                 FROM post_pump_paper_trades""").fetchall()
@@ -386,6 +387,10 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                     fetch_context=lambda symbol:{"5m":[],"15m":[],"1H":[]},
                     fetch_spot=lambda symbol:[],
                     evidence_reader=evidence,equity_usdt=50)
+                strat.observe([rolled],NOW+520,self.path,
+                    fetch_context=lambda symbol:{"5m":[],"15m":[],"1H":[]},
+                    fetch_spot=lambda symbol:[],
+                    evidence_reader=evidence,equity_usdt=50)
         st,events=self.data()
         self.assertEqual(st[0]["phase"],"ENTRY_ZONE")
         self.assertNotEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
@@ -408,6 +413,11 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                         "5m":[],"15m":[],"1H":[]},
                     fetch_spot=lambda symbol:[],
                     evidence_reader=evidence,equity_usdt=50)
+                strat.observe([bad],NOW+520,self.path,
+                    fetch_context=lambda symbol:{
+                        "5m":[],"15m":[],"1H":[]},
+                    fetch_spot=lambda symbol:[],
+                    evidence_reader=evidence,equity_usdt=50)
         st,events=self.data()
         self.assertEqual(st[0]["phase"],"RETEST")
         self.assertEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
@@ -419,6 +429,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW,last=115)
             self.drive(NOW+130,last=111)
             self.drive(NOW+260,last=110)
+            self.drive(NOW+390,last=110)
         state,events=self.data()
         self.assertEqual(state[0]["phase"],"RETEST")
         self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
