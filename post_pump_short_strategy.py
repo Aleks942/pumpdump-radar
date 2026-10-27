@@ -179,7 +179,16 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
 def _candidate_sort_key(row, eligible, live_profiles):
     p = _candidate_priority_snapshot(row, eligible, live_profiles)
     last_context = num(row["last_context_at"]) or 0.0
+    # A newly discovered hot pump must receive one deep-context pass even when
+    # all three expensive slots are occupied. After that first pass, normal
+    # lifecycle priority resumes so mature RETEST/CONFIRMED setups stay first.
+    first_deep_pass = (
+        last_context <= 0.0
+        and p["urgent"]
+        and p["retrace"] >= PRIORITY_RETRACE_PCT
+    )
     return (
+        0 if first_deep_pass else 1,
         p["phase_rank"],
         0 if p["urgent"] else 1,
         -p["retrace"],
@@ -706,15 +715,17 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         st["break_candle_ts"]=struct["last5"]["ts"]
         _record_phase(db,st,now,"TREND_SHIFT","CLOSED_5M_BREAK_15M_H1_ALIGNED",ev,struct)
     promoted_confirmed=False
-    strict_short=((ev.get("final_short_confirmation") or {}).get("ready") is True
-                  or ((ev.get("order_flow") or {}).get("status")=="CONFIRMED"
-                      and (ev.get("order_flow") or {}).get("ready") is True))
+    # Seller takeover is useful context, but it is not mandatory here.
+    # SHORT_CONFIRMED still requires bearish Spot + Futures, reliable OI,
+    # aligned closed-candle structure, and a locally confirmed seller response.
+    strict_short=((ev.get("order_flow") or {}).get("status")=="CONFIRMED"
+                  and (ev.get("order_flow") or {}).get("ready") is True)
     if (st["phase"]=="TREND_SHIFT"
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and strict_short):
         promoted_confirmed=_record_phase(
             db,st,now,"SHORT_CONFIRMED",
-            "SELLER_TAKEOVER_CVD_OI_CONFIRMED_WAIT_RETEST",ev,struct)
+            "SPOT_FUTURES_OI_STRUCTURE_SELLERS_CONFIRMED_WAIT_RETEST",ev,struct)
     if (not promoted_confirmed
             and st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC):
