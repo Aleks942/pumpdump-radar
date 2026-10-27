@@ -40,6 +40,7 @@ MIN_RISE_PCT=30.0
 MIN_NOTIONAL=10_000_000.0
 MAX_SPREAD_BPS=40.0
 MAX_ACTIVE=3
+PRIORITY_RETRACE_PCT=5.0
 CONTEXT_INTERVAL_SEC=120
 SPOT_POLL_INTERVAL_SEC=65
 STALE_SYMBOL_SEC=24*3600
@@ -113,6 +114,65 @@ def live_market_profile(t):
                 notional=vol,spread=spread,
                 liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS),
                 liquidity_source="LIVE_TICKER")
+
+
+_PHASE_PRIORITY = {
+    "READY_RESEARCH": 0,
+    "RETEST": 1,
+    "TREND_SHIFT": 2,
+    "WEAKENING": 3,
+    "EARLY_WEAKENING": 4,
+    "WATCH": 5,
+}
+
+
+def _candidate_priority_snapshot(row, eligible, live_profiles):
+    """Rank active pumps using the freshest quote without creating new data.
+
+    Mature structural phases stay first. Within the same phase, a pump that has
+    already retraced >=5% gets priority so a fresh +30%/+50% pump cannot be
+    starved behind three quiet WATCH symbols.
+    """
+    symbol = row["symbol"]
+    phase = str(row["phase"] or "WATCH")
+    peak = num(row["peak"]) or 0.0
+    rise = num(row["rise_max"]) or 0.0
+    price = num(row["last_price"])
+
+    fresh = eligible.get(symbol)
+    if fresh is not None:
+        peak = max(peak, num(fresh.get("high")) or 0.0)
+        rise = max(rise, num(fresh.get("rise")) or 0.0)
+        price = num(fresh.get("last")) or price
+    else:
+        live = live_profiles.get(symbol)
+        if live is not None:
+            price = num(live.get("last")) or price
+
+    retrace = max(0.0, 100.0 * (1.0 - price / peak)) if price and peak > 0 else 0.0
+    urgent = (
+        phase in ("READY_RESEARCH", "RETEST", "TREND_SHIFT",
+                  "WEAKENING", "EARLY_WEAKENING")
+        or retrace >= PRIORITY_RETRACE_PCT
+    )
+    return {
+        "phase_rank": _PHASE_PRIORITY.get(phase, 9),
+        "retrace": retrace,
+        "rise": rise,
+        "urgent": urgent,
+    }
+
+
+def _candidate_sort_key(row, eligible, live_profiles):
+    p = _candidate_priority_snapshot(row, eligible, live_profiles)
+    last_context = num(row["last_context_at"]) or 0.0
+    return (
+        p["phase_rank"],
+        0 if p["urgent"] else 1,
+        -p["retrace"],
+        -p["rise"],
+        last_context,
+    )
 
 
 def setup(db):
@@ -676,6 +736,10 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     if old is not None:
                         db.execute("DELETE FROM post_pump_short_strategy WHERE symbol=?",
                                    (symbol,))
+                    try:
+                        discovery_evidence=evidence(symbol,now) or {}
+                    except Exception as discovery_exc:
+                        discovery_evidence={"evidence_error":type(discovery_exc).__name__}
                     st=dict(symbol=symbol,episode_at=now,last_seen_at=now,
                             phase="WATCH",phase_at=now,peak=item["high"],
                             rise_max=item["rise"],band=item["band"],
@@ -685,7 +749,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                             last_context_at=0,last_spot_poll_at=0,
                             last_plan_at=None,last_price=item["last"],
                             last_retrace_pct=item["retrace"],
-                            last_evidence_json=None,last_structure_json=None)
+                            last_evidence_json=json.dumps(
+                                discovery_evidence,sort_keys=True,default=str),
+                            last_structure_json=None)
                     db.execute("""INSERT INTO post_pump_short_strategy(
                         symbol,episode_at,last_seen_at,phase,phase_at,
                         peak,rise_max,band,reference_open,break_level,
@@ -694,7 +760,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         last_retrace_pct,last_evidence_json,last_structure_json)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         tuple(st.values()))
-                    _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT")
+                    _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT",
+                                  discovery_evidence)
                     st["phase"]="WATCH"
                     diagnostics["new"]+=1
                 else:
@@ -707,15 +774,23 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         last_seen_at=? WHERE symbol=?""",(now,symbol))
             # Evaluate existing + fresh assets even after the 24h window rolls;
             # at most one 72h research episode, never immortal on stale momentum.
-            candidates=db.execute("""SELECT * FROM post_pump_short_strategy
+            candidates=list(db.execute("""SELECT * FROM post_pump_short_strategy
                 WHERE last_seen_at>=? AND phase NOT IN ('CANCELLED','EXPIRED')
-                ORDER BY CASE phase WHEN 'READY_RESEARCH' THEN -1 WHEN 'RETEST' THEN 0
-                         WHEN 'TREND_SHIFT' THEN 1 WHEN 'WEAKENING' THEN 2
-                         WHEN 'EARLY_WEAKENING' THEN 3
-                         ELSE 4 END, last_context_at ASC LIMIT 120""",
-                (now-STALE_SYMBOL_SEC,)).fetchall()
+                LIMIT 120""",(now-STALE_SYMBOL_SEC,)).fetchall())
+            candidates.sort(
+                key=lambda z:_candidate_sort_key(z,eligible,live_profiles)
+            )
             if fetch_spot is None:
-                selected=watch_spot_stream([z["symbol"] for z in candidates])
+                priority=[
+                    z["symbol"] for z in candidates
+                    if _candidate_priority_snapshot(
+                        z,eligible,live_profiles
+                    )["urgent"]
+                ]
+                selected=watch_spot_stream(
+                    [z["symbol"] for z in candidates],
+                    urgent_symbols=priority,
+                )
                 from post_pump_market_context import watch as watch_market_context
                 watch_market_context([p.replace("-USDT", "USDT") for p in selected])
                 rows=[z for z in candidates

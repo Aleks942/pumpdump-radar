@@ -73,17 +73,39 @@ def _research_lines(event):
         return f'{n:+,.2f}{suffix}' if n is not None else 'нет свежих данных'
     lines=['Проверки данных:']
     capital=d.get('capital_state') or {}
-    if isinstance(capital,dict):
+    if isinstance(capital,dict) and capital:
         lines.append('OI / капитал: '+escape(str(capital.get('state') or 'НЕТ ДАННЫХ')[:70]))
         lines.append('OI 5м: '+val(capital.get('oi_5m_pct'), '%')+' · '+escape(str(capital.get('oi_source') or 'нет источника')))
+    else:
+        agg_oi=_num(d.get('agg_oi_5m_pct'))
+        local_oi=_num(d.get('local_oi_5m_pct'))
+        raw_oi=agg_oi if agg_oi is not None else local_oi
+        raw_source='AGGREGATED' if agg_oi is not None else 'LOCAL' if local_oi is not None else 'нет источника'
+        lines.append('OI / капитал: '+(
+            'OI уже есть, структура ещё не подтверждена'
+            if raw_oi is not None else 'НЕТ ДАННЫХ'))
+        lines.append('OI 5м: '+val(raw_oi, '%')+' · '+raw_source)
     cvd=d.get('bounded_cvd_5m') or {}
-    if isinstance(cvd,dict):
+    if isinstance(cvd,dict) and cvd:
         lines.append('Дельта сделок 5м: '+escape(str(cvd.get('state') or 'НЕТ ДАННЫХ')[:70])+
                      ' (не полный CVD)')
         lines += ['OKX фьючерсы, Δ 5м: '+val(cvd.get('futures_delta_quote'), ' USDT')+
                   ' · дисбаланс '+val(cvd.get('futures_imbalance_pct'), '%'),
                   'OKX спот, Δ 5м: '+val(cvd.get('spot_delta_quote'), ' USDT')+
                   ' · дисбаланс '+val(cvd.get('spot_imbalance_pct'), '%')]
+    else:
+        f_delta=_num(d.get('futures_taker_5m_delta_quote'))
+        f_imb=_num(d.get('futures_taker_5m_imbalance_pct'))
+        s_delta=_num(d.get('spot_taker_5m_delta_quote'))
+        s_imb=_num(d.get('spot_taker_5m_imbalance_pct'))
+        raw_flow=any(x is not None for x in (f_delta,f_imb,s_delta,s_imb))
+        lines.append('Дельта сделок 5м: '+(
+            'свежий кэш, ждём полного подтверждения'
+            if raw_flow else 'НЕТ ДАННЫХ')+' (не полный CVD)')
+        lines += ['OKX фьючерсы, Δ 5м: '+val(f_delta, ' USDT')+
+                  ' · дисбаланс '+val(f_imb, '%'),
+                  'OKX спот, Δ 5м: '+val(s_delta, ' USDT')+
+                  ' · дисбаланс '+val(s_imb, '%')]
     liq=d.get('liquidation_context') or {}
     if isinstance(liq,dict):
         lo=_num(liq.get('long_usdt'))

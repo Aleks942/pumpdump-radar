@@ -56,6 +56,20 @@ class NotificationsTests(unittest.TestCase):
         event['evidence_json']='{invalid'
         self.assertIn('недоступны',notify.message(event))
 
+    def test_discovery_card_uses_raw_cached_oi_and_futures_when_available(self):
+        event={'kind':'DISCOVERED','symbol':'TESTUSDT','at':NOW,
+               'rise_pct':30.7,'retrace_pct':10.2,
+               'evidence_json':json.dumps({
+                   'local_oi_5m_pct':0.203,
+                   'futures_taker_5m_imbalance_pct':-18.5,
+                   'futures_taker_5m_delta_quote':-12500.0,
+               })}
+        msg=notify.message(event)
+        self.assertIn('OI уже есть',msg)
+        self.assertIn('+0.20%',msg)
+        self.assertIn('свежий кэш',msg)
+        self.assertIn('-18.50%',msg)
+
     def test_full_lifecycle_and_restart_dedup(self):
         for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT','RETEST','READY_RESEARCH')):
             self.event(phase,NOW+1+i)

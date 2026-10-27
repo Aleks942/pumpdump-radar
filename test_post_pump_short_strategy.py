@@ -1,4 +1,5 @@
 """Offline tests for complete existing PumpDump post-pump SHORT pipeline."""
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -91,6 +92,29 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(states[0]["phase"],"WATCH")
         self.assertAlmostEqual(states[0]["last_retrace_pct"],26.6666666667)
         self.assertEqual(events[0]["phase"],"DISCOVERED")
+
+    def test_discovery_persists_ready_cached_oi_immediately(self):
+        self.drive(NOW)
+        _,events=self.data()
+        snapshot=json.loads(events[0]["evidence_json"])
+        self.assertEqual(snapshot["local_oi_5m_pct"],-0.70)
+
+    def test_same_phase_candidate_with_large_retrace_gets_priority(self):
+        cold={"symbol":"COLDUSDT","phase":"WATCH","peak":150,
+              "rise_max":50,"last_price":148,"last_context_at":1}
+        hot={"symbol":"HOTUSDT","phase":"WATCH","peak":150,
+             "rise_max":50,"last_price":134,"last_context_at":999}
+        profiles={
+            "COLDUSDT":{"last":148},
+            "HOTUSDT":{"last":134},
+        }
+        ranked=sorted(
+            [cold,hot],
+            key=lambda z:strat._candidate_sort_key(z,{},profiles)
+        )
+        self.assertEqual(ranked[0]["symbol"],"HOTUSDT")
+        self.assertTrue(strat._candidate_priority_snapshot(
+            hot,{},profiles)["urgent"])
 
     def test_discovered_pump_subscribes_bybit_liquidations(self):
         with patch.object(strat,"_watch_bybit_liquidations",return_value=True) as watch:

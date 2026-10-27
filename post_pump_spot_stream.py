@@ -151,13 +151,17 @@ def spot_availability(pair,now=None,request_get=None):
             "universe_status":status}
 
 
-def watch(symbols):
+def watch(symbols, urgent_symbols=()):
     global _watched,_thread,_lease_at
     # Preserve continuity: rotating three subscriptions every 60s would
     # prevent ANY 5-minute flow window from ever warming up.
     raw_candidates=tuple(dict.fromkeys(
         s[:-4]+"-USDT" for s in (symbols or ())
         if isinstance(s,str) and s.endswith("USDT") and len(s)>4))
+    urgent_pairs=set(
+        s[:-4]+"-USDT" for s in (urgent_symbols or ())
+        if isinstance(s,str) and s.endswith("USDT") and len(s)>4
+    )
     now=time.time()
     universe,universe_status=_refresh_spot_universe(now=now)
     candidates=tuple(x for x in raw_candidates if x in universe)
@@ -177,8 +181,28 @@ def watch(symbols):
         if old and now-_lease_at<MIN_STREAM_TENURE_SEC:
             retained=(old if universe_status=='SPOT_DATA_ERROR' and not universe
                       else tuple(p for p in old if p in universe))
-            additions=tuple(p for p in candidates if p not in retained)
-            target=(retained+additions)[:3]
+            urgent_ranked=tuple(
+                p for p in candidates if p in urgent_pairs
+            )
+            urgent_missing=tuple(
+                p for p in urgent_ranked if p not in retained
+            )
+            if urgent_missing:
+                ordered=[]
+                for p in urgent_ranked+retained+candidates:
+                    if p not in ordered:
+                        ordered.append(p)
+                    if len(ordered)>=3:
+                        break
+                target=tuple(ordered)
+                print("[POST_PUMP_SPOT_PRIORITY]",
+                      "urgent=", ",".join(urgent_missing),
+                      "old=", ",".join(old) or "NONE",
+                      "new=", ",".join(target) or "NONE",
+                      flush=True)
+            else:
+                additions=tuple(p for p in candidates if p not in retained)
+                target=(retained+additions)[:3]
         else:
             target=tuple(candidates[:3])
         if target!=old:

@@ -161,6 +161,22 @@ class SpotStreamTests(unittest.TestCase):
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
                                     "DDD-USDT","AAA-USDT","BBB-USDT"))
 
+    def test_urgent_candidate_preempts_quiet_slot_during_lease(self):
+        universe={"AAA-USDT","BBB-USDT","CCC-USDT","SOON-USDT"}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(universe,"READY")):
+          with patch.object(stream,"_thread",ThreadAlive()):
+            with patch.object(stream,"_socket",None):
+              with patch.object(stream,"_watched",(
+                      "AAA-USDT","BBB-USDT","CCC-USDT")):
+                with patch.object(stream,"_lease_at",10000.0):
+                  with patch.object(stream.time,"time",return_value=10100.0):
+                    selected=stream.watch(
+                        ["SOONUSDT","AAAUSDT","BBBUSDT","CCCUSDT"],
+                        urgent_symbols=["SOONUSDT"],
+                    )
+        self.assertEqual(selected,("SOON-USDT","AAA-USDT","BBB-USDT"))
+
     def test_ranked_out_pair_keeps_subscription_during_lease(self):
         universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
         with patch.object(stream,"_refresh_spot_universe",
