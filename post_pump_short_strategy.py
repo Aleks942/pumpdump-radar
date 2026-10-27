@@ -718,8 +718,11 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     # Seller takeover is useful context, but it is not mandatory here.
     # SHORT_CONFIRMED still requires bearish Spot + Futures, reliable OI,
     # aligned closed-candle structure, and a locally confirmed seller response.
-    strict_short=((ev.get("order_flow") or {}).get("status")=="CONFIRMED"
-                  and (ev.get("order_flow") or {}).get("ready") is True)
+    strict_short=(
+        _evidence_ok(ev, spot)
+        and (ev.get("order_flow") or {}).get("status")=="CONFIRMED"
+        and (ev.get("order_flow") or {}).get("ready") is True
+    )
     if (st["phase"]=="TREND_SHIFT"
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and strict_short):
