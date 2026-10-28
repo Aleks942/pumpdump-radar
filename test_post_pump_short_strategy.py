@@ -261,7 +261,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                           side_effect=lambda a,b,c,now:mk(now)):
             with patch.object(strat,"spot_status",
                 side_effect=lambda db,symbol,now:
-                   {"ready":now>=NOW+390,"imbalance_pct":-40,
+                   {"ready":now>=NOW+260,"imbalance_pct":-40,
                     "reason":"OVERLAP_VERIFIED_5M"}):
                 self.drive(NOW,last=115,equity_usdt=50)
                 self.assertEqual(self.data()[0][0]["phase"],"WEAKENING")
