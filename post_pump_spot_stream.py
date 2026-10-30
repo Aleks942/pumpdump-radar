@@ -24,6 +24,7 @@ _subscribed=set()
 _thread=None
 _lease_at=0.0
 MIN_STREAM_TENURE_SEC=15*60
+MAX_WATCHED_SPOT=10
 _WS="wss://ws.okx.com:8443/ws/v5/public"
 _SPOT_INSTRUMENTS_URL="https://www.okx.com/api/v5/public/instruments"
 SPOT_UNIVERSE_TTL_SEC=30*60
@@ -192,7 +193,7 @@ def watch(symbols, urgent_symbols=()):
                 for p in urgent_ranked+retained+candidates:
                     if p not in ordered:
                         ordered.append(p)
-                    if len(ordered)>=3:
+                    if len(ordered)>=MAX_WATCHED_SPOT:
                         break
                 target=tuple(ordered)
                 print("[POST_PUMP_SPOT_PRIORITY]",
@@ -202,9 +203,9 @@ def watch(symbols, urgent_symbols=()):
                       flush=True)
             else:
                 additions=tuple(p for p in candidates if p not in retained)
-                target=(retained+additions)[:3]
+                target=(retained+additions)[:MAX_WATCHED_SPOT]
         else:
-            target=tuple(candidates[:3])
+            target=tuple(candidates[:MAX_WATCHED_SPOT])
         if target!=old:
             _watched=target
             _lease_at=now
