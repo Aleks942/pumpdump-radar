@@ -966,10 +966,11 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     [z["symbol"] for z in candidates],
                     urgent_symbols=priority,
                 )
-                from post_pump_market_context import watch as watch_market_context
-                watch_market_context([p.replace("-USDT", "USDT") for p in selected])
+                spot_selected=set(selected)
                 rows=[z for z in candidates
-                      if z["symbol"][:-4]+"-USDT" in selected]
+                      if z["symbol"][:-4]+"-USDT" in spot_selected][:MAX_ACTIVE]
+                from post_pump_market_context import watch as watch_market_context
+                watch_market_context([z["symbol"] for z in rows])
             else:
                 rows=candidates[:MAX_ACTIVE]  # deterministic offline tests
             selected_symbols={z["symbol"] for z in rows}
