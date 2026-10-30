@@ -155,7 +155,7 @@ class SpotStreamTests(unittest.TestCase):
                         with patch.object(stream.time,"time",return_value=10060.0):
                             self.assertEqual(stream.watch(
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
-                                    "AAA-USDT","BBB-USDT","CCC-USDT"))
+                                    "AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"))
                         with patch.object(stream.time,"time",return_value=11000.0):
                             self.assertEqual(stream.watch(
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
@@ -201,7 +201,7 @@ class SpotStreamTests(unittest.TestCase):
                 with patch.object(stream,"_lease_at",10000.0):
                   with patch.object(stream.time,"time",return_value=10100.0):
                     self.assertEqual(stream.watch(["DDDUSDT"]),(
-                        "AAA-USDT","BBB-USDT","CCC-USDT"))
+                        "AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"))
                   with patch.object(stream.time,"time",return_value=11000.0):
                     self.assertEqual(stream.watch(["DDDUSDT"]),("DDD-USDT",))
 
