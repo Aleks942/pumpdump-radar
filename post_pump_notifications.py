@@ -15,15 +15,15 @@ from zoneinfo import ZoneInfo
 
 DB_PATH = os.getenv('PUMP_WATCH_DB', '/data/pump_watch.sqlite3')
 TITLES = {
-    'DISCOVERED': '🛰 EXTREME PUMP — TOP WATCH',
-    'EARLY_WEAKENING': '🟡 EARLY-SHORT — ПОКУПАТЕЛЬ СЛАБЕЕТ',
-    'WEAKENING': '⚠️ ОСЛАБЛЕНИЕ ПАМПА — SHORT WATCH',
-    'TREND_SHIFT': '📉 ПРОБОЙ ПОДДЕРЖКИ — ЖДЁМ ПОДТВЕРЖДЕНИЕ',
-    'PRE_SHORT': '🟠 PRE-SHORT 4/5 — SPOT ЕЩЁ НЕ ГОТОВ',
-    'SHORT_CONFIRMED': '🔴 SHORT CONFIRMED — ЖДЁМ РЕТЕСТ',
-    'RETEST': '🔎 RETEST — ПРОВЕРКА ПРОДАВЦОВ',
-    'ENTRY_ZONE': '🎯 SHORT ENTRY ZONE',
-    'READY_RESEARCH': '🧪 LEGACY SHORT PLAN',
+    'DISCOVERED': '🛰 СИЛЬНЫЙ ПАМП — НАБЛЮДАЕМ',
+    'EARLY_WEAKENING': '🟡 РАННЕЕ ОСЛАБЛЕНИЕ — ПОКУПАТЕЛЬ СЛАБЕЕТ',
+    'WEAKENING': '⚠️ ПАМП ОСЛАБЕВАЕТ — СЛЕДИМ ЗА ШОРТОМ',
+    'TREND_SHIFT': '📉 СТРУКТУРА СЛОМАНА ВНИЗ — ЖДЁМ ПОДТВЕРЖДЕНИЕ',
+    'PRE_SHORT': '🟠 РАННИЙ СИГНАЛ НА ШОРТ — 4 ИЗ 5',
+    'SHORT_CONFIRMED': '🔴 ШОРТ ПОДТВЕРЖДЁН — ЖДЁМ ПОВТОРНУЮ ПРОВЕРКУ УРОВНЯ',
+    'RETEST': '🔎 ПОВТОРНАЯ ПРОВЕРКА УРОВНЯ — СМОТРИМ ПРОДАВЦОВ',
+    'ENTRY_ZONE': '🎯 ЗОНА ВХОДА В ШОРТ',
+    'READY_RESEARCH': '🧪 ТЕСТОВЫЙ ПЛАН НА ШОРТ',
     'CANCELLED': '⛔ СЦЕНАРИЙ ОТМЕНЁН',
 }
 CANCEL_REASONS = {
@@ -150,12 +150,12 @@ def message(event):
         lines.append('Предыдущий сценарий больше не актуален. Это не исполнение сделки.')
     elif kind == 'PRE_SHORT':
         lines += ['⚠️ Ранний SHORT-сценарий: подтверждены Futures + OI + структура + продавец.',
-                  'Spot сейчас NOT_READY — это не отрицание шорта, но полного подтверждения ещё нет.',
-                  'Риск выше, чем у SHORT CONFIRMED. Не догоняем движение; ждём Spot или ретест.']
+                  'Спотовые данные пока не готовы — это не отменяет сценарий, но полного подтверждения ещё нет.',
+                  'Риск выше, чем у подтверждённого шорта. Не догоняем движение; ждём спотовое подтверждение или повторную проверку уровня.']
     elif kind == 'SHORT_CONFIRMED':
         lines += ['✅ Продавцы подтверждены: Futures + Spot + OI + структура.',
                   '⏳ Вход не догоняем. Ждём отдельный закрытый 5м ретест.',
-                  'SHORT подтверждён как сценарий, но ENTRY ZONE ещё нет.']
+                  'Шорт подтверждён как сценарий, но зоны входа ещё нет.']
     elif kind in ('ENTRY_ZONE','READY_RESEARCH'):
         try:
             d=json.loads(event.get('evidence_json') or '{}')
