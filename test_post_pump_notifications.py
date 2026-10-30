@@ -71,6 +71,14 @@ class NotificationsTests(unittest.TestCase):
         self.assertIn('свежий кэш',msg)
         self.assertIn('-18.50%',msg)
 
+    def test_pre_short_message_marks_higher_risk_and_missing_spot(self):
+        event={'kind':'PRE_SHORT','symbol':'TESTUSDT','at':NOW,
+               'rise_pct':45.0,'retrace_pct':9.0,'evidence_json':'{}'}
+        msg=notify.message(event)
+        self.assertIn('PRE-SHORT 4/5',msg)
+        self.assertIn('Spot сейчас NOT_READY',msg)
+        self.assertIn('Риск выше',msg)
+
     def test_short_confirmed_waits_for_retest_not_entry(self):
         event={'kind':'SHORT_CONFIRMED','symbol':'TESTUSDT','at':NOW,
                'rise_pct':55.0,'retrace_pct':8.5,'evidence_json':'{}'}
