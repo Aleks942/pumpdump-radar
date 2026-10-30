@@ -131,10 +131,11 @@ _PHASE_PRIORITY = {
     "READY_RESEARCH": 0,  # legacy rows from older deployments
     "RETEST": 1,
     "SHORT_CONFIRMED": 2,
-    "TREND_SHIFT": 3,
-    "WEAKENING": 4,
-    "EARLY_WEAKENING": 5,
-    "WATCH": 6,
+    "PRE_SHORT": 3,
+    "TREND_SHIFT": 4,
+    "WEAKENING": 5,
+    "EARLY_WEAKENING": 6,
+    "WATCH": 7,
 }
 
 
@@ -164,7 +165,7 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
     retrace = max(0.0, 100.0 * (1.0 - price / peak)) if price and peak > 0 else 0.0
     urgent = (
         phase in ("ENTRY_ZONE", "READY_RESEARCH", "RETEST",
-                  "SHORT_CONFIRMED", "TREND_SHIFT",
+                  "SHORT_CONFIRMED", "PRE_SHORT", "TREND_SHIFT",
                   "WEAKENING", "EARLY_WEAKENING")
         or retrace >= PRIORITY_RETRACE_PCT
     )
@@ -416,6 +417,23 @@ def _evidence_ok(evidence,spot):
             and (local is not None or agg is not None))
 
 
+def _pre_short_base4(evidence,structure):
+    """Early warning only: Futures + OI + structure + local sellers are ready.
+
+    Spot is intentionally excluded here. PRE_SHORT may use this only when
+    Spot is NOT_READY; a ready non-bearish Spot feed blocks the warning.
+    """
+    f=num(evidence.get("futures_taker_5m_imbalance_pct"))
+    local=num(evidence.get("local_oi_5m_pct"))
+    agg=num(evidence.get("agg_oi_5m_pct"))
+    flow=evidence.get("order_flow") or {}
+    return (f is not None and f<=-10
+            and (local is not None or agg is not None)
+            and structure.get("trend_shift") is True
+            and flow.get("status")=="CONFIRMED"
+            and flow.get("ready") is True)
+
+
 def _plan(price,structure,level,retrace,spread,equity):
     atr=num(structure.get("atr"))
     high=num(structure.get("recent_hi"))
@@ -515,7 +533,7 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
 def _context_interval(phase):
     return (HOT_CONTEXT_INTERVAL_SEC
             if phase in ("EARLY_WEAKENING","WEAKENING","TREND_SHIFT",
-                         "SHORT_CONFIRMED","RETEST")
+                         "PRE_SHORT","SHORT_CONFIRMED","RETEST")
             else CONTEXT_INTERVAL_SEC)
 
 
@@ -716,19 +734,37 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         _record_phase(db,st,now,"TREND_SHIFT","CLOSED_5M_BREAK_15M_H1_ALIGNED",ev,struct)
     promoted_confirmed=False
     # Seller takeover is useful context, but it is not mandatory here.
-    # SHORT_CONFIRMED still requires bearish Spot + Futures, reliable OI,
+    # SHORT_CONFIRMED remains strict: bearish Spot + Futures, reliable OI,
     # aligned closed-candle structure, and a locally confirmed seller response.
     strict_short=(
         _evidence_ok(ev, spot)
         and (ev.get("order_flow") or {}).get("status")=="CONFIRMED"
         and (ev.get("order_flow") or {}).get("ready") is True
     )
-    if (st["phase"]=="TREND_SHIFT"
+    base4=_pre_short_base4(ev,struct)
+    spot_not_ready=spot.get("ready") is not True
+    if (st["phase"]=="PRE_SHORT" and not strict_short
+            and (not base4 or not spot_not_ready)):
+        # PRE_SHORT is only valid while the four independent confirmations
+        # remain present and Spot is unavailable. Ready non-bearish Spot
+        # explicitly removes the early warning instead of being ignored.
+        _record_phase(db,st,now,"TREND_SHIFT",
+                      "PRE_SHORT_INVALIDATED_BY_SPOT_OR_BASE4",ev,struct)
+    if (st["phase"] in ("TREND_SHIFT","PRE_SHORT")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and strict_short):
         promoted_confirmed=_record_phase(
             db,st,now,"SHORT_CONFIRMED",
             "SPOT_FUTURES_OI_STRUCTURE_SELLERS_CONFIRMED_WAIT_RETEST",ev,struct)
+    elif (st["phase"]=="TREND_SHIFT"
+            and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
+            and base4 and spot_not_ready):
+        ev["pre_short_4of5"]={
+            "futures":True,"oi":True,"structure":True,"seller":True,
+            "spot":"NOT_READY","risk":"HIGHER_THAN_SHORT_CONFIRMED",
+        }
+        _record_phase(db,st,now,"PRE_SHORT",
+                      "PRE_SHORT_4_OF_5_SPOT_NOT_READY",ev,struct)
     if (not promoted_confirmed
             and st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC):
