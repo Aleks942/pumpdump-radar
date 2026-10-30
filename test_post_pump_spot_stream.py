@@ -159,9 +159,9 @@ class SpotStreamTests(unittest.TestCase):
                         with patch.object(stream.time,"time",return_value=11000.0):
                             self.assertEqual(stream.watch(
                                 ["DDDUSDT","AAAUSDT","BBBUSDT","CCCUSDT"]),(
-                                    "DDD-USDT","AAA-USDT","BBB-USDT"))
+                                    "DDD-USDT","AAA-USDT","BBB-USDT","CCC-USDT"))
 
-    def test_urgent_candidate_preempts_quiet_slot_during_lease(self):
+    def test_urgent_candidate_is_added_without_dropping_warm_slots_when_capacity_exists(self):
         universe={"AAA-USDT","BBB-USDT","CCC-USDT","SOON-USDT"}
         with patch.object(stream,"_refresh_spot_universe",
                           return_value=(universe,"READY")):
@@ -175,7 +175,21 @@ class SpotStreamTests(unittest.TestCase):
                         ["SOONUSDT","AAAUSDT","BBBUSDT","CCCUSDT"],
                         urgent_symbols=["SOONUSDT"],
                     )
-        self.assertEqual(selected,("SOON-USDT","AAA-USDT","BBB-USDT"))
+        self.assertEqual(selected,("SOON-USDT","AAA-USDT","BBB-USDT","CCC-USDT"))
+
+    def test_spot_watch_is_bounded_to_ten_symbols(self):
+        pairs=[f"S{i:02d}USDT" for i in range(12)]
+        universe={p[:-4]+"-USDT" for p in pairs}
+        with patch.object(stream,"_refresh_spot_universe",
+                          return_value=(universe,"READY")):
+          with patch.object(stream,"_thread",ThreadAlive()):
+            with patch.object(stream,"_socket",None):
+              with patch.object(stream,"_watched",()):
+                with patch.object(stream,"_lease_at",0.0):
+                  selected=stream.watch(pairs)
+        self.assertEqual(len(selected),10)
+        self.assertEqual(selected[0],"S00-USDT")
+        self.assertEqual(selected[-1],"S09-USDT")
 
     def test_ranked_out_pair_keeps_subscription_during_lease(self):
         universe={"AAA-USDT","BBB-USDT","CCC-USDT","DDD-USDT"}
