@@ -19,6 +19,7 @@ TITLES = {
     'EARLY_WEAKENING': '🟡 EARLY-SHORT — ПОКУПАТЕЛЬ СЛАБЕЕТ',
     'WEAKENING': '⚠️ ОСЛАБЛЕНИЕ ПАМПА — SHORT WATCH',
     'TREND_SHIFT': '📉 ПРОБОЙ ПОДДЕРЖКИ — ЖДЁМ ПОДТВЕРЖДЕНИЕ',
+    'PRE_SHORT': '🟠 PRE-SHORT 4/5 — SPOT ЕЩЁ НЕ ГОТОВ',
     'SHORT_CONFIRMED': '🔴 SHORT CONFIRMED — ЖДЁМ РЕТЕСТ',
     'RETEST': '🔎 RETEST — ПРОВЕРКА ПРОДАВЦОВ',
     'ENTRY_ZONE': '🎯 SHORT ENTRY ZONE',
@@ -147,6 +148,10 @@ def message(event):
     if kind == 'CANCELLED':
         lines.append(CANCEL_REASONS[event['reason']])
         lines.append('Предыдущий сценарий больше не актуален. Это не исполнение сделки.')
+    elif kind == 'PRE_SHORT':
+        lines += ['⚠️ Ранний SHORT-сценарий: подтверждены Futures + OI + структура + продавец.',
+                  'Spot сейчас NOT_READY — это не отрицание шорта, но полного подтверждения ещё нет.',
+                  'Риск выше, чем у SHORT CONFIRMED. Не догоняем движение; ждём Spot или ретест.']
     elif kind == 'SHORT_CONFIRMED':
         lines += ['✅ Продавцы подтверждены: Futures + Spot + OI + структура.',
                   '⏳ Вход не догоняем. Ждём отдельный закрытый 5м ретест.',
