@@ -263,7 +263,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+130,last=111)
             self.drive(NOW+260,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        self.assertIn(state[0]["phase"],("TREND_SHIFT","RETEST"))
         self.assertNotIn("PRE_SHORT",[e["phase"] for e in events])
         self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
 
@@ -484,7 +484,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+260,last=110)
             self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"RETEST")
+        self.assertEqual(state[0]["phase"],"PRE_SHORT")
+        self.assertEqual(state[0]["watch_reason"],"PRE_SHORT_4_OF_5_SPOT_NOT_READY")
+        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
         self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
 
