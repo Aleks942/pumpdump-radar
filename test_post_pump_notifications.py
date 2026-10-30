@@ -75,15 +75,15 @@ class NotificationsTests(unittest.TestCase):
         event={'kind':'PRE_SHORT','symbol':'TESTUSDT','at':NOW,
                'rise_pct':45.0,'retrace_pct':9.0,'evidence_json':'{}'}
         msg=notify.message(event)
-        self.assertIn('PRE-SHORT 4/5',msg)
-        self.assertIn('Spot сейчас NOT_READY',msg)
+        self.assertIn('РАННИЙ СИГНАЛ НА ШОРТ',msg)
+        self.assertIn('Спотовые данные пока не готовы',msg)
         self.assertIn('Риск выше',msg)
 
     def test_short_confirmed_waits_for_retest_not_entry(self):
         event={'kind':'SHORT_CONFIRMED','symbol':'TESTUSDT','at':NOW,
                'rise_pct':55.0,'retrace_pct':8.5,'evidence_json':'{}'}
         msg=notify.message(event)
-        self.assertIn('SHORT CONFIRMED',msg)
+        self.assertIn('ШОРТ ПОДТВЕРЖДЁН',msg)
         self.assertIn('Ждём отдельный закрытый 5м ретест',msg)
         self.assertNotIn('Зона входа SHORT:',msg)
 
@@ -94,7 +94,7 @@ class NotificationsTests(unittest.TestCase):
             self.run_delivery(NOW+1+i)
             self.run_delivery(NOW+1+i)
         self.assertEqual(self.sender.call_count,6)
-        self.assertIn('SHORT ENTRY ZONE',self.sender.call_args.args[0])
+        self.assertIn('ЗОНА ВХОДА В ШОРТ',self.sender.call_args.args[0])
         self.event('CANCELLED',NOW+10,'BREAK_INVALIDATED')
         self.run_delivery(NOW+10)
         self.assertEqual(self.sender.call_count,7)
@@ -146,7 +146,7 @@ class NotificationsTests(unittest.TestCase):
         self.event('ENTRY_ZONE',NOW+2)
         self.run_delivery(NOW+2)
         self.assertEqual(self.sender.call_count,1)
-        self.assertIn('SHORT ENTRY ZONE',self.sender.call_args.args[0])
+        self.assertIn('ЗОНА ВХОДА В ШОРТ',self.sender.call_args.args[0])
 
     def test_no_cancellation_without_prior_notification(self):
         self.event('CANCELLED',reason='BREAK_INVALIDATED')
