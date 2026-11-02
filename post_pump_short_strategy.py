@@ -46,6 +46,8 @@ HOT_CONTEXT_INTERVAL_SEC=60
 MAX_EPISODE_SEC=72*3600
 ENTRY_ZONE_BELOW_ATR=0.70
 ENTRY_ZONE_ABOVE_ATR=0.15
+PRACTICAL_ENTRY_BELOW_ATR=0.55
+PRACTICAL_ENTRY_ABOVE_ATR=0.10
 SPOT_POLL_INTERVAL_SEC=65
 STALE_SYMBOL_SEC=24*3600
 SPOT_WINDOW=300
@@ -765,6 +767,37 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         }
         _record_phase(db,st,now,"PRE_SHORT",
                       "PRE_SHORT_4_OF_5_SPOT_NOT_READY",ev,struct)
+    # Practical entry: after a strict SHORT_CONFIRMED, do not require a
+    # textbook later 5m wick/retest if the live quote itself returns to a tight
+    # no-chase band around the broken level and all strict evidence still holds.
+    # This keeps the signal actionable without weakening Spot/Futures/OI/seller
+    # confirmation. A price already too far below the level is still rejected.
+    if (st["phase"]=="SHORT_CONFIRMED"
+            and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
+            and strict_short
+            and profile.get("liquid")
+            and struct["trend_shift"] and struct["h1"]!="UP"):
+        level=st["break_level"]
+        atr=num(struct.get("atr"))
+        price=num(profile.get("last"))
+        if (level is not None and atr is not None and atr>0 and price is not None):
+            practical_low=max(0.0,level-atr*PRACTICAL_ENTRY_BELOW_ATR)
+            practical_high=level+atr*PRACTICAL_ENTRY_ABOVE_ATR
+            if practical_low<=price<=practical_high:
+                plan=_plan(price,struct,level,st["last_retrace_pct"],
+                           profile["spread"],equity)
+                if plan is not None and _record_phase(
+                        db,st,now,"ENTRY_ZONE",
+                        "STRICT_SHORT_LIVE_PRICE_IN_PRACTICAL_ENTRY_ZONE",
+                        ev,struct,plan):
+                    st["last_plan_at"]=now
+                    st["entry_zone_at"]=now
+                    print(f"[SHORT_PRACTICAL_ENTRY] {sym} "
+                          f"price={price:.8g} "
+                          f"zone={practical_low:.8g}-{practical_high:.8g} "
+                          "strict_short=true no_chase=true research_only=true",
+                          flush=True)
+
     if (not promoted_confirmed
             and st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC):
