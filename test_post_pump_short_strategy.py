@@ -281,6 +281,28 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertIsNone(strat._plan(110,st,112,20,60,50))
         self.assertIsNone(strat._plan(110,st,112,20,6,None)["quantity"])
 
+    def test_strict_short_can_enter_practical_live_zone_without_waiting_full_retest(self):
+        with patch.object(strat,"analyze_structure",
+                          side_effect=lambda a,b,c,now:
+                              structure(now,broken=now>=NOW+130)):
+            with patch.object(strat,"spot_status",
+                side_effect=lambda db,symbol,now:
+                   {"ready":now>=NOW+260,"imbalance_pct":-40,
+                    "reason":"OVERLAP_VERIFIED_5M"}):
+                self.drive(NOW,last=115,equity_usdt=50)
+                self.drive(NOW+130,last=111,equity_usdt=50)
+                self.drive(NOW+260,last=110,equity_usdt=50)
+                self.assertEqual(self.data()[0][0]["phase"],"SHORT_CONFIRMED")
+                self.drive(NOW+390,last=110.5,equity_usdt=50)
+        state,events=self.data()
+        self.assertEqual(state[0]["phase"],"ENTRY_ZONE")
+        self.assertEqual(events[-1]["reason"],
+                         "STRICT_SHORT_LIVE_PRICE_IN_PRACTICAL_ENTRY_ZONE")
+        self.assertNotIn("RETEST",[e["phase"] for e in events])
+        self.assertIsNotNone(events[-1]["entry"])
+        self.assertGreater(events[-1]["stop"],events[-1]["entry"])
+        self.assertLess(events[-1]["tp1"],events[-1]["entry"])
+
     def test_end_to_end_progression_has_real_later_retest(self):
         # Test at three strictly increasing 5m closes, NOT an instant signal
         # triggered by reading a candle that was already a retest.
