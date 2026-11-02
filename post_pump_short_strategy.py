@@ -34,6 +34,11 @@ from post_pump_spot_stream import (
     verified as verified_spot_stream,
     snapshot_fallback as spot_snapshot_fallback,
 )
+from post_pump_binance_spot_stream import (
+    watch as watch_binance_spot_stream,
+    verified as verified_binance_spot_stream,
+    snapshot_fallback as binance_spot_snapshot_fallback,
+)
 
 DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
 MIN_RISE_PCT=30.0
@@ -601,8 +606,16 @@ def _fetch_spot(symbol):
 
 def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_path=None):
     sym=st["symbol"]
-    ws_spot=(verified_spot_stream(sym) if spot_reader is _fetch_spot
-             else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
+    if spot_reader is _fetch_spot:
+        okx_ws=verified_spot_stream(sym)
+        binance_ws=verified_binance_spot_stream(sym)
+        ws_spot=(okx_ws if okx_ws.get("ready")
+                 else binance_ws if binance_ws.get("ready")
+                 else okx_ws)
+    else:
+        okx_ws={"ready":False,"reason":"INJECTED_SPOT_SOURCE"}
+        binance_ws={"ready":False,"reason":"INJECTED_SPOT_SOURCE"}
+        ws_spot=okx_ws
     # Snapshot the preceding market observation before overwriting it.
     # Comparing a rolling 24h peak alone would give false early warnings.
     previous_price=num(st.get("last_price"))
@@ -657,10 +670,15 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         spot=ws_spot
     else:
         overlap_spot=spot_status(db,sym,now)
-        snapshot=(spot_snapshot_fallback(sym) if spot_reader is _fetch_spot
-                  else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
-        spot=(overlap_spot if overlap_spot.get("ready")
-              else snapshot if snapshot.get("ready")
+        okx_snapshot=(spot_snapshot_fallback(sym) if spot_reader is _fetch_spot
+                      else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
+        binance_snapshot=(binance_spot_snapshot_fallback(sym)
+                          if spot_reader is _fetch_spot
+                          else {"ready":False,"reason":"INJECTED_SPOT_SOURCE"})
+        spot=(binance_ws if binance_ws.get("ready")
+              else overlap_spot if overlap_spot.get("ready")
+              else okx_snapshot if okx_snapshot.get("ready")
+              else binance_snapshot if binance_snapshot.get("ready")
               else overlap_spot)
     if now-st["last_context_at"]<_context_interval(st["phase"]):
         return status,None
@@ -999,9 +1017,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     [z["symbol"] for z in candidates],
                     urgent_symbols=priority,
                 )
+                selected_binance=watch_binance_spot_stream(
+                    [z["symbol"] for z in candidates],
+                    urgent_symbols=priority,
+                )
                 spot_selected=set(selected)
+                binance_selected=set(selected_binance)
                 rows=[z for z in candidates
-                      if z["symbol"][:-4]+"-USDT" in spot_selected][:MAX_ACTIVE]
+                      if (z["symbol"][:-4]+"-USDT" in spot_selected
+                          or z["symbol"] in binance_selected)][:MAX_ACTIVE]
                 from post_pump_market_context import watch as watch_market_context
                 watch_market_context([z["symbol"] for z in rows])
             else:
