@@ -263,9 +263,29 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+130,last=111)
             self.drive(NOW+260,last=110)
         state,events=self.data()
-        self.assertIn(state[0]["phase"],("TREND_SHIFT","RETEST"))
+        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
         self.assertNotIn("PRE_SHORT",[e["phase"] for e in events])
         self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
+        self.assertNotIn("RETEST",[e["phase"] for e in events])
+
+    def test_trend_shift_cannot_skip_short_confirmation_into_retest(self):
+        with patch.object(strat,"analyze_structure",
+                          side_effect=lambda a,b,c,now:
+                              structure(now,broken=now>=NOW+130)):
+            with patch.object(strat,"spot_status",return_value={
+                    "ready":True,"imbalance_pct":25,
+                    "reason":"OVERLAP_VERIFIED_5M"}):
+                self.drive(NOW,last=115)
+                self.drive(NOW+130,last=111)
+                self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
+                self.drive(NOW+260,last=110)
+                self.drive(NOW+390,last=110)
+        state,events=self.data()
+        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        phases=[e["phase"] for e in events]
+        self.assertNotIn("SHORT_CONFIRMED",phases)
+        self.assertNotIn("RETEST",phases)
+        self.assertNotIn("ENTRY_ZONE",phases)
 
     def test_stop_tp_and_anti_late(self):
         st=structure(NOW)
@@ -403,9 +423,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 self.drive(NOW+260,last=110)
                 self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"RETEST")
-        self.assertEqual(state[0]["watch_reason"],
-                         "WAITING_FOR_LOCAL_AGGRESSION_RESPONSE")
+        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        self.assertNotIn("RETEST",[e["phase"] for e in events])
+        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
         self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
     def test_paper_plan_registered_only_after_final_research_confirmation(self):
