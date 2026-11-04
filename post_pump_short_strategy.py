@@ -817,7 +817,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
                           flush=True)
 
     if (not promoted_confirmed
-            and st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED")
+            and st["phase"]=="SHORT_CONFIRMED"
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC):
         level=st["break_level"]
         last5=struct["last5"]
