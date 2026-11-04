@@ -423,9 +423,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 self.drive(NOW+260,last=110)
                 self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"RETEST")
-        self.assertEqual(state[0]["watch_reason"],
-                         "WAITING_FOR_LOCAL_AGGRESSION_RESPONSE")
+        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        self.assertNotIn("RETEST",[e["phase"] for e in events])
+        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
         self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
     def test_paper_plan_registered_only_after_final_research_confirmation(self):
