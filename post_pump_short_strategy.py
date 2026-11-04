@@ -1163,6 +1163,31 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                           "phase=",item["phase"],"reason=",item["reason"],
                           "candidates=",item["n"],
                           "descriptive_only=true no_gate_change=true",flush=True)
+                active_rows=report_db.execute("""SELECT symbol,phase,rise_max,
+                    last_retrace_pct,last_price,break_level,watch_reason
+                    FROM post_pump_short_strategy
+                    WHERE last_seen_at>=? AND phase NOT IN ('EXPIRED','CANCELLED')
+                    ORDER BY CASE phase
+                        WHEN 'ENTRY_ZONE' THEN 0
+                        WHEN 'SHORT_CONFIRMED' THEN 1
+                        WHEN 'PRE_SHORT' THEN 2
+                        WHEN 'TREND_SHIFT' THEN 3
+                        WHEN 'WEAKENING' THEN 4
+                        WHEN 'EARLY_WEAKENING' THEN 5
+                        ELSE 6 END,
+                        COALESCE(last_retrace_pct,0) DESC
+                    LIMIT 12""",(now-STALE_SYMBOL_SEC,)).fetchall()
+                for row in active_rows:
+                    print("[POST_PUMP_CANDIDATE]",
+                          "symbol=",row["symbol"],
+                          "phase=",row["phase"],
+                          "rise=",round(float(row["rise_max"] or 0),2),
+                          "retrace=",round(float(row["last_retrace_pct"] or 0),2),
+                          "price=",row["last_price"],
+                          "break=",row["break_level"],
+                          "reason=",row["watch_reason"],
+                          "descriptive_only=true no_gate_change=true",
+                          flush=True)
         except sqlite3.Error:
             print("[POST_PUMP_PAPER_REPORT_ERROR] sqlite",flush=True)
     return diagnostics
