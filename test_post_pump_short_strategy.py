@@ -313,7 +313,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(state[0]["phase"],"SHORT_CONFIRMED")
         self.assertIn("SHORT_CONFIRMED",[e["phase"] for e in events])
 
-    def test_trend_shift_cannot_skip_short_confirmation_into_retest(self):
+    def test_retest_still_requires_short_confirmation_when_spot_is_bullish(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                               structure(now,broken=now>=NOW+130)):
@@ -326,10 +326,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 self.drive(NOW+260,last=110)
                 self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        self.assertEqual(state[0]["phase"],"RETEST")
         phases=[e["phase"] for e in events]
-        self.assertNotIn("SHORT_CONFIRMED",phases)
-        self.assertNotIn("RETEST",phases)
+        self.assertLess(phases.index("SHORT_CONFIRMED"),phases.index("RETEST"))
         self.assertNotIn("ENTRY_ZONE",phases)
 
     def test_stop_tp_and_anti_late(self):
