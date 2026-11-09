@@ -64,23 +64,25 @@ class LocalFlowTests(unittest.TestCase):
             {"trend_shift":True,"bearish5":True,
              "last5":{"o":101,"c":99}},AT)
         self.assertEqual(result["status"],"INSUFFICIENT_DATA")
-        self.assertEqual(result["reason"],"LOCAL_FLOW_NOT_READY")
+        self.assertEqual(result["reason"],"LOCAL_FUTURES_FLOW_NOT_READY")
         self.assertEqual(result["missing_windows"],["FUTURES_1M"])
 
-    def test_stale_symbol_trades_are_not_approved_by_global_health(self):
+    def test_stale_spot_is_informational_and_does_not_block_futures_signal(self):
         fw={"1m":window(-30),"5m":window(-30)}
         sw={"5m":dict(window(-30),last_trade_age_sec=100)}
         result=flow.verify_local(100,fw,sw,{"trend_shift":True,"bearish5":True},now=AT)
-        self.assertEqual(result["status"],"INSUFFICIENT_DATA")
-        self.assertIn("SPOT_5M",result["missing_windows"])
+        self.assertEqual(result["status"],"CONFIRMED")
+        self.assertTrue(result["spot_informational_only"])
+        self.assertIsNone(result["spot_5m_imbalance_pct"])
 
-    def test_missing_spot_window_is_identified_without_approval(self):
+    def test_missing_spot_does_not_block_confirmed_futures_flow(self):
         result=flow.verify_local(99,
             {"1m":window(-40),"5m":window(-30)}, {},
             {"trend_shift":True,"bearish5":True,
              "last5":{"o":101,"c":99}},AT)
-        self.assertEqual(result["status"],"INSUFFICIENT_DATA")
-        self.assertEqual(result["missing_windows"],["SPOT_5M"])
+        self.assertEqual(result["status"],"CONFIRMED")
+        self.assertTrue(result["spot_informational_only"])
+        self.assertIsNone(result["spot_5m_imbalance_pct"])
 
     def test_verified_spot_fallback_keeps_local_flow_operational(self):
         result=flow.verify_local(98,
@@ -116,8 +118,9 @@ class LocalFlowTests(unittest.TestCase):
                            "source_reason":"OKX_SPOT_WS_5M",
                            "last_trade_age_sec":301,
                            "count":25,"imbalance_pct":-22})
-        self.assertEqual(stale["status"],"INSUFFICIENT_DATA")
-        self.assertEqual(stale["missing_windows"],["SPOT_5M"])
+        self.assertEqual(stale["status"],"CONFIRMED")
+        self.assertTrue(stale["spot_informational_only"])
+        self.assertIsNone(stale["spot_5m_imbalance_pct"])
 
     def test_dispatch_uses_local_readers_and_episode_scoped_storage(self):
         readers=(lambda symbol:{"1m":window(-40),"5m":window(-30)},
