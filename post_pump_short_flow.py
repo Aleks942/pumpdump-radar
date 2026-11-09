@@ -51,6 +51,10 @@ def setup(db):
     )""")
     db.execute("""CREATE INDEX IF NOT EXISTS idx_post_pump_flow_lookup
         ON post_pump_short_flow_results(symbol,verified_at)""")
+    cols={row[1] for row in db.execute(
+        "PRAGMA table_info(post_pump_short_flow_results)")}
+    if "volume_analysis_json" not in cols:
+        db.execute("ALTER TABLE post_pump_short_flow_results ADD COLUMN volume_analysis_json TEXT")
 
 
 
@@ -116,13 +120,18 @@ def store_result(db,symbol,episode_at,observed_at,result,now):
             or span is not None and not 0<span<=300):
         return False
     setup(db)
+    volume_analysis=result.get("volume_analysis")
+    volume_json=(json.dumps(volume_analysis,sort_keys=True)
+                 if isinstance(volume_analysis,dict) else None)
     db.execute("""INSERT OR REPLACE INTO post_pump_short_flow_results(
         symbol,episode_at,observed_at,verified_at,status,reason,
-        delta_ratio,price_change_pct,trade_span_sec,evidence_event)
-        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        delta_ratio,price_change_pct,trade_span_sec,evidence_event,
+        volume_analysis_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (symbol,episode,req,stamp,result["status"],
          str(result.get("reason") or "")[:120],
-         delta,price,span,str(result.get("evidence_event") or "NONE")[:90]))
+         delta,price,span,str(result.get("evidence_event") or "NONE")[:90],
+         volume_json))
     return True
 
 
