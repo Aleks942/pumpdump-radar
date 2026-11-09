@@ -71,6 +71,17 @@ class NotificationsTests(unittest.TestCase):
         self.assertIn('свежий кэш',msg)
         self.assertIn('-18.50%',msg)
 
+    def test_quality_reversal_message_is_early_warning_not_entry(self):
+        event={'kind':'QUALITY_REVERSAL','symbol':'TESTUSDT','at':NOW,
+               'rise_pct':45.0,'retrace_pct':11.0,
+               'evidence_json':json.dumps({'quality_reversal':{
+                   'score':5,'seller_shift':True,'trade_approved':False}})}
+        msg=notify.message(event)
+        self.assertIn('КАЧЕСТВЕННЫЙ РАЗВОРОТ',msg)
+        self.assertIn('переход давления к продавцам',msg)
+        self.assertIn('ещё не подтверждённый вход',msg)
+        self.assertNotIn('Зона входа SHORT:',msg)
+
     def test_pre_short_message_marks_higher_risk_and_missing_spot(self):
         event={'kind':'PRE_SHORT','symbol':'TESTUSDT','at':NOW,
                'rise_pct':45.0,'retrace_pct':9.0,'evidence_json':'{}'}
