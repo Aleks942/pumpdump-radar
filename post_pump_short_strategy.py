@@ -139,10 +139,11 @@ _PHASE_PRIORITY = {
     "RETEST": 1,
     "SHORT_CONFIRMED": 2,
     "PRE_SHORT": 3,
-    "TREND_SHIFT": 4,
-    "WEAKENING": 5,
-    "EARLY_WEAKENING": 6,
-    "WATCH": 7,
+    "QUALITY_REVERSAL": 4,
+    "TREND_SHIFT": 5,
+    "WEAKENING": 6,
+    "EARLY_WEAKENING": 7,
+    "WATCH": 8,
 }
 
 
@@ -172,8 +173,8 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
     retrace = max(0.0, 100.0 * (1.0 - price / peak)) if price and peak > 0 else 0.0
     urgent = (
         phase in ("ENTRY_ZONE", "READY_RESEARCH", "RETEST",
-                  "SHORT_CONFIRMED", "PRE_SHORT", "TREND_SHIFT",
-                  "WEAKENING", "EARLY_WEAKENING")
+                  "SHORT_CONFIRMED", "PRE_SHORT", "QUALITY_REVERSAL",
+                  "TREND_SHIFT", "WEAKENING", "EARLY_WEAKENING")
         or retrace >= PRIORITY_RETRACE_PCT
     )
     return {
@@ -424,6 +425,53 @@ def _evidence_ok(evidence,spot):
             and (local is not None or agg is not None))
 
 
+def _quality_reversal(evidence,structure,spot):
+    """Earlier warning after a real structural break; never approves an entry.
+
+    Requires the closed-candle trend shift plus bearish futures pressure,
+    reliable OI presence and a seller-transition clue from local flow.
+    Missing Spot is allowed for this warning, but fresh bullish Spot blocks it.
+    """
+    if structure.get("trend_shift") is not True or structure.get("broken") is not True:
+        return {"ready":False,"reason":"STRUCTURE_NOT_READY","score":0}
+    f=num(evidence.get("futures_taker_5m_imbalance_pct"))
+    local=num(evidence.get("local_oi_5m_pct"))
+    agg=num(evidence.get("agg_oi_5m_pct"))
+    flow=evidence.get("order_flow") or {}
+    volume=flow.get("volume_analysis") or {}
+    seller_shift=volume.get("seller_shift") is True
+    volume_fade=volume.get("volume_fade") is True
+    event=str(flow.get("evidence_event") or "NONE")
+    seller_event=event in ("SELL_AGGRESSION_CONFIRMED",
+                           "SELLER_TAKEOVER_CONFIRMED",
+                           "BUY_ABSORPTION_CANDIDATE")
+    seller_turn=seller_shift or seller_event
+    spot_ready=spot.get("ready") is True
+    spot_imb=num(spot.get("imbalance_pct"))
+    if spot_ready and spot_imb is not None and spot_imb>=10:
+        return {"ready":False,"reason":"SPOT_BUYERS_STILL_CONTROL","score":0}
+    futures_bearish=f is not None and f<=-5
+    oi_ready=local is not None or agg is not None
+    score=sum((True,futures_bearish,oi_ready,seller_turn,
+               volume_fade,spot_ready and spot_imb is not None and spot_imb<=-5))
+    ready=futures_bearish and oi_ready and seller_turn
+    return {
+        "ready":bool(ready),
+        "reason":"QUALITY_REVERSAL_FORMING" if ready else "QUALITY_REVERSAL_INCOMPLETE",
+        "score":score,
+        "structure":True,
+        "futures_bearish":futures_bearish,
+        "futures_5m_imbalance_pct":f,
+        "oi_ready":oi_ready,
+        "seller_shift":seller_shift,
+        "seller_event":event,
+        "volume_fade":volume_fade,
+        "spot_ready":spot_ready,
+        "spot_imbalance_pct":spot_imb,
+        "trade_approved":False,
+    }
+
+
 def _pre_short_base4(evidence,structure):
     """Early warning only: Futures + OI + structure + local sellers are ready.
 
@@ -540,7 +588,7 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
 def _context_interval(phase):
     return (HOT_CONTEXT_INTERVAL_SEC
             if phase in ("EARLY_WEAKENING","WEAKENING","TREND_SHIFT",
-                         "PRE_SHORT","SHORT_CONFIRMED","RETEST")
+                         "QUALITY_REVERSAL","PRE_SHORT","SHORT_CONFIRMED","RETEST")
             else CONTEXT_INTERVAL_SEC)
 
 
@@ -762,6 +810,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         and (ev.get("order_flow") or {}).get("ready") is True
     )
     base4=_pre_short_base4(ev,struct)
+    quality=_quality_reversal(ev,struct,spot)
     spot_not_ready=spot.get("ready") is not True
     if (st["phase"]=="PRE_SHORT" and not strict_short
             and (not base4 or not spot_not_ready)):
@@ -770,13 +819,17 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         # explicitly removes the early warning instead of being ignored.
         _record_phase(db,st,now,"TREND_SHIFT",
                       "PRE_SHORT_INVALIDATED_BY_SPOT_OR_BASE4",ev,struct)
-    if (st["phase"] in ("TREND_SHIFT","PRE_SHORT")
+    if (st["phase"]=="QUALITY_REVERSAL"
+            and (struct.get("trend_shift") is not True or struct.get("h1")=="UP")):
+        _record_phase(db,st,now,"WEAKENING",
+                      "QUALITY_REVERSAL_INVALIDATED_BY_STRUCTURE",ev,struct)
+    if (st["phase"] in ("TREND_SHIFT","QUALITY_REVERSAL","PRE_SHORT")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and strict_short):
         promoted_confirmed=_record_phase(
             db,st,now,"SHORT_CONFIRMED",
             "SPOT_FUTURES_OI_STRUCTURE_SELLERS_CONFIRMED_WAIT_RETEST",ev,struct)
-    elif (st["phase"]=="TREND_SHIFT"
+    elif (st["phase"] in ("TREND_SHIFT","QUALITY_REVERSAL")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and base4 and spot_not_ready):
         ev["pre_short_4of5"]={
@@ -785,6 +838,13 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         }
         _record_phase(db,st,now,"PRE_SHORT",
                       "PRE_SHORT_4_OF_5_SPOT_NOT_READY",ev,struct)
+    elif (st["phase"]=="TREND_SHIFT"
+            and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
+            and quality.get("ready") is True):
+        ev["quality_reversal"]=quality
+        _record_phase(db,st,now,"QUALITY_REVERSAL",
+                      "QUALITY_REVERSAL_STRUCTURE_FUTURES_OI_SELLER_SHIFT",
+                      ev,struct)
     # Practical entry: after a strict SHORT_CONFIRMED, do not require a
     # textbook later 5m wick/retest if the live quote itself returns to a tight
     # no-chase band around the broken level and all strict evidence still holds.

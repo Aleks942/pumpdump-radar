@@ -45,6 +45,10 @@ def read_order_flow(symbol,now=None,db_path=None,episode_at=None):
             if row is None:
                 return {"ready":False,"status":"INSUFFICIENT_DATA",
                         "reason":"POST_PUMP_FLOW_NOT_VERIFIED"}
+            try:
+                volume_analysis=json.loads(row["volume_analysis_json"] or "{}")
+            except (TypeError,ValueError,KeyError,IndexError):
+                volume_analysis={}
             return {"ready":row["status"] in ("CONFIRMED","CONTRADICTION"),
                     "status":row["status"],
                     "delta_ratio":row["delta_ratio"],
@@ -53,6 +57,7 @@ def read_order_flow(symbol,now=None,db_path=None,episode_at=None):
                     "evidence_event":row["evidence_event"],
                     "buy_absorption_candidate":
                         row["evidence_event"]=="BUY_ABSORPTION_CANDIDATE",
+                    "volume_analysis":volume_analysis,
                     "observed_at":row["observed_at"],
                     "verified_at":row["verified_at"],
                     "age_sec":round(now-row["verified_at"],3),

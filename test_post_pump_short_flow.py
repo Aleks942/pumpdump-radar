@@ -148,6 +148,28 @@ class LocalFlowTests(unittest.TestCase):
         self.assertEqual(second["status"],"CONFIRMED")
         self.assertEqual(second["evidence_event"],"SELLER_TAKEOVER_CONFIRMED")
 
+    def test_volume_context_is_persisted_for_early_quality_reversal(self):
+        result=flow.verify_local(99,
+            {"1m":window(-8),"5m":window(-12)},
+            {},
+            {"trend_shift":True,"bearish5":True,
+             "last5":{"o":101,"c":99}},AT)
+        result["volume_analysis"]={
+            "state":"SELL_PRESSURE_ON_FADING_VOLUME",
+            "activity_ratio":0.3,
+            "volume_fade":True,
+            "seller_shift":True,
+        }
+        self.assertTrue(flow.store_result(
+            self.db,"TESTUSDT",AT-1800,AT,result,AT))
+        self.db.commit()
+        row=flow.latest(self.db,"TESTUSDT",AT,AT-1800)
+        self.assertIn("seller_shift",row["volume_analysis_json"])
+        e=context.read_order_flow("TESTUSDT",AT,self.path,
+                                  episode_at=AT-1800)
+        self.assertTrue(e["volume_analysis"]["seller_shift"])
+        self.assertTrue(e["volume_analysis"]["volume_fade"])
+
     def test_context_reads_local_source(self):
         readers=(lambda symbol:{"1m":window(40),"5m":window(25)},
                  lambda symbol:{"5m":window(15)})
