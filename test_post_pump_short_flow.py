@@ -162,6 +162,7 @@ class LocalFlowTests(unittest.TestCase):
         }
         self.assertTrue(flow.store_result(
             self.db,"TESTUSDT",AT-1800,AT,result,AT))
+        self.db.commit()
         row=flow.latest(self.db,"TESTUSDT",AT,AT-1800)
         self.assertIn("seller_shift",row["volume_analysis_json"])
         e=context.read_order_flow("TESTUSDT",AT,self.path,
