@@ -237,6 +237,53 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             evidence("TESTUSDT",NOW),
             {"ready":True,"imbalance_pct":-40}))
 
+    def test_quality_reversal_warns_before_strict_short_when_spot_missing(self):
+        def enrich(symbol,now,evidence,spot,structure,
+                   liquidations=None,db_path=None,episode_at=None):
+            return dict(evidence,order_flow={
+                "ready":False,
+                "status":"INSUFFICIENT_DATA",
+                "evidence_event":"NONE",
+                "source":"PUMPDUMP_LOCAL_TAKER_FLOW",
+                "volume_analysis":{
+                    "state":"SELL_PRESSURE_ON_FADING_VOLUME",
+                    "volume_fade":True,
+                    "seller_shift":True,
+                },
+            })
+        with patch.object(strat,"enrich_research_evidence",side_effect=enrich):
+          with patch.object(strat,"analyze_structure",
+                            side_effect=lambda a,b,c,now:
+                                structure(now,broken=now>=NOW+130)):
+            with patch.object(strat,"spot_status",return_value={
+                    "ready":False,"reason":"SPOT_WARMING"}):
+                self.drive(NOW,last=115)
+                self.drive(NOW+130,last=111)
+                self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
+                self.drive(NOW+260,last=110)
+        state,events=self.data()
+        self.assertEqual(state[0]["phase"],"QUALITY_REVERSAL")
+        self.assertIn("QUALITY_REVERSAL",[e["phase"] for e in events])
+        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
+        snap=json.loads(events[-1]["evidence_json"])
+        self.assertTrue(snap["quality_reversal"]["seller_shift"])
+        self.assertFalse(snap["quality_reversal"]["trade_approved"])
+
+    def test_bullish_ready_spot_blocks_quality_reversal(self):
+        evidence_row={
+            "futures_taker_5m_imbalance_pct":-20,
+            "local_oi_5m_pct":-0.5,
+            "order_flow":{
+                "volume_analysis":{"seller_shift":True,"volume_fade":True},
+                "evidence_event":"NONE",
+            },
+        }
+        q=strat._quality_reversal(
+            evidence_row,structure(NOW,broken=True),
+            {"ready":True,"imbalance_pct":25})
+        self.assertFalse(q["ready"])
+        self.assertEqual(q["reason"],"SPOT_BUYERS_STILL_CONTROL")
+
     def test_pre_short_4of5_when_spot_not_ready(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
