@@ -224,9 +224,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 db,"TESTUSDT",NOW+519,batch(500,560)),"WARMING")
             self.assertFalse(strat.spot_status(db,"TESTUSDT",NOW+519)["ready"])
 
-    def test_no_signal_without_verified_spot_oi_or_price_trend(self):
-        self.assertFalse(strat._evidence_ok(evidence("TESTUSDT",NOW),
-                          {"ready":False,"imbalance_pct":-90}))
+    def test_spot_is_not_required_but_futures_and_oi_are(self):
+        self.assertTrue(strat._evidence_ok(evidence("TESTUSDT",NOW),
+                         {"ready":False,"imbalance_pct":-90}))
         self.assertFalse(strat._evidence_ok(
             {"futures_taker_5m_imbalance_pct":-60},
             {"ready":True,"imbalance_pct":-60}))
@@ -269,7 +269,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertTrue(snap["quality_reversal"]["seller_shift"])
         self.assertFalse(snap["quality_reversal"]["trade_approved"])
 
-    def test_bullish_ready_spot_blocks_quality_reversal(self):
+    def test_bullish_ready_spot_is_context_only_for_quality_reversal(self):
         evidence_row={
             "futures_taker_5m_imbalance_pct":-20,
             "local_oi_5m_pct":-0.5,
@@ -281,10 +281,11 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         q=strat._quality_reversal(
             evidence_row,structure(NOW,broken=True),
             {"ready":True,"imbalance_pct":25})
-        self.assertFalse(q["ready"])
-        self.assertEqual(q["reason"],"SPOT_BUYERS_STILL_CONTROL")
+        self.assertTrue(q["ready"])
+        self.assertEqual(q["reason"],"QUALITY_REVERSAL_FORMING")
+        self.assertEqual(q["spot_imbalance_pct"],25)
 
-    def test_pre_short_4of5_when_spot_not_ready(self):
+    def test_missing_spot_does_not_block_short_confirmation(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                               structure(now,broken=now>=NOW+130)):
@@ -295,11 +296,10 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.assertEqual(self.data()[0][0]["phase"],"TREND_SHIFT")
             self.drive(NOW+260,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"PRE_SHORT")
-        self.assertEqual(events[-1]["reason"],"PRE_SHORT_4_OF_5_SPOT_NOT_READY")
-        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
+        self.assertEqual(state[0]["phase"],"SHORT_CONFIRMED")
+        self.assertIn("SHORT_CONFIRMED",[e["phase"] for e in events])
 
-    def test_ready_bullish_spot_blocks_pre_short(self):
+    def test_ready_bullish_spot_does_not_veto_short_confirmation(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                               structure(now,broken=now>=NOW+130)):
@@ -310,12 +310,10 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+130,last=111)
             self.drive(NOW+260,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
-        self.assertNotIn("PRE_SHORT",[e["phase"] for e in events])
-        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
-        self.assertNotIn("RETEST",[e["phase"] for e in events])
+        self.assertEqual(state[0]["phase"],"SHORT_CONFIRMED")
+        self.assertIn("SHORT_CONFIRMED",[e["phase"] for e in events])
 
-    def test_trend_shift_cannot_skip_short_confirmation_into_retest(self):
+    def test_retest_still_requires_short_confirmation_when_spot_is_bullish(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                               structure(now,broken=now>=NOW+130)):
@@ -328,10 +326,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
                 self.drive(NOW+260,last=110)
                 self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"TREND_SHIFT")
+        self.assertEqual(state[0]["phase"],"RETEST")
         phases=[e["phase"] for e in events]
-        self.assertNotIn("SHORT_CONFIRMED",phases)
-        self.assertNotIn("RETEST",phases)
+        self.assertLess(phases.index("SHORT_CONFIRMED"),phases.index("RETEST"))
         self.assertNotIn("ENTRY_ZONE",phases)
 
     def test_stop_tp_and_anti_late(self):
@@ -565,7 +562,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(st[0]["watch_reason"],"WAITING_FOR_LIQUID_MARKET")
         self.assertNotIn("ENTRY_ZONE",[x["phase"] for x in events])
 
-    def test_no_real_decision_when_spot_missing_despite_break_and_retest(self):
+    def test_spot_missing_does_not_block_retest_progression(self):
         with patch.object(strat,"analyze_structure",
             side_effect=lambda a,b,c,now:structure(now,broken=now>NOW)):
             self.drive(NOW,last=115)
@@ -573,10 +570,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+260,last=110)
             self.drive(NOW+390,last=110)
         state,events=self.data()
-        self.assertEqual(state[0]["phase"],"PRE_SHORT")
-        self.assertEqual(state[0]["watch_reason"],"PRE_SHORT_4_OF_5_SPOT_NOT_READY")
-        self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
-        self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
+        self.assertEqual(state[0]["phase"],"RETEST")
+        self.assertIn("SHORT_CONFIRMED",[e["phase"] for e in events])
+        self.assertIn("RETEST",[e["phase"] for e in events])
 
 
 if __name__=="__main__":

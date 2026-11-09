@@ -79,7 +79,7 @@ class NotificationsTests(unittest.TestCase):
         msg=notify.message(event)
         self.assertIn('КАЧЕСТВЕННЫЙ РАЗВОРОТ',msg)
         self.assertIn('переход давления к продавцам',msg)
-        self.assertIn('ещё не подтверждённый вход',msg)
+        self.assertIn('не блокирует сигнал',msg)
         self.assertNotIn('Зона входа SHORT:',msg)
 
     def test_pre_short_message_marks_higher_risk_and_missing_spot(self):
@@ -87,8 +87,8 @@ class NotificationsTests(unittest.TestCase):
                'rise_pct':45.0,'retrace_pct':9.0,'evidence_json':'{}'}
         msg=notify.message(event)
         self.assertIn('РАННИЙ СИГНАЛ НА ШОРТ',msg)
-        self.assertIn('Спотовые данные пока не готовы',msg)
-        self.assertIn('Риск выше',msg)
+        self.assertIn('Спот — только дополнительная информация',msg)
+        self.assertIn('не является препятствием',msg)
 
     def test_short_confirmed_waits_for_retest_not_entry(self):
         event={'kind':'SHORT_CONFIRMED','symbol':'TESTUSDT','at':NOW,

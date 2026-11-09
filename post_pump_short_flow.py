@@ -217,19 +217,27 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None,
           "volume_analysis":volume_analysis,
           "orderbook_verified":False}
 
-    if f1 is None or f5 is None or s5 is None:
-        # Identify missing components without relaxing evidence requirements.
-        missing=[name for name,value in (("FUTURES_1M",f1),
-                 ("FUTURES_5M",f5),("SPOT_5M",s5)) if value is None]
+    # Spot stays descriptive. It must never block the reversal pipeline.
+    # The actionable local-flow gate uses fresh 1m/5m futures aggression plus
+    # the already-confirmed bearish price structure.
+    missing=[name for name,value in (("FUTURES_1M",f1),
+             ("FUTURES_5M",f5)) if value is None]
+    if f1 is None or f5 is None:
+        if s5 is None:
+            missing.append("SPOT_5M_INFO")
         return dict(base,status="INSUFFICIENT_DATA",
-                    reason="LOCAL_FLOW_NOT_READY",
-                    missing_windows=missing)
+                    reason="LOCAL_FUTURES_FLOW_NOT_READY",
+                    missing_windows=missing,
+                    spot_informational_only=True)
 
-    # Immediate and 5m futures pressure must agree. Spot must also sell and
-    # the already-confirmed price structure must respond down.
-    if f1<=-15 and f5<=-10 and s5<=-10 and bearish:
+    base["spot_informational_only"]=True
+    base["spot_5m_imbalance_pct"]=s5
+
+    # Immediate and 5m futures pressure must agree and bearish structure must
+    # respond down. Spot is reported, but does not approve or veto this state.
+    if f1<=-15 and f5<=-10 and bearish:
         return dict(base,status="CONFIRMED",
-                    reason="LOCAL_SELL_AGGRESSION_PRICE_ALIGNED",
+                    reason="LOCAL_FUTURES_SELL_AGGRESSION_PRICE_ALIGNED",
                     evidence_event="SELL_AGGRESSION_CONFIRMED")
 
     buy_aggression=(f1>=15 and f5>=10)
@@ -240,7 +248,7 @@ def verify_local(price,futures_windows,spot_windows,structure,now=None,
                     reason="LOCAL_BUY_AGGRESSION_ABSORBED",
                     evidence_event="BUY_ABSORPTION_CANDIDATE")
 
-    if buy_aggression and s5>=10 and not bearish:
+    if buy_aggression and not bearish:
         return dict(base,status="CONTRADICTION",
                     reason="LOCAL_BUYERS_STILL_CONTROL",
                     evidence_event="NONE")

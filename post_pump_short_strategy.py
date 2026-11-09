@@ -417,11 +417,10 @@ def _evidence_ok(evidence,spot):
     f=num(evidence.get("futures_taker_5m_imbalance_pct"))
     local=num(evidence.get("local_oi_5m_pct"))
     agg=num(evidence.get("agg_oi_5m_pct"))
-    # Both futures and spot aggressive sellers; OI can expand (new short) or
-    # contract (long liquidation), but at least one reliable OI is required.
-    return (f is not None and f<=-10 and spot.get("ready") is True
-            and num(spot.get("imbalance_pct")) is not None
-            and spot["imbalance_pct"]<=-10
+    # Spot is informational-only. The gate requires bearish futures pressure
+    # plus at least one reliable OI source; structure/order-flow are checked
+    # separately by strict_short.
+    return (f is not None and f<=-10
             and (local is not None or agg is not None))
 
 
@@ -448,8 +447,8 @@ def _quality_reversal(evidence,structure,spot):
     seller_turn=seller_shift or seller_event
     spot_ready=spot.get("ready") is True
     spot_imb=num(spot.get("imbalance_pct"))
-    if spot_ready and spot_imb is not None and spot_imb>=10:
-        return {"ready":False,"reason":"SPOT_BUYERS_STILL_CONTROL","score":0}
+    # Spot remains visible context, but no longer blocks an otherwise valid
+    # quality reversal.
     futures_bearish=f is not None and f<=-5
     oi_ready=local is not None or agg is not None
     score=sum((True,futures_bearish,oi_ready,seller_turn,
@@ -801,9 +800,8 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         st["break_candle_ts"]=struct["last5"]["ts"]
         _record_phase(db,st,now,"TREND_SHIFT","CLOSED_5M_BREAK_15M_H1_ALIGNED",ev,struct)
     promoted_confirmed=False
-    # Seller takeover is useful context, but it is not mandatory here.
-    # SHORT_CONFIRMED remains strict: bearish Spot + Futures, reliable OI,
-    # aligned closed-candle structure, and a locally confirmed seller response.
+    # SHORT_CONFIRMED remains strict on futures + OI + structure + locally
+    # confirmed seller response. Spot is collected and reported only.
     strict_short=(
         _evidence_ok(ev, spot)
         and (ev.get("order_flow") or {}).get("status")=="CONFIRMED"
@@ -828,7 +826,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
             and strict_short):
         promoted_confirmed=_record_phase(
             db,st,now,"SHORT_CONFIRMED",
-            "SPOT_FUTURES_OI_STRUCTURE_SELLERS_CONFIRMED_WAIT_RETEST",ev,struct)
+            "FUTURES_OI_STRUCTURE_SELLERS_CONFIRMED_SPOT_INFO_ONLY_WAIT_RETEST",ev,struct)
     elif (st["phase"] in ("TREND_SHIFT","QUALITY_REVERSAL")
             and now-st["phase_at"]>=HOT_CONTEXT_INTERVAL_SEC
             and base4 and spot_not_ready):

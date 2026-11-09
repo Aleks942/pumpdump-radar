@@ -160,25 +160,32 @@ def classify_capital(evidence,structure):
 
 
 def final_short_confirmation(order_flow,bounded,capital):
-    """Strict final gate for a post-pump short research signal.
+    """Final post-pump short gate with Spot kept informational-only.
 
-    READY requires a sequence-confirmed seller takeover, simultaneous spot +
-    futures selling, and OI that confirms either new short buildup or long
-    unwind. Missing/neutral evidence fails closed.
+    READY requires sequence-confirmed seller takeover, bearish 5m futures
+    aggression and OI that confirms either new short buildup or long unwind.
+    Spot is still collected and reported, but it does not approve or veto.
     """
     flow=order_flow if isinstance(order_flow,dict) else {}
     cvd=bounded if isinstance(bounded,dict) else {}
     cap=capital if isinstance(capital,dict) else {}
     if (flow.get("status")!="CONFIRMED"
             or flow.get("evidence_event")!="SELLER_TAKEOVER_CONFIRMED"):
-        return {"ready":False,"reason":"SELLER_TAKEOVER_NOT_CONFIRMED"}
-    if cvd.get("state")!="SPOT_AND_FUTURES_SELL":
-        return {"ready":False,"reason":"SPOT_FUTURES_SELL_NOT_ALIGNED"}
+        return {"ready":False,"reason":"SELLER_TAKEOVER_NOT_CONFIRMED",
+                "spot_informational_only":True}
+    futures_imb=_num(cvd.get("futures_imbalance_pct"))
+    if futures_imb is None or futures_imb>-10:
+        return {"ready":False,"reason":"FUTURES_SELL_NOT_CONFIRMED",
+                "spot_informational_only":True}
     if cap.get("state") not in (
             "NEW_SHORTS_WITH_BEARISH_STRUCTURE",
             "LONG_UNWIND_WITH_BEARISH_STRUCTURE"):
-        return {"ready":False,"reason":"OI_DIRECTION_NOT_CONFIRMED"}
-    return {"ready":True,"reason":"SELLER_TAKEOVER_CVD_OI_CONFIRMED"}
+        return {"ready":False,"reason":"OI_DIRECTION_NOT_CONFIRMED",
+                "spot_informational_only":True}
+    return {"ready":True,"reason":"SELLER_TAKEOVER_FUTURES_OI_CONFIRMED",
+            "spot_informational_only":True,
+            "spot_state":cvd.get("state"),
+            "spot_imbalance_pct":cvd.get("spot_imbalance_pct")}
 
 
 def classify_liquidations(liquidations):
