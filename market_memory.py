@@ -336,12 +336,10 @@ def save_oi_snapshot(symbol: str, oi: float):
 
                 connection.commit()
 
-                print(
-                    "[OI_SAVED]",
-                    symbol,
-                    oi,
-                    flush=True
-                )
+                # Per-symbol OI logging is expensive at scanner scale.
+                # Keep it opt-in without changing storage or signal logic.
+                if os.getenv("OI_VERBOSE_LOGS", "0") == "1":
+                    print("[OI_SAVED]", symbol, oi, flush=True)
 
         except Exception as e:
 
