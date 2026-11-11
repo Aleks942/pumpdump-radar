@@ -79,12 +79,12 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             evidence_reader=evidence,**kwargs)
 
     def test_direct_30pct_discovery_despite_26pct_pullback(self):
-        self.assertIsNone(strat.safe_profile(ticker(last=110,high=119)))
-        self.assertEqual(strat.safe_profile(ticker(last=110,high=120))["band"],
+        self.assertIsNone(strat.safe_profile(ticker(last=110,high=119,opening=100)))
+        self.assertEqual(strat.safe_profile(ticker(last=110,high=120,opening=100))["band"],
                          "20_TO_29")
-        self.assertEqual(strat.safe_profile(ticker(last=110,high=125))["band"],
+        self.assertEqual(strat.safe_profile(ticker(last=110,high=125,opening=100))["band"],
                          "20_TO_29")
-        self.assertEqual(strat.safe_profile(ticker(last=110,high=130))["band"],
+        self.assertEqual(strat.safe_profile(ticker(last=110,high=130,opening=100))["band"],
                          "30_TO_49")
         self.assertEqual(strat.safe_profile(ticker(last=110,high=150))["band"],
                          "50_TO_99")
@@ -99,7 +99,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
 
     def test_20pct_is_silent_watch_25pct_is_hot_and_30pct_unlocks_pump(self):
         # +20% starts observation but must not create a pump notification/audit.
-        self.drive(NOW,last=119,high=120)
+        strat.observe([ticker(last=119,high=120,opening=100)],now=NOW,
+            db_path=self.path,fetch_context=lambda sym:{"5m":[],"15m":[],"1H":[]},
+            fetch_spot=lambda sym:[],evidence_reader=evidence)
         states,events=self.data()
         self.assertEqual(len(states),1)
         self.assertEqual(states[0]["phase"],"WATCH")
@@ -107,13 +109,17 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(events,[])
 
         # +25% upgrades priority, still observation-only.
-        self.drive(NOW+130,last=124,high=125)
+        strat.observe([ticker(last=124,high=125,opening=100)],now=NOW+130,
+            db_path=self.path,fetch_context=lambda sym:{"5m":[],"15m":[],"1H":[]},
+            fetch_spot=lambda sym:[],evidence_reader=evidence)
         states,events=self.data()
         self.assertEqual(states[0]["phase"],"WATCH")
         self.assertEqual(events,[])
 
         # Crossing +30% emits the normal PUMP discovery exactly once.
-        self.drive(NOW+260,last=129,high=130)
+        strat.observe([ticker(last=129,high=130,opening=100)],now=NOW+260,
+            db_path=self.path,fetch_context=lambda sym:{"5m":[],"15m":[],"1H":[]},
+            fetch_spot=lambda sym:[],evidence_reader=evidence)
         states,events=self.data()
         discovered=[e for e in events if e["phase"]=="DISCOVERED"]
         self.assertEqual(len(discovered),1)
@@ -546,7 +552,9 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertIn("BUYERS_RECLAIMED_NEW_HIGH",[x["reason"] for x in events])
 
     def test_active_episode_keeps_real_liquidity_after_30pct_window_rolls_off(self):
-        self.assertIsNone(strat.safe_profile(ticker(last=110,high=125,opening=100)))
+        self.assertEqual(
+            strat.safe_profile(ticker(last=110,high=125,opening=100))["band"],
+            "20_TO_29")
         live=strat.live_market_profile(ticker(last=110,high=125,opening=100))
         self.assertTrue(live["liquid"])
         with patch.object(strat,"analyze_structure",
