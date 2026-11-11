@@ -45,7 +45,7 @@ MIN_RISE_PCT=30.0
 MIN_NOTIONAL=10_000_000.0
 MAX_SPREAD_BPS=40.0
 MAX_ACTIVE=3
-PRIORITY_RETRACE_PCT=5.0
+PRIORITY_RETRACE_PCT=3.0
 CONTEXT_INTERVAL_SEC=120
 HOT_CONTEXT_INTERVAL_SEC=60
 MAX_EPISODE_SEC=72*3600
@@ -151,8 +151,8 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
     """Rank active pumps using the freshest quote without creating new data.
 
     Mature structural phases stay first. Within the same phase, a pump that has
-    already retraced >=5% gets priority so a fresh +30%/+50% pump cannot be
-    starved behind three quiet WATCH symbols.
+    already retraced >=3% gets priority so a fast correction is pulled into the
+    bounded deep-analysis slots before it has already moved 10-15%.
     """
     symbol = row["symbol"]
     phase = str(row["phase"] or "WATCH")
