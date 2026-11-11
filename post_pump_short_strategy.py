@@ -61,7 +61,7 @@ MAX_SCANS_ROWS=12000
 ROUND_TRIP_COST_PCT=0.22
 RISK_FRACTION=0.005
 MAX_LATE_ATR=1.0
-WINDOWS=(5,15,30,60)
+WINDOWS=(5,10,15,30,60,120)
 last_status_at=0.0
 
 
@@ -257,6 +257,54 @@ def setup(db):
         PRIMARY KEY(audit_id,horizon_min)
     )""")
     setup_paper_audit(db)
+    # Backfill newly introduced horizons for existing real research audits.
+    # This is idempotent and keeps TEST* fixtures out of production stats.
+    for horizon in WINDOWS:
+        db.execute("""INSERT OR IGNORE INTO post_pump_short_strategy_outcomes
+            (audit_id,horizon_min)
+            SELECT id,? FROM post_pump_short_strategy_audit
+            WHERE symbol NOT LIKE 'TEST%'""",(horizon,))
+
+
+def stage_markout_report(db, now, days=30):
+    """Aggregate causal post-pump short markouts by decision stage.
+
+    These are descriptive quote markouts, not fills or live-trade PnL.
+    A positive net markout means the short direction beat the modeled
+    0.22% round-trip cost at that horizon.
+    """
+    setup(db)
+    cutoff=now-max(1,int(days))*86400
+    rows=db.execute("""SELECT
+        CASE WHEN a.phase='READY_RESEARCH' THEN 'ENTRY_ZONE' ELSE a.phase END AS phase,
+        o.horizon_min,
+        COUNT(*) AS n,
+        AVG(o.model_net_short_pct) AS avg_net,
+        SUM(CASE WHEN o.model_net_short_pct>0 THEN 1 ELSE 0 END) AS profitable,
+        SUM(CASE WHEN o.model_net_short_pct+?>=2.0 THEN 1 ELSE 0 END) AS fall_ge_2,
+        SUM(CASE WHEN o.model_net_short_pct+?>=4.0 THEN 1 ELSE 0 END) AS fall_ge_4
+        FROM post_pump_short_strategy_audit a
+        JOIN post_pump_short_strategy_outcomes o ON o.audit_id=a.id
+        WHERE a.at>=? AND a.symbol NOT LIKE 'TEST%'
+          AND a.phase IN ('SHORT_CONFIRMED','RETEST','ENTRY_ZONE','READY_RESEARCH')
+          AND o.status='DONE'
+        GROUP BY CASE WHEN a.phase='READY_RESEARCH' THEN 'ENTRY_ZONE' ELSE a.phase END,
+                 o.horizon_min
+        ORDER BY CASE phase WHEN 'SHORT_CONFIRMED' THEN 1 WHEN 'RETEST' THEN 2 ELSE 3 END,
+                 o.horizon_min""",(ROUND_TRIP_COST_PCT,ROUND_TRIP_COST_PCT,cutoff)).fetchall()
+    out=[]
+    for row in rows:
+        n=int(row["n"])
+        out.append({
+            "phase":row["phase"],
+            "horizon_min":int(row["horizon_min"]),
+            "n":n,
+            "avg_net_pct":round(float(row["avg_net"]),4) if row["avg_net"] is not None else None,
+            "profitable_pct":round(100*int(row["profitable"])/n,1) if n else 0.0,
+            "fall_ge_2_pct":round(100*int(row["fall_ge_2"])/n,1) if n else 0.0,
+            "fall_ge_4_pct":round(100*int(row["fall_ge_4"])/n,1) if n else 0.0,
+        })
+    return out
 
 
 def parse_closed_candles(rows,seconds,now):
@@ -1205,6 +1253,23 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
                       "first_touch_closed_1m=true no_live_orders=true",
                       flush=True)
+                stage_rows=stage_markout_report(report_db,now,days=30)
+                if stage_rows:
+                    for item in stage_rows:
+                        print("[SHORT_STAGE_STATS]",
+                              "phase=",item["phase"],
+                              "horizon=",str(item["horizon_min"])+"m",
+                              "n=",item["n"],
+                              "avg_net=",str(item["avg_net_pct"])+"%",
+                              "profitable=",str(item["profitable_pct"])+"%",
+                              "fall_ge_2=",str(item["fall_ge_2_pct"])+"%",
+                              "fall_ge_4=",str(item["fall_ge_4_pct"])+"%",
+                              "days=30 descriptive_markout=true no_live_orders=true",
+                              flush=True)
+                else:
+                    print("[SHORT_STAGE_STATS] no_completed_real_samples=true "
+                          "days=30 descriptive_markout=true no_live_orders=true",
+                          flush=True)
                 # Lightweight hourly funnel: diagnose blocked research candidates
                 # using the state already persisted in SQLite. No extra API,
                 # notifications, tables or changes to the SHORT safety gates.
