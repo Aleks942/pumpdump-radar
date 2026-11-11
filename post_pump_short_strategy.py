@@ -82,6 +82,13 @@ def num(value):
         return None
 
 
+def reached(value, threshold):
+    """Numerically stable percentage threshold comparison."""
+    v=num(value)
+    t=num(threshold)
+    return v is not None and t is not None and v >= t-1e-9
+
+
 def safe_profile(t):
     if not isinstance(t,dict):
         return None
@@ -94,14 +101,14 @@ def safe_profile(t):
             or high<max(last,opening) or spread is None):
         return None
     rise=100*(high/opening-1)
-    if rise<MIN_RISE_PCT:
+    if not reached(rise,MIN_RISE_PCT):
         return None
     return dict(symbol=inst[:-10]+"USDT",inst=inst,last=last,
                 high=high,opening=opening,rise=rise,notional=vol,
                 spread=spread,retrace=100*(1-last/high),
                 band="100_PLUS" if rise>=100 else
-                     "50_TO_99" if rise>=50 else
-                     "30_TO_49" if rise>=30 else "20_TO_29",
+                     "50_TO_99" if reached(rise,50) else
+                     "30_TO_49" if reached(rise,30) else "20_TO_29",
                 liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS))
 
 
@@ -179,7 +186,7 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
         phase in ("ENTRY_ZONE", "READY_RESEARCH", "RETEST",
                   "SHORT_CONFIRMED", "PRE_SHORT", "QUALITY_REVERSAL",
                   "TREND_SHIFT", "WEAKENING", "EARLY_WEAKENING")
-        or rise >= HOT_WATCH_RISE_PCT
+        or reached(rise,HOT_WATCH_RISE_PCT)
         or retrace >= PRIORITY_RETRACE_PCT
     )
     return {
@@ -825,10 +832,10 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     # +20% / +25% are observation-only states. We collect context early but
     # never allow weakening/short/entry stages until the pump has truly reached
     # +30% from the rolling 24h open.
-    if st["rise_max"] < PUMP_CONFIRM_RISE_PCT:
+    if not reached(st["rise_max"],PUMP_CONFIRM_RISE_PCT):
         st["watch_reason"] = (
             "HOT_WATCH_25_TO_29"
-            if st["rise_max"] >= HOT_WATCH_RISE_PCT
+            if reached(st["rise_max"],HOT_WATCH_RISE_PCT)
             else "EARLY_WATCH_20_TO_24"
         )
         return status,struct
@@ -1051,9 +1058,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         if not item:
             continue
         diagnostics["over20"]+=1
-        if item["rise"]>=HOT_WATCH_RISE_PCT:
+        if reached(item["rise"],HOT_WATCH_RISE_PCT):
             diagnostics["over25"]+=1
-        if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+        if reached(item["rise"],PUMP_CONFIRM_RISE_PCT):
             diagnostics["over30"]+=1
         if item["liquid"]:
             diagnostics["liquid"]+=1
@@ -1090,9 +1097,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         discovery_evidence={"evidence_error":type(discovery_exc).__name__}
                     initial_reason=(
                         "PUMP_30_PERCENT_DETECTED"
-                        if item["rise"]>=PUMP_CONFIRM_RISE_PCT else
+                        if reached(item["rise"],PUMP_CONFIRM_RISE_PCT) else
                         "HOT_WATCH_25_TO_29"
-                        if item["rise"]>=HOT_WATCH_RISE_PCT else
+                        if reached(item["rise"],HOT_WATCH_RISE_PCT) else
                         "EARLY_WATCH_20_TO_24"
                     )
                     st=dict(symbol=symbol,episode_at=now,last_seen_at=now,
@@ -1117,7 +1124,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         peak_at,entry_zone_at)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         tuple(st.values()))
-                    if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+                    if reached(item["rise"],PUMP_CONFIRM_RISE_PCT):
                         _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT",
                                       discovery_evidence)
                         st["phase"]="WATCH"
@@ -1126,7 +1133,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     # Keep state even if the ticker rose in a different band.
                     # When an early +20/+25 watch later reaches +30, emit the
                     # normal DISCOVERED audit exactly once, then keep WATCH.
-                    if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+                    if reached(item["rise"],PUMP_CONFIRM_RISE_PCT):
                         seen=db.execute("""SELECT 1
                             FROM post_pump_short_strategy_audit
                             WHERE symbol=? AND episode_at=? AND phase='DISCOVERED'
