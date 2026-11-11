@@ -79,7 +79,11 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             evidence_reader=evidence,**kwargs)
 
     def test_direct_30pct_discovery_despite_26pct_pullback(self):
-        self.assertIsNone(strat.safe_profile(ticker(last=110,high=129)))
+        self.assertIsNone(strat.safe_profile(ticker(last=110,high=119)))
+        self.assertEqual(strat.safe_profile(ticker(last=110,high=120))["band"],
+                         "20_TO_29")
+        self.assertEqual(strat.safe_profile(ticker(last=110,high=125))["band"],
+                         "20_TO_29")
         self.assertEqual(strat.safe_profile(ticker(last=110,high=130))["band"],
                          "30_TO_49")
         self.assertEqual(strat.safe_profile(ticker(last=110,high=150))["band"],
@@ -92,6 +96,40 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertEqual(states[0]["phase"],"WATCH")
         self.assertAlmostEqual(states[0]["last_retrace_pct"],26.6666666667)
         self.assertEqual(events[0]["phase"],"DISCOVERED")
+
+    def test_20pct_is_silent_watch_25pct_is_hot_and_30pct_unlocks_pump(self):
+        # +20% starts observation but must not create a pump notification/audit.
+        self.drive(NOW,last=119,high=120)
+        states,events=self.data()
+        self.assertEqual(len(states),1)
+        self.assertEqual(states[0]["phase"],"WATCH")
+        self.assertEqual(states[0]["watch_reason"],"EARLY_WATCH_20_TO_24")
+        self.assertEqual(events,[])
+
+        # +25% upgrades priority, still observation-only.
+        self.drive(NOW+130,last=124,high=125)
+        states,events=self.data()
+        self.assertEqual(states[0]["phase"],"WATCH")
+        self.assertEqual(events,[])
+
+        # Crossing +30% emits the normal PUMP discovery exactly once.
+        self.drive(NOW+260,last=129,high=130)
+        states,events=self.data()
+        discovered=[e for e in events if e["phase"]=="DISCOVERED"]
+        self.assertEqual(len(discovered),1)
+        self.assertEqual(states[0]["phase"],"WATCH")
+        self.assertGreaterEqual(states[0]["rise_max"],30.0)
+
+    def test_sub30_watch_cannot_advance_into_short_lifecycle(self):
+        with patch.object(strat,"analyze_structure",
+                          return_value=structure(NOW,broken=True)):
+            self.drive(NOW,last=119,high=125)
+            self.drive(NOW+130,last=116,high=125)
+        states,events=self.data()
+        self.assertEqual(states[0]["phase"],"WATCH")
+        self.assertFalse(any(e["phase"] in (
+            "EARLY_WEAKENING","WEAKENING","TREND_SHIFT","SHORT_CONFIRMED",
+            "RETEST","ENTRY_ZONE") for e in events))
 
     def test_discovery_persists_ready_cached_oi_immediately(self):
         self.drive(NOW)
