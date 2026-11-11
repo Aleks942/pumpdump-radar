@@ -1,8 +1,8 @@
 """Complete POST-PUMP SHORT decision pipeline inside existing PumpDump Radar.
 
 Research/paper-only: no orders. Telegram lifecycle uses a separate ACK outbox.
-Finds *all* eligible +30% OKX-USDT-SWAP tickers directly, including those that
-already pulled back >15%; does not depend on early Pump Watch/cycle seeding.
+Starts silent observation at +20%, promotes to HOT WATCH at +25%, and only
+unlocks the existing post-pump short lifecycle after +30% is actually reached.
 Closed OKX OHLC 5m/15m/1H, sequential structural break and later retest,
 real 5m spot taker flow with overlap-verified sampling, cached futures/OI,
 and stale-data/anti-late risk gates. Bounded to 3 active market candidates,
@@ -41,7 +41,10 @@ from post_pump_binance_spot_stream import (
 )
 
 DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
-MIN_RISE_PCT=30.0
+EARLY_WATCH_RISE_PCT=20.0
+HOT_WATCH_RISE_PCT=25.0
+PUMP_CONFIRM_RISE_PCT=30.0
+MIN_RISE_PCT=EARLY_WATCH_RISE_PCT
 MIN_NOTIONAL=10_000_000.0
 MAX_SPREAD_BPS=40.0
 MAX_ACTIVE=3
@@ -97,7 +100,8 @@ def safe_profile(t):
                 high=high,opening=opening,rise=rise,notional=vol,
                 spread=spread,retrace=100*(1-last/high),
                 band="100_PLUS" if rise>=100 else
-                     "50_TO_99" if rise>=50 else "30_TO_49",
+                     "50_TO_99" if rise>=50 else
+                     "30_TO_49" if rise>=30 else "20_TO_29",
                 liquid=(vol>=MIN_NOTIONAL and spread<=MAX_SPREAD_BPS))
 
 
@@ -175,6 +179,7 @@ def _candidate_priority_snapshot(row, eligible, live_profiles):
         phase in ("ENTRY_ZONE", "READY_RESEARCH", "RETEST",
                   "SHORT_CONFIRMED", "PRE_SHORT", "QUALITY_REVERSAL",
                   "TREND_SHIFT", "WEAKENING", "EARLY_WEAKENING")
+        or rise >= HOT_WATCH_RISE_PCT
         or retrace >= PRIORITY_RETRACE_PCT
     )
     return {
@@ -817,6 +822,16 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     st["last_structure_json"]=json.dumps(struct,sort_keys=True,default=str)
     if not struct.get("ready"):
         return status,struct
+    # +20% / +25% are observation-only states. We collect context early but
+    # never allow weakening/short/entry stages until the pump has truly reached
+    # +30% from the rolling 24h open.
+    if st["rise_max"] < PUMP_CONFIRM_RISE_PCT:
+        st["watch_reason"] = (
+            "HOT_WATCH_25_TO_29"
+            if st["rise_max"] >= HOT_WATCH_RISE_PCT
+            else "EARLY_WATCH_20_TO_24"
+        )
+        return status,struct
     if st["phase"] in ("ENTRY_ZONE","READY_RESEARCH"):
         if not struct["trend_shift"] or struct["h1"] == "UP":
             _record_phase(db,st,now,"CANCELLED","TREND_NOT_ALIGNED",ev,struct)
@@ -1017,7 +1032,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
     quotes={}
     eligible={}
     live_profiles={}
-    diagnostics=dict(tickers=0,over30=0,liquid=0,active=0,
+    diagnostics=dict(tickers=0,over20=0,over25=0,over30=0,liquid=0,active=0,
                      context_checks=0,new=0,outcomes=0,paper_checks=0)
     pending_flow=[]
     for ticker in tickers or ():
@@ -1035,11 +1050,15 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         item=safe_profile(ticker)
         if not item:
             continue
-        diagnostics["over30"]+=1
+        diagnostics["over20"]+=1
+        if item["rise"]>=HOT_WATCH_RISE_PCT:
+            diagnostics["over25"]+=1
+        if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+            diagnostics["over30"]+=1
         if item["liquid"]:
             diagnostics["liquid"]+=1
             eligible[item["symbol"]]=item
-    # Extend Bybit liquidation coverage to every live +30% pump candidate.
+    # Extend Bybit liquidation coverage from the silent +20% watch onward.
     # The stream itself remains read-only and deduplicates subscriptions.
     for symbol in eligible:
         try:
@@ -1055,7 +1074,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             db.execute("PRAGMA busy_timeout=7000")
             setup(db)
             _cancel_published_plans(db, quotes, now)
-            # All detected +30% symbols enter watch regardless of earlier pullback.
+            # All detected +20% symbols enter silent watch regardless of pullback.
             for symbol,item in eligible.items():
                 old=db.execute("""SELECT * FROM post_pump_short_strategy
                                   WHERE symbol=?""",(symbol,)).fetchone()
@@ -1069,12 +1088,19 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         discovery_evidence=evidence(symbol,now) or {}
                     except Exception as discovery_exc:
                         discovery_evidence={"evidence_error":type(discovery_exc).__name__}
+                    initial_reason=(
+                        "PUMP_30_PERCENT_DETECTED"
+                        if item["rise"]>=PUMP_CONFIRM_RISE_PCT else
+                        "HOT_WATCH_25_TO_29"
+                        if item["rise"]>=HOT_WATCH_RISE_PCT else
+                        "EARLY_WATCH_20_TO_24"
+                    )
                     st=dict(symbol=symbol,episode_at=now,last_seen_at=now,
                             phase="WATCH",phase_at=now,peak=item["high"],
                             rise_max=item["rise"],band=item["band"],
                             reference_open=item["opening"],
                             break_level=None,break_candle_ts=None,
-                            watch_reason="PUMP_30_PERCENT_DETECTED",
+                            watch_reason=initial_reason,
                             last_context_at=0,last_spot_poll_at=0,
                             last_plan_at=None,last_price=item["last"],
                             last_retrace_pct=item["retrace"],
@@ -1091,16 +1117,42 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                         peak_at,entry_zone_at)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         tuple(st.values()))
-                    _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT",
-                                  discovery_evidence)
-                    st["phase"]="WATCH"
+                    if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+                        _record_phase(db,st,now,"DISCOVERED","OBSERVED_RISE_30PCT",
+                                      discovery_evidence)
+                        st["phase"]="WATCH"
                     diagnostics["new"]+=1
                 else:
                     # Keep state even if the ticker rose in a different band.
-                    # Preserve the *previous* peak until the stage engine
-                    # compares the fresh price against it. Prematurely
-                    # updating peak here would make BUYERS_RECLAIMED_NEW_HIGH
-                    # mathematically unreachable.
+                    # When an early +20/+25 watch later reaches +30, emit the
+                    # normal DISCOVERED audit exactly once, then keep WATCH.
+                    if item["rise"]>=PUMP_CONFIRM_RISE_PCT:
+                        seen=db.execute("""SELECT 1
+                            FROM post_pump_short_strategy_audit
+                            WHERE symbol=? AND episode_at=? AND phase='DISCOVERED'
+                            LIMIT 1""",(symbol,old["episode_at"])).fetchone()
+                        if seen is None:
+                            try:
+                                discovery_evidence=evidence(symbol,now) or {}
+                            except Exception as discovery_exc:
+                                discovery_evidence={
+                                    "evidence_error":type(discovery_exc).__name__}
+                            promoted=dict(old)
+                            promoted["rise_max"]=max(
+                                num(promoted.get("rise_max")) or 0.0,item["rise"])
+                            promoted["last_price"]=item["last"]
+                            promoted["last_retrace_pct"]=item["retrace"]
+                            promoted["watch_reason"]="PUMP_30_PERCENT_DETECTED"
+                            _record_phase(db,promoted,now,"DISCOVERED",
+                                          "OBSERVED_RISE_30PCT",
+                                          discovery_evidence)
+                            db.execute("""UPDATE post_pump_short_strategy SET
+                                phase='WATCH',phase_at=?,watch_reason=?,
+                                rise_max=? WHERE symbol=?""",
+                                (now,"PUMP_30_PERCENT_DETECTED",
+                                 promoted["rise_max"],symbol))
+                    # Preserve the previous peak until _advance compares the
+                    # fresh quote against it; otherwise new-high detection breaks.
                     db.execute("""UPDATE post_pump_short_strategy SET
                         last_seen_at=? WHERE symbol=?""",(now,symbol))
             # Evaluate existing + fresh assets even after the 24h window rolls;
