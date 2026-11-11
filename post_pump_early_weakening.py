@@ -18,8 +18,9 @@ def _positive(value):
 def is_early_weakening(previous_price, price, peak, previous_structure, structure):
     """True only on a new closed 5m bar AND a lower observed ticker price.
 
-    The earlier WATCH->WEAKENING 2.5% gate is not relaxed: this is an
-    informational/research phase, never a SHORT READY confirmation.
+    This is an informational/research phase, never a SHORT READY confirmation.
+    It may remain active through a 5% pullback so a fast 3-5% correction is not
+    skipped before the strict WEAKENING/TREND_SHIFT gates evaluate it.
     """
     if not isinstance(previous_structure, dict) or not isinstance(structure, dict):
         return False
@@ -40,6 +41,6 @@ def is_early_weakening(previous_price, price, peak, previous_structure, structur
     if not 0 < new_ts-old_ts <= 900:
         return False
     retrace = 100 * (1 - current_price / high)
-    return (1.0 <= retrace < 2.5
+    return (1.0 <= retrace <= 5.0
             and current_price <= old_price * 0.995
             and new_close < old_close)
