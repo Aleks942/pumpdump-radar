@@ -103,10 +103,10 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         cold={"symbol":"COLDUSDT","phase":"WATCH","peak":150,
               "rise_max":50,"last_price":148,"last_context_at":1}
         hot={"symbol":"HOTUSDT","phase":"WATCH","peak":150,
-             "rise_max":50,"last_price":134,"last_context_at":999}
+             "rise_max":50,"last_price":145.2,"last_context_at":999}
         profiles={
             "COLDUSDT":{"last":148},
-            "HOTUSDT":{"last":134},
+            "HOTUSDT":{"last":145.2},
         }
         ranked=sorted(
             [cold,hot],

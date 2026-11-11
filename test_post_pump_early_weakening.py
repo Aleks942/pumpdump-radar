@@ -35,9 +35,13 @@ class EarlyWeakeningTests(unittest.TestCase):
                 self.assertFalse(is_early_weakening(
                     149.2,147.8,150,bar(1000,148.5),bad))
 
+    def test_fast_three_to_five_percent_pullback_is_still_early(self):
+        self.assertTrue(is_early_weakening(
+            149.5,144.0,150,bar(1000,148.5),bar(1300,143.5)))
+
     def test_early_band_only_and_bad_inputs(self):
         self.assertFalse(is_early_weakening(
-            150,146,150,bar(1000,148.5),bar(1300,147.0)))
+            149.5,141.0,150,bar(1000,148.5),bar(1300,140.5)))
         self.assertFalse(is_early_weakening(
             150,149,150,bar(1000,148.5),bar(1300,147.0)))
         self.assertFalse(is_early_weakening(
