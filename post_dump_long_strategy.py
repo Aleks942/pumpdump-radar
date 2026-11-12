@@ -363,9 +363,23 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                 _set_phase(db, st, p, now, "DUMP_EXHAUSTED",
                            "SELL_PRESSURE_FADING_AND_PRICE_STOPS_MAKING_LOW",
                            recovery_pct, snapshot)
+            elif phase in ("DUMP_EXHAUSTED", "BULLS_GAINING") and cond["absorption_risk"]:
+                reason = "BUYING_ABSORBED_PRICE_NOT_CONFIRMING"
+                if st["last_reason"] != reason:
+                    db.execute("""UPDATE post_dump_long_strategy
+                        SET last_reason=?,last_evidence_json=? WHERE symbol=?""",
+                        (reason, json.dumps(snapshot, sort_keys=True), symbol))
+                    _audit(db, st, p, now, "ABSORPTION_RISK", reason,
+                           recovery_pct, snapshot)
+                    print("[POST_DUMP_LONG_ABSORPTION_RISK]", symbol,
+                          "futures_buy=", cond["futures_imbalance_pct"],
+                          "oi=", cond["oi_5m_pct"],
+                          "price5m=", price_state.get("change_5m_pct"),
+                          "structure_break=", price_state.get("structure_break"),
+                          flush=True)
             elif phase == "DUMP_EXHAUSTED" and cond["bulls_gaining"]:
                 _set_phase(db, st, p, now, "BULLS_GAINING",
-                           "FUTURES_BUYERS_AND_OI_RECOVERY_APPEAR",
+                           "FUTURES_BUYERS_AND_PRICE_CONFIRM",
                            recovery_pct, snapshot)
             elif phase in ("DUMP_EXHAUSTED", "BULLS_GAINING") and cond["squeeze"] and recovery_pct >= MIN_RECOVERY_PCT:
                 _set_phase(db, st, p, now, "SQUEEZE_SETUP",
