@@ -41,6 +41,7 @@ from post_pump_short_research import (
     report as report_post_pump_short,
 )
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
+from post_dump_long_strategy import observe as observe_post_dump_long, deliver as deliver_post_dump_long
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
@@ -1658,6 +1659,15 @@ while True:
     except Exception as complete_short_exc:
         print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
               type(complete_short_exc).__name__, flush=True)
+
+    # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
+    # Research-only; reuses existing ticker/OI/flow caches and never places orders.
+    try:
+        observe_post_dump_long(tickers)
+        deliver_post_dump_long(send_telegram)
+    except Exception as post_dump_long_exc:
+        print("[POST_DUMP_LONG_LOOP_ERROR]",
+              type(post_dump_long_exc).__name__, str(post_dump_long_exc), flush=True)
 
     # User-enabled complete lifecycle. Preserves every strategy evidence gate;
     # messages explicitly label READY as a paper plan, never a live order.
