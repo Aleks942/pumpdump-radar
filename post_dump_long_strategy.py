@@ -37,6 +37,10 @@ MAX_ACTIVE = 6
 FUNDING_TTL_SEC = 300
 NEGATIVE_FUNDING_PCT = -0.03
 EPISODE_TTL_SEC = 36 * 3600
+PRICE_LOOKBACK_SEC = 15 * 60
+PRICE_CONFIRM_SEC = 5 * 60
+MIN_PRICE_CONFIRM_PCT = 0.40
+MIN_STRUCTURE_BREAK_PCT = 0.20
 
 _funding_cache = {}
 
@@ -131,6 +135,14 @@ def _setup(db):
         status TEXT NOT NULL DEFAULT 'PENDING',
         sent_at REAL
     )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS post_dump_long_quotes(
+        symbol TEXT NOT NULL,
+        ts REAL NOT NULL,
+        price REAL NOT NULL,
+        PRIMARY KEY(symbol,ts)
+    )""")
+    db.execute("""CREATE INDEX IF NOT EXISTS idx_post_dump_long_quotes_ts
+        ON post_dump_long_quotes(symbol,ts)""")
 
 
 def _funding(inst, now=None, request_get=None):
@@ -174,7 +186,39 @@ def _recovery(price, low):
     return max(0.0, 100.0 * (price / low - 1.0))
 
 
-def _conditions(evidence, funding, recovery_pct):
+def _price_state(db, symbol, now, price, episode_low):
+    rows = db.execute("""SELECT ts,price FROM post_dump_long_quotes
+        WHERE symbol=? AND ts>=? AND ts<? ORDER BY ts""",
+        (symbol, now-PRICE_LOOKBACK_SEC, now)).fetchall()
+    samples=[(float(r["ts"]),float(r["price"])) for r in rows if _num(r["price"]) is not None]
+    prior_prices=[p for _,p in samples]
+    recent=[(ts,p) for ts,p in samples if ts>=now-PRICE_CONFIRM_SEC]
+    base=recent[0][1] if recent else None
+    change5=(100.0*(price/base-1.0)) if base and base>0 else None
+    local_ceiling=max(prior_prices[-5:]) if prior_prices else None
+    structure_break=(
+        local_ceiling is not None
+        and price >= local_ceiling*(1.0+MIN_STRUCTURE_BREAK_PCT/100.0)
+        and price >= episode_low*(1.0+MIN_RECOVERY_PCT/100.0)
+    )
+    price_confirming=change5 is not None and change5>=MIN_PRICE_CONFIRM_PCT
+    return {
+        "sample_count":len(samples),
+        "change_5m_pct":round(change5,4) if change5 is not None else None,
+        "local_ceiling":local_ceiling,
+        "structure_break":structure_break,
+        "price_confirming":price_confirming,
+    }
+
+
+def _record_price(db,symbol,now,price):
+    db.execute("""INSERT OR REPLACE INTO post_dump_long_quotes(symbol,ts,price)
+        VALUES(?,?,?)""",(symbol,now,price))
+    db.execute("DELETE FROM post_dump_long_quotes WHERE ts<?",
+               (now-2*PRICE_LOOKBACK_SEC,))
+
+
+def _conditions(evidence, funding, recovery_pct, price_state):
     fut = _num(evidence.get("futures_taker_5m_imbalance_pct"))
     spot = _num(evidence.get("spot_taker_5m_imbalance_pct"))
     oi = _oi_value(evidence)
@@ -189,14 +233,23 @@ def _conditions(evidence, funding, recovery_pct):
         and (fut is None or fut > -10.0)
     )
     buyers = futures_buy and (oi_rising or recovery_pct >= MIN_RECOVERY_PCT)
-    bulls_gaining = buyers and not spot_block
-    squeeze = futures_buy and oi_rising and funding_negative and not spot_block
-    confirmed = strong_futures_buy and oi_rising and funding_negative and not spot_block
+    price_confirming = price_state.get("price_confirming") is True
+    structure_break = price_state.get("structure_break") is True
+    absorption_risk = futures_buy and oi_rising and not price_confirming
+    bulls_gaining = buyers and price_confirming and not spot_block
+    squeeze = (futures_buy and oi_rising and funding_negative and
+               price_confirming and structure_break and not spot_block)
+    confirmed = (strong_futures_buy and oi_rising and funding_negative and
+                 price_confirming and structure_break and not spot_block)
     return {
         "futures_imbalance_pct": fut,
         "spot_imbalance_pct": spot,
         "oi_5m_pct": oi,
         "funding_pct": f,
+        "price_state": price_state,
+        "price_confirming": price_confirming,
+        "structure_break": structure_break,
+        "absorption_risk": absorption_risk,
         "dump_exhausted": dump_exhausted,
         "buyers": buyers,
         "bulls_gaining": bulls_gaining,
@@ -285,12 +338,16 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
             p = profiles.get(symbol)
             if p is None:
                 continue
-            low = min(float(st["episode_low"]), p["last"])
+            old_low = float(st["episode_low"])
+            made_new_low = p["last"] < old_low * 0.998
+            low = min(old_low, p["last"])
             recovery_pct = _recovery(p["last"], low)
             ev = evidence_reader(symbol, now) or {}
             fund = funding_reader(p["inst"], now) or {}
-            cond = _conditions(ev, fund, recovery_pct)
-            snapshot = {"evidence": ev, "funding": fund, "conditions": cond}
+            price_state = _price_state(db, symbol, now, p["last"], low)
+            cond = _conditions(ev, fund, recovery_pct, price_state)
+            snapshot = {"evidence": ev, "funding": fund,
+                        "price_state": price_state, "conditions": cond}
 
             db.execute("""UPDATE post_dump_long_strategy
                 SET last_seen_at=?,last_price=?,episode_low=?,last_evidence_json=?
@@ -298,7 +355,11 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                 (now, p["last"], low, json.dumps(snapshot, sort_keys=True), symbol))
 
             phase = st["phase"]
-            if phase == "POST_DUMP_WATCH" and cond["dump_exhausted"]:
+            if made_new_low and phase != "POST_DUMP_WATCH":
+                _set_phase(db, st, p, now, "POST_DUMP_WATCH",
+                           "NEW_LOW_AFTER_BUYING_INVALIDATED_LONG",
+                           recovery_pct, snapshot)
+            elif phase == "POST_DUMP_WATCH" and cond["dump_exhausted"]:
                 _set_phase(db, st, p, now, "DUMP_EXHAUSTED",
                            "SELL_PRESSURE_FADING_AND_PRICE_STOPS_MAKING_LOW",
                            recovery_pct, snapshot)
@@ -335,6 +396,8 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                     _set_phase(db, st, p, now, "POST_DUMP_WATCH",
                                "BUYER_CONFIRMATION_LOST", recovery_pct, snapshot)
 
+            _record_price(db, symbol, now, p["last"])
+
         db.commit()
 
 
@@ -359,14 +422,16 @@ def _message(e):
         f"OI 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
         f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
         f"Funding: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
+        f"Цена 5м: {((c.get('price_state') or {}).get('change_5m_pct')) if (c.get('price_state') or {}).get('change_5m_pct') is not None else 'нет данных'}%",
+        "Структура вверх: " + ("ДА" if c.get("structure_break") else "НЕТ"),
     ]
     if phase == "DUMP_EXHAUSTED":
         lines += ["✅ Цена перестала ускорять падение и начала отходить от локального дна.",
                   "⚠️ Это ещё не LONG: ждём, чтобы покупатели реально забрали инициативу."]
     elif phase == "BULLS_GAINING":
         lines += ["✅ Покупатели усиливаются: фьючерсный поток разворачивается вверх.",
-                  "✅ OI/восстановление цены подтверждают, что движение уже не просто пауза.",
-                  "⏳ До LONG ещё ждём squeeze/подтверждение."]
+                  "✅ Цена подтверждает покупки ростом, а не стоит против положительной дельты.",
+                  "⏳ До LONG ещё ждём слом локальной нисходящей структуры и squeeze."]
     elif phase == "SQUEEZE_SETUP":
         lines += ["✅ Дамп выдохся, быки усиливаются, отрицательный funding даёт топливо для squeeze.",
                   "Это ещё наблюдение, не вход."]
