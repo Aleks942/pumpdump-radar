@@ -69,40 +69,45 @@ class PostDumpLongTests(unittest.TestCase):
     def test_full_long_progression(self):
         self.drive(NOW, 70)
         self.assertEqual(self.state()[0]["phase"], "POST_DUMP_WATCH")
-        self.drive(NOW+60, 71.5)
-        self.assertEqual(self.state()[0]["phase"], "BUYERS_APPEAR")
-        self.drive(NOW+120, 72.0)
+        self.drive(NOW+60, 70.8)
+        self.assertEqual(self.state()[0]["phase"], "DUMP_EXHAUSTED")
+        self.drive(NOW+120, 71.5)
+        self.assertEqual(self.state()[0]["phase"], "BULLS_GAINING")
+        self.drive(NOW+180, 72.0)
         self.assertEqual(self.state()[0]["phase"], "SQUEEZE_SETUP")
-        self.drive(NOW+180, 73.0)
+        self.drive(NOW+240, 73.0)
         self.assertEqual(self.state()[0]["phase"], "LONG_CONFIRMED")
-        self.drive(NOW+240, 72.5)
+        self.drive(NOW+300, 72.5)
         self.assertEqual(self.state()[0]["phase"], "RETEST")
-        self.drive(NOW+300, 73.0)
+        self.drive(NOW+360, 73.0)
         self.assertEqual(self.state()[0]["phase"], "ENTRY_ZONE")
 
     def test_negative_funding_is_required_for_confirmation(self):
         self.drive(NOW, 70, funding=0.01)
-        self.drive(NOW+60, 72, funding=0.01)
-        self.drive(NOW+120, 73, funding=0.01)
-        self.assertEqual(self.state()[0]["phase"], "BUYERS_APPEAR")
+        self.drive(NOW+60, 70.8, funding=0.01)
+        self.drive(NOW+120, 72, funding=0.01)
+        self.drive(NOW+180, 73, funding=0.01)
+        self.assertEqual(self.state()[0]["phase"], "BULLS_GAINING")
 
     def test_strong_spot_selling_blocks_squeeze(self):
         bad = evidence(fut=25, spot=-40, oi=2.0)
         self.drive(NOW, 70, ev=bad)
-        self.drive(NOW+60, 72, ev=bad)
-        self.drive(NOW+120, 73, ev=bad)
-        self.assertEqual(self.state()[0]["phase"], "BUYERS_APPEAR")
+        self.drive(NOW+60, 70.8, ev=bad)
+        self.drive(NOW+120, 72, ev=bad)
+        self.drive(NOW+180, 73, ev=bad)
+        self.assertEqual(self.state()[0]["phase"], "DUMP_EXHAUSTED")
 
     def test_deliver_sends_only_strategy_notifications(self):
         self.drive(NOW, 70)
-        self.drive(NOW+60, 72)
-        self.drive(NOW+120, 73)
+        self.drive(NOW+60, 70.8)
+        self.drive(NOW+120, 71.5)
         sent = []
         n = s.deliver(lambda msg, symbol=None: sent.append((symbol,msg)) or True,
                       now=NOW+121, db_path=self.path)
-        self.assertEqual(n, 1)
+        self.assertEqual(n, 2)
         self.assertEqual(sent[0][0], "TESTUSDT")
-        self.assertIn("POST-DUMP SQUEEZE", sent[0][1])
+        self.assertIn("ДАМП ВЫДЫХАЕТСЯ", sent[0][1])
+        self.assertIn("БЫКИ НАБИРАЮТ СИЛУ", sent[1][1])
 
 
 if __name__ == "__main__":
