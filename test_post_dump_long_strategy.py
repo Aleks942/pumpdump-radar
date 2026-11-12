@@ -97,6 +97,35 @@ class PostDumpLongTests(unittest.TestCase):
         self.drive(NOW+180, 73, ev=bad)
         self.assertEqual(self.state()[0]["phase"], "DUMP_EXHAUSTED")
 
+    def test_jct_like_buying_without_price_confirmation_is_blocked(self):
+        strong=evidence(fut=30,spot=5,oi=2.0)
+        self.drive(NOW,70,ev=strong)
+        self.drive(NOW+60,70.8,ev=strong)
+        self.assertEqual(self.state()[0]["phase"],"DUMP_EXHAUSTED")
+        # Buying/OI stay strong, but price cannot reclaim the local ceiling.
+        self.drive(NOW+120,70.75,ev=strong)
+        self.drive(NOW+180,70.70,ev=strong)
+        state=self.state()[0]
+        self.assertEqual(state["phase"],"DUMP_EXHAUSTED")
+        self.assertEqual(state["last_reason"],"BUYING_ABSORBED_PRICE_NOT_CONFIRMING")
+        with sqlite3.connect(self.path) as db:
+            phases=[r[0] for r in db.execute(
+                "SELECT phase FROM post_dump_long_audit ORDER BY id")]
+        self.assertIn("ABSORPTION_RISK",phases)
+        self.assertNotIn("SQUEEZE_SETUP",phases)
+        self.assertNotIn("LONG_CONFIRMED",phases)
+
+    def test_new_low_after_buying_resets_long_thesis(self):
+        self.drive(NOW,70)
+        self.drive(NOW+60,70.8)
+        self.drive(NOW+120,71.5)
+        self.assertEqual(self.state()[0]["phase"],"BULLS_GAINING")
+        # New low after apparent buying = thesis invalidated.
+        self.drive(NOW+180,69.5)
+        state=self.state()[0]
+        self.assertEqual(state["phase"],"POST_DUMP_WATCH")
+        self.assertEqual(state["last_reason"],"NEW_LOW_AFTER_BUYING_INVALIDATED_LONG")
+
     def test_deliver_sends_only_strategy_notifications(self):
         self.drive(NOW, 70)
         self.drive(NOW+60, 70.8)
