@@ -566,6 +566,69 @@ def peak_band_summary(now=None, db_path=None, basis=None, session_key=None):
     return out
 
 
+
+def full_return_summary(now=None, db_path=None):
+    """Closed pump episodes that fully returned to or below their reference price."""
+    now = time.time() if now is None else _finite(now)
+    if now is None:
+        return []
+    with closing(_connect(db_path)) as db:
+        _setup(db)
+        rows = db.execute("""SELECT
+                e.id,e.symbol,e.basis,e.reference_price,e.peak_move_pct,
+                m.post_peak_low
+            FROM pump_retrace_episode e
+            JOIN pump_retrace_milestone m
+              ON m.episode_id=e.id AND m.threshold_pct=15
+            WHERE e.status='CLOSED' AND e.closed_at>=?""",
+            (now - RETENTION_SEC,),
+        ).fetchall()
+
+    grouped = {}
+    for row in rows:
+        band = _peak_band(row["peak_move_pct"])
+        if band is None:
+            continue
+        low_move = (
+            float(row["post_peak_low"]) / float(row["reference_price"]) - 1.0
+        ) * 100.0
+        key = (str(row["basis"]), band)
+        item = grouped.setdefault(key, {
+            "episodes": 0, "symbols": set(), "full": [],
+        })
+        item["episodes"] += 1
+        item["symbols"].add(str(row["symbol"]))
+        if low_move <= 0.0:
+            item["full"].append((
+                str(row["symbol"]),
+                float(row["peak_move_pct"]),
+                low_move,
+            ))
+
+    labels = [item[2] for item in PEAK_BANDS]
+    out = []
+    for (basis, band), item in sorted(
+            grouped.items(),
+            key=lambda pair: (pair[0][0], labels.index(pair[0][1]))):
+        full = item["full"]
+        out.append({
+            "basis": basis,
+            "peak_band": band,
+            "episodes": item["episodes"],
+            "symbols": len(item["symbols"]),
+            "full_return_hits": len(full),
+            "full_return_pct": round(
+                100.0 * len(full) / item["episodes"], 1
+            ) if item["episodes"] else 0.0,
+            "full_return_symbols": len({x[0] for x in full}),
+            "peak_min_pct": round(min((x[1] for x in full), default=0.0), 2),
+            "peak_max_pct": round(max((x[1] for x in full), default=0.0), 2),
+            "low_min_pct": round(min((x[2] for x in full), default=0.0), 2),
+            "events": full,
+        })
+    return out
+
+
 def _meta_get(db, key):
     row = db.execute(
         "SELECT value FROM pump_retrace_meta WHERE key=?",
@@ -691,3 +754,30 @@ def hourly_report(now=None, db_path=None):
             "research_only=true",
             flush=True,
         )
+
+    for row in full_return_summary(now=now, db_path=db_path):
+        print(
+            "[PUMP_FULL_RETURN]",
+            "basis=", row["basis"],
+            "band=", row["peak_band"],
+            "episodes=", row["episodes"],
+            "symbols=", row["symbols"],
+            "hits=", row["full_return_hits"],
+            "hit_pct=", row["full_return_pct"],
+            "hit_symbols=", row["full_return_symbols"],
+            "peak_min=", row["peak_min_pct"],
+            "peak_max=", row["peak_max_pct"],
+            "low_min=", row["low_min_pct"],
+            "research_only=true",
+            flush=True,
+        )
+        for symbol, peak_pct, low_pct in row["events"]:
+            print(
+                "[PUMP_FULL_RETURN_EVENT]",
+                "basis=", row["basis"],
+                "symbol=", symbol,
+                "peak=", round(peak_pct, 2),
+                "low_vs_base=", round(low_pct, 2),
+                "research_only=true",
+                flush=True,
+            )
