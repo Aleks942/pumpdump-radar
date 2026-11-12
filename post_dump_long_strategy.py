@@ -5,8 +5,8 @@ a lightweight cached OKX funding read. Designed for cases where a strong prior
 pump has largely returned to its base and a squeeze/reversal may form.
 
 Lifecycle:
-POST_DUMP_WATCH -> BUYERS_APPEAR -> SQUEEZE_SETUP -> LONG_CONFIRMED
--> RETEST -> ENTRY_ZONE
+POST_DUMP_WATCH -> DUMP_EXHAUSTED -> BULLS_GAINING -> SQUEEZE_SETUP
+-> LONG_CONFIRMED -> RETEST -> ENTRY_ZONE
 
 A price dump alone is never enough. LONG confirmation requires bullish futures
 aggression, rising OI, negative funding, and no strong contradictory spot flow.
@@ -28,6 +28,7 @@ MAX_VS_BASE_PCT = 5.0
 MIN_NOTIONAL = 10_000_000.0
 MAX_SPREAD_BPS = 40.0
 MIN_RECOVERY_PCT = 1.5
+DUMP_EXHAUSTED_RECOVERY_PCT = 0.8
 MIN_OI_PCT = 0.10
 MIN_FUTURES_IMB = 10.0
 CONFIRM_FUTURES_IMB = 15.0
@@ -183,7 +184,12 @@ def _conditions(evidence, funding, recovery_pct):
     oi_rising = oi is not None and oi >= MIN_OI_PCT
     funding_negative = f is not None and f <= NEGATIVE_FUNDING_PCT
     spot_block = spot is not None and spot <= BLOCK_SPOT_IMB
+    dump_exhausted = (
+        recovery_pct >= DUMP_EXHAUSTED_RECOVERY_PCT
+        and (fut is None or fut > -10.0)
+    )
     buyers = futures_buy and (oi_rising or recovery_pct >= MIN_RECOVERY_PCT)
+    bulls_gaining = buyers and not spot_block
     squeeze = futures_buy and oi_rising and funding_negative and not spot_block
     confirmed = strong_futures_buy and oi_rising and funding_negative and not spot_block
     return {
@@ -191,7 +197,9 @@ def _conditions(evidence, funding, recovery_pct):
         "spot_imbalance_pct": spot,
         "oi_5m_pct": oi,
         "funding_pct": f,
+        "dump_exhausted": dump_exhausted,
         "buyers": buyers,
+        "bulls_gaining": bulls_gaining,
         "squeeze": squeeze,
         "confirmed": confirmed,
         "spot_block": spot_block,
@@ -207,7 +215,8 @@ def _audit(db, st, p, now, phase, reason, recovery_pct, snapshot):
          p["prior_pump_pct"], p["drop_from_high_pct"], recovery_pct,
          json.dumps(snapshot, sort_keys=True)))
     audit_id = int(cur.lastrowid)
-    if phase in ("SQUEEZE_SETUP", "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
+    if phase in ("DUMP_EXHAUSTED", "BULLS_GAINING", "SQUEEZE_SETUP",
+                 "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
         payload = {
             "audit_id": audit_id, "symbol": p["symbol"], "phase": phase,
             "at": now, "price": p["last"], "prior_pump_pct": p["prior_pump_pct"],
@@ -289,10 +298,15 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                 (now, p["last"], low, json.dumps(snapshot, sort_keys=True), symbol))
 
             phase = st["phase"]
-            if phase == "POST_DUMP_WATCH" and cond["buyers"]:
-                _set_phase(db, st, p, now, "BUYERS_APPEAR",
-                           "FUTURES_BUYERS_OR_PRICE_RECOVERY", recovery_pct, snapshot)
-            elif phase in ("POST_DUMP_WATCH", "BUYERS_APPEAR") and cond["squeeze"] and recovery_pct >= MIN_RECOVERY_PCT:
+            if phase == "POST_DUMP_WATCH" and cond["dump_exhausted"]:
+                _set_phase(db, st, p, now, "DUMP_EXHAUSTED",
+                           "SELL_PRESSURE_FADING_AND_PRICE_STOPS_MAKING_LOW",
+                           recovery_pct, snapshot)
+            elif phase == "DUMP_EXHAUSTED" and cond["bulls_gaining"]:
+                _set_phase(db, st, p, now, "BULLS_GAINING",
+                           "FUTURES_BUYERS_AND_OI_RECOVERY_APPEAR",
+                           recovery_pct, snapshot)
+            elif phase in ("DUMP_EXHAUSTED", "BULLS_GAINING") and cond["squeeze"] and recovery_pct >= MIN_RECOVERY_PCT:
                 _set_phase(db, st, p, now, "SQUEEZE_SETUP",
                            "NEGATIVE_FUNDING_OI_AND_BUYERS_ALIGN", recovery_pct, snapshot)
             elif phase == "SQUEEZE_SETUP" and cond["confirmed"] and recovery_pct >= MIN_RECOVERY_PCT:
@@ -327,6 +341,8 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
 def _message(e):
     phase = e["phase"]
     title = {
+        "DUMP_EXHAUSTED": "🟠 ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
+        "BULLS_GAINING": "🐂 БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
         "SQUEEZE_SETUP": "🟡 POST-DUMP SQUEEZE — ГОТОВИМСЯ К LONG",
         "LONG_CONFIRMED": "🟢 LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
         "RETEST": "🔎 LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
@@ -344,8 +360,15 @@ def _message(e):
         f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
         f"Funding: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
     ]
-    if phase == "SQUEEZE_SETUP":
-        lines += ["Шорты переполнены, OI растёт и покупатель появился.",
+    if phase == "DUMP_EXHAUSTED":
+        lines += ["✅ Цена перестала ускорять падение и начала отходить от локального дна.",
+                  "⚠️ Это ещё не LONG: ждём, чтобы покупатели реально забрали инициативу."]
+    elif phase == "BULLS_GAINING":
+        lines += ["✅ Покупатели усиливаются: фьючерсный поток разворачивается вверх.",
+                  "✅ OI/восстановление цены подтверждают, что движение уже не просто пауза.",
+                  "⏳ До LONG ещё ждём squeeze/подтверждение."]
+    elif phase == "SQUEEZE_SETUP":
+        lines += ["✅ Дамп выдохся, быки усиливаются, отрицательный funding даёт топливо для squeeze.",
                   "Это ещё наблюдение, не вход."]
     elif phase == "LONG_CONFIRMED":
         lines += ["Покупатели подтверждены. Не догоняем цену — ждём откат/ретест."]
