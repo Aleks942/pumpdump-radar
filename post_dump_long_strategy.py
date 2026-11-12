@@ -235,12 +235,16 @@ def _conditions(evidence, funding, recovery_pct, price_state):
     buyers = futures_buy and (oi_rising or recovery_pct >= MIN_RECOVERY_PCT)
     price_confirming = price_state.get("price_confirming") is True
     structure_break = price_state.get("structure_break") is True
-    absorption_risk = futures_buy and oi_rising and not price_confirming
-    bulls_gaining = buyers and price_confirming and not spot_block
+    absorption_risk = futures_buy and oi_rising and (
+        not price_confirming or not structure_break
+    )
+    bulls_gaining = buyers and price_confirming and structure_break and not spot_block
     squeeze = (futures_buy and oi_rising and funding_negative and
                price_confirming and structure_break and not spot_block)
     confirmed = (strong_futures_buy and oi_rising and funding_negative and
                  price_confirming and structure_break and not spot_block)
+    reconfirmed = (strong_futures_buy and oi_rising and funding_negative and
+                   price_confirming and not spot_block)
     return {
         "futures_imbalance_pct": fut,
         "spot_imbalance_pct": spot,
@@ -255,6 +259,7 @@ def _conditions(evidence, funding, recovery_pct, price_state):
         "bulls_gaining": bulls_gaining,
         "squeeze": squeeze,
         "confirmed": confirmed,
+        "reconfirmed": reconfirmed,
         "spot_block": spot_block,
     }
 
@@ -398,7 +403,7 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                                "PULLBACK_HELD_ABOVE_DUMP_LOW", recovery_pct, snapshot)
             elif phase == "RETEST":
                 level = _num(st["confirm_level"]) or p["last"]
-                if cond["confirmed"] and p["last"] >= level * 0.997:
+                if cond["reconfirmed"] and p["last"] >= level * 0.997:
                     _set_phase(db, st, p, now, "ENTRY_ZONE",
                                "RETEST_HELD_AND_BUYERS_RECONFIRMED", recovery_pct, snapshot)
                 elif p["last"] <= low * 1.001:
