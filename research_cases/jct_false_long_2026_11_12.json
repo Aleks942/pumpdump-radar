@@ -1,0 +1,25 @@
+{
+  "case_id": "JCT_FALSE_LONG_2026_11_12",
+  "symbol": "JCTUSDT",
+  "source": "manual_review_user_report_plus_chart",
+  "observed_setup": {
+    "approximate_price_before_failure": 0.003,
+    "funding_pct_approx": -0.0597,
+    "oi_approx": 5020000000,
+    "futures_flow": "buying_visible",
+    "cvd": "rising",
+    "interpretation_at_time": "possible post-dump squeeze / LONG watch"
+  },
+  "outcome": {
+    "subsequent_low_user_reported": 0.00227,
+    "move_from_0_0030_pct": -24.33,
+    "classification": "FALSE_LONG_REVERSAL"
+  },
+  "lesson": [
+    "Positive CVD/OI and negative funding are not sufficient for LONG.",
+    "Require price confirmation.",
+    "Require bullish local structure break before squeeze/long confirmation.",
+    "If buying increases while price fails to rise, treat as possible seller absorption.",
+    "A new low invalidates the long thesis."
+  ]
+}
