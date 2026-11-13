@@ -1658,7 +1658,8 @@ while True:
         observe_complete_post_pump_short(tickers)
     except Exception as complete_short_exc:
         print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
-              type(complete_short_exc).__name__, flush=True)
+              type(complete_short_exc).__name__,
+              str(complete_short_exc)[:300], flush=True)
 
     # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
     # Research-only; reuses existing ticker/OI/flow caches and never places orders.
