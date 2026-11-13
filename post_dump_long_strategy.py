@@ -20,6 +20,7 @@ from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from long_forward_stats import register as register_forward, advance as advance_forward, maybe_log_report
 
 DB_PATH = os.getenv("PUMP_WATCH_DB", "/data/pump_watch.sqlite3")
 MIN_PRIOR_PUMP_PCT = 30.0
@@ -273,6 +274,9 @@ def _audit(db, st, p, now, phase, reason, recovery_pct, snapshot):
          p["prior_pump_pct"], p["drop_from_high_pct"], recovery_pct,
          json.dumps(snapshot, sort_keys=True)))
     audit_id = int(cur.lastrowid)
+    if phase in ("BULLS_GAINING", "SQUEEZE_SETUP", "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
+        register_forward(db, "POST_DUMP_LONG", audit_id, p["symbol"], phase,
+                         now, p["last"])
     if phase in ("DUMP_EXHAUSTED", "BULLS_GAINING", "SQUEEZE_SETUP",
                  "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
         payload = {
@@ -417,6 +421,9 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
 
             _record_price(db, symbol, now, p["last"])
 
+        quotes = {symbol: p["last"] for symbol, p in profiles.items()}
+        advance_forward(db, "POST_DUMP_LONG", quotes, now)
+        maybe_log_report(db, "POST_DUMP_LONG", now, days=30)
         db.commit()
 
 
