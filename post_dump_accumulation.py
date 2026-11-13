@@ -223,7 +223,15 @@ def observe(tickers,now=None,db_path=None,evidence_reader=None):
                     _set_phase(db,st,p,now,"BREAKOUT_READY",
                                "PRICE_BREAKS_BASE_WITH_BUY_FLOW",snap)
             elif phase=="BREAKOUT_READY":
-                if cond["breakout"]:
+                ceiling=_num(st.get("base_ceiling"))
+                breakout_confirmed=(
+                    ceiling is not None
+                    and p["last"]>=ceiling*(1+BREAKOUT_PCT/100)
+                    and cond["strong_oi"]
+                    and (_num(cond["futures_imbalance_pct"]) or -999)>=BUY_IMB_MIN
+                    and not cond["spot_block"]
+                )
+                if breakout_confirmed:
                     _set_phase(db,st,p,now,"LONG_TRIGGER",
                                "BREAKOUT_OI_BUY_FLOW_CONFIRMED",snap)
                 elif p["last"]<=float(st["episode_low"])*1.01:
