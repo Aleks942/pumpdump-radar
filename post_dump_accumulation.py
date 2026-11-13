@@ -18,6 +18,7 @@ from contextlib import closing
 
 from post_pump_short_evidence import take_cached_evidence
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
+from long_forward_stats import register as register_forward, advance as advance_forward, maybe_log_report
 
 DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
 MIN_DROP_FROM_HIGH_PCT=25.0
@@ -143,6 +144,9 @@ def _audit(db,st,p,now,phase,reason,snapshot):
         (p["symbol"],st["episode_at"],now,phase,reason,p["last"],
          p["drop_from_high_pct"],json.dumps(snapshot,sort_keys=True)))
     aid=int(cur.lastrowid)
+    if phase in ("BULLS_ACCUMULATING","BREAKOUT_READY","LONG_TRIGGER"):
+        register_forward(db, "POST_DUMP_ACCUM", aid, p["symbol"], phase,
+                         now, p["last"])
     if phase in ("BASE_FORMING","BUYER_ABSORPTION","BULLS_ACCUMULATING",
                  "BREAKOUT_READY","LONG_TRIGGER"):
         payload={"audit_id":aid,"symbol":p["symbol"],"phase":phase,"at":now,
@@ -247,6 +251,9 @@ def observe(tickers,now=None,db_path=None,evidence_reader=None):
                  json.dumps(snap,sort_keys=True),symbol))
         db.execute("DELETE FROM post_dump_accumulation_quotes WHERE ts<?",
                    (now-SAMPLE_RETENTION_SEC,))
+        quotes={symbol:p["last"] for symbol,p in profiles.items()}
+        advance_forward(db,"POST_DUMP_ACCUM",quotes,now)
+        maybe_log_report(db,"POST_DUMP_ACCUM",now,days=30)
         db.commit()
 
 
