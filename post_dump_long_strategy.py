@@ -423,15 +423,24 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
 def _message(e):
     phase = e["phase"]
     title = {
-        "DUMP_EXHAUSTED": "🟠 ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
-        "BULLS_GAINING": "🐂 БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
-        "SQUEEZE_SETUP": "🟡 POST-DUMP SQUEEZE — ГОТОВИМСЯ К LONG",
-        "LONG_CONFIRMED": "🟢 LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
-        "RETEST": "🔎 LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
-        "ENTRY_ZONE": "🎯 ЗОНА ВХОДА LONG",
+        "DUMP_EXHAUSTED": "ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
+        "BULLS_GAINING": "БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
+        "SQUEEZE_SETUP": "POST-DUMP SQUEEZE — ГОТОВИМСЯ К LONG",
+        "LONG_CONFIRMED": "LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
+        "RETEST": "LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
+        "ENTRY_ZONE": "ЗОНА ВХОДА LONG",
+    }[phase]
+    priority = {
+        "DUMP_EXHAUSTED": "⚪ ИНФО — НАБЛЮДАЕМ",
+        "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
+        "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
+        "LONG_CONFIRMED": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
+        "RETEST": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
+        "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
     }[phase]
     c = (e.get("evidence") or {}).get("conditions") or {}
     lines = [
+        priority,
         title,
         f"<b>{e['symbol']}</b>",
         f"Цена: {e['price']:.8g}",

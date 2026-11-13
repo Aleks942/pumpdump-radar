@@ -254,13 +254,20 @@ def _message(e):
     phase=e["phase"]; c=(e.get("evidence") or {}).get("conditions") or {}
     b=(e.get("evidence") or {}).get("base") or {}
     titles={
-        "BASE_FORMING":"🟡 МОНЕТА ЛЕЖИТ ПОСЛЕ ДАМПА — ФОРМИРУЕТСЯ БАЗА",
-        "BUYER_ABSORPTION":"🟠 ПОКУПАТЕЛИ ПОЯВЛЯЮТСЯ — ЦЕНА ЕЩЁ НЕ УШЛА",
-        "BULLS_ACCUMULATING":"🐂 БЫКИ НАКАПЛИВАЮТ ПОЗИЦИЮ ДО ИМПУЛЬСА",
-        "BREAKOUT_READY":"🟢 НАКОПЛЕНИЕ ГОТОВО К ПРОБОЮ",
-        "LONG_TRIGGER":"🎯 LONG TRIGGER ПОСЛЕ НАКОПЛЕНИЯ",
+        "BASE_FORMING":"МОНЕТА ЛЕЖИТ ПОСЛЕ ДАМПА — ФОРМИРУЕТСЯ БАЗА",
+        "BUYER_ABSORPTION":"ПОКУПАТЕЛИ ПОЯВЛЯЮТСЯ — ЦЕНА ЕЩЁ НЕ УШЛА",
+        "BULLS_ACCUMULATING":"БЫКИ НАКАПЛИВАЮТ ПОЗИЦИЮ ДО ИМПУЛЬСА",
+        "BREAKOUT_READY":"НАКОПЛЕНИЕ ГОТОВО К ПРОБОЮ",
+        "LONG_TRIGGER":"LONG TRIGGER ПОСЛЕ НАКОПЛЕНИЯ",
     }
-    lines=[titles[phase],f"<b>{e['symbol']}</b>",
+    priority={
+        "BASE_FORMING":"⚪ ИНФО — НАБЛЮДАЕМ",
+        "BUYER_ABSORPTION":"⚪ ИНФО — ПОКУПКИ ПОЯВИЛИСЬ",
+        "BULLS_ACCUMULATING":"🟡 ГОТОВЬСЯ — БЫКИ НАКАПЛИВАЮТ",
+        "BREAKOUT_READY":"🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ПРОБОЙ",
+        "LONG_TRIGGER":"🟢 РАБОЧИЙ СИГНАЛ — LONG",
+    }
+    lines=[priority[phase],titles[phase],f"<b>{e['symbol']}</b>",
            f"Цена: {e['price']:.8g}",
            f"Падение от 24ч максимума: -{e['drop_from_high_pct']:.1f}%",
            f"Диапазон базы: {b.get('range_pct') if b.get('range_pct') is not None else 'нет данных'}%",

@@ -21,12 +21,26 @@ TITLES = {
     'TREND_SHIFT': '📉 СТРУКТУРА СЛОМАНА ВНИЗ — ЖДЁМ ПОДТВЕРЖДЕНИЕ',
     'QUALITY_REVERSAL': '🟠 КАЧЕСТВЕННЫЙ РАЗВОРОТ — ГОТОВИМСЯ К ШОРТУ',
     'PRE_SHORT': '🟠 РАННИЙ СИГНАЛ НА ШОРТ — 4 ИЗ 5',
-    'SHORT_CONFIRMED': '🔴 ШОРТ ПОДТВЕРЖДЁН — ЖДЁМ ПОВТОРНУЮ ПРОВЕРКУ УРОВНЯ',
+    'SHORT_CONFIRMED': 'ШОРТ ПОДТВЕРЖДЁН — ЖДЁМ ПОВТОРНУЮ ПРОВЕРКУ УРОВНЯ',
     'RETEST': '🔎 ПОВТОРНАЯ ПРОВЕРКА УРОВНЯ — СМОТРИМ ПРОДАВЦОВ',
-    'ENTRY_ZONE': '🎯 ЗОНА ВХОДА В ШОРТ',
+    'ENTRY_ZONE': 'ЗОНА ВХОДА В ШОРТ',
     'READY_RESEARCH': '🧪 ТЕСТОВЫЙ ПЛАН НА ШОРТ',
     'CANCELLED': '⛔ СЦЕНАРИЙ ОТМЕНЁН',
 }
+PRIORITY_LABELS = {
+    'DISCOVERED': '⚪ ИНФО — НАБЛЮДАЕМ',
+    'EARLY_WEAKENING': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
+    'WEAKENING': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
+    'TREND_SHIFT': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
+    'QUALITY_REVERSAL': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
+    'PRE_SHORT': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
+    'SHORT_CONFIRMED': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
+    'RETEST': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
+    'ENTRY_ZONE': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
+    'READY_RESEARCH': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
+    'CANCELLED': '🔴 ОТМЕНА / ОПАСНОСТЬ — НЕ ВХОДИТЬ',
+}
+
 CANCEL_REASONS = {
     'BUYERS_RECLAIMED_NEW_HIGH': 'Покупатели обновили максимум.',
     'BUYERS_RECOVERED_EARLY_WEAKENING': 'Цена восстановилась после ослабления.',
@@ -142,7 +156,7 @@ def _research_lines(event):
 def message(event):
     kind = event['kind']
     at = datetime.fromtimestamp(event['at'], ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M:%S')
-    lines = [TITLES[kind], '<b>' + escape(event['symbol']) + '</b>',
+    lines = [PRIORITY_LABELS[kind], TITLES[kind], '<b>' + escape(event['symbol']) + '</b>',
              'Наблюдение: ' + at + ' (Польша)',
              f"Рост от открытия 24ч до максимума: +{event['rise_pct']:.2f}%",
              f"Откат от максимума: {event['retrace_pct']:.2f}%"]
