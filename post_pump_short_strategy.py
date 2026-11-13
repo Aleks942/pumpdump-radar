@@ -1309,6 +1309,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
               "30pct_uses_24h_high_open=true paper_only=true",flush=True)
         try:
             with closing(sqlite3.connect(path,timeout=5)) as report_db:
+                report_db.row_factory=sqlite3.Row
                 print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
                       "first_touch_closed_1m=true no_live_orders=true",
                       flush=True)
