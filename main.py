@@ -42,6 +42,7 @@ from post_pump_short_research import (
 )
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from post_dump_long_strategy import observe as observe_post_dump_long, deliver as deliver_post_dump_long
+from post_dump_accumulation import observe as observe_post_dump_accumulation, deliver as deliver_post_dump_accumulation
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
@@ -1669,6 +1670,14 @@ while True:
     except Exception as post_dump_long_exc:
         print("[POST_DUMP_LONG_LOOP_ERROR]",
               type(post_dump_long_exc).__name__, str(post_dump_long_exc), flush=True)
+
+    try:
+        observe_post_dump_accumulation(tickers)
+        deliver_post_dump_accumulation(send_telegram)
+    except Exception as post_dump_accum_exc:
+        print("[POST_DUMP_ACCUM_LOOP_ERROR]",
+              type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
+              flush=True)
 
     # User-enabled complete lifecycle. Preserves every strategy evidence gate;
     # messages explicitly label READY as a paper plan, never a live order.
