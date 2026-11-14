@@ -5,7 +5,10 @@ lows while OI and taker buying begin to build before price acceleration.
 
 Lifecycle:
 FALLEN_COIN -> BASE_FORMING -> BUYER_ABSORPTION -> OI_BUILDUP
--> BULLS_ACCUMULATING -> BREAKOUT_READY -> LONG_TRIGGER
+-> ENERGY_BUILDUP -> BULLS_ACCUMULATING -> BREAKOUT_READY -> LONG_TRIGGER
+
+ENERGY_BUILDUP is direction-neutral. BULLS_ACCUMULATING is allowed only after
+price breaks the frozen base ceiling with strong OI and futures buying.
 
 No orders. No new service. Uses existing ticker/OI/flow caches only.
 """
@@ -33,6 +36,9 @@ SPOT_BLOCK=-20.0
 OI_BUILD_MIN=0.10
 OI_STRONG_MIN=0.30
 BREAKOUT_PCT=0.35
+BREAKOUT_HOLD_PCT=0.20
+BULL_CONFIRM_HOLD_SEC=120
+LONG_TRIGGER_HOLD_SEC=60
 MAX_ACTIVE=12
 EPISODE_TTL_SEC=24*3600
 
@@ -123,17 +129,13 @@ def _conditions(e,base,price):
     buyer_absorption=(base.get("base_forming") is True and fut is not None
                       and fut>=BUY_IMB_MIN and not spot_block)
     oi_build=oi is not None and oi>=OI_BUILD_MIN
-    bulls_accumulating=buyer_absorption and oi_build
+    energy_building=buyer_absorption and oi_build
     strong_oi=oi is not None and oi>=OI_STRONG_MIN
-    ceiling=_num(base.get("high"))
-    breakout=(ceiling is not None and price>=ceiling*(1+BREAKOUT_PCT/100)
-              and fut is not None and fut>=BUY_IMB_MIN and strong_oi
-              and not spot_block)
     return {
         "futures_imbalance_pct":fut,"spot_imbalance_pct":spot,"oi_5m_pct":oi,
         "buyer_absorption":buyer_absorption,"oi_build":oi_build,
-        "bulls_accumulating":bulls_accumulating,"strong_oi":strong_oi,
-        "breakout":breakout,"spot_block":spot_block,
+        "energy_building":energy_building,"strong_oi":strong_oi,
+        "spot_block":spot_block,
     }
 
 
@@ -144,11 +146,11 @@ def _audit(db,st,p,now,phase,reason,snapshot):
         (p["symbol"],st["episode_at"],now,phase,reason,p["last"],
          p["drop_from_high_pct"],json.dumps(snapshot,sort_keys=True)))
     aid=int(cur.lastrowid)
-    if phase in ("BULLS_ACCUMULATING","BREAKOUT_READY","LONG_TRIGGER"):
+    if phase in ("ENERGY_BUILDUP","BULLS_ACCUMULATING","BREAKOUT_READY","LONG_TRIGGER"):
         register_forward(db, "POST_DUMP_ACCUM", aid, p["symbol"], phase,
                          now, p["last"])
-    if phase in ("BASE_FORMING","BUYER_ABSORPTION","BULLS_ACCUMULATING",
-                 "BREAKOUT_READY","LONG_TRIGGER"):
+    if phase in ("BASE_FORMING","BUYER_ABSORPTION","ENERGY_BUILDUP",
+                 "BULLS_ACCUMULATING","BREAKOUT_READY","LONG_TRIGGER"):
         payload={"audit_id":aid,"symbol":p["symbol"],"phase":phase,"at":now,
                  "price":p["last"],"drop_from_high_pct":p["drop_from_high_pct"],
                  "evidence":snapshot}
@@ -218,29 +220,54 @@ def observe(tickers,now=None,db_path=None,evidence_reader=None):
             elif phase=="BUYER_ABSORPTION" and cond["oi_build"]:
                 _set_phase(db,st,p,now,"OI_BUILDUP",
                            "OI_EXPANDS_DURING_BASE",snap)
-            elif phase=="OI_BUILDUP" and cond["bulls_accumulating"]:
-                _set_phase(db,st,p,now,"BULLS_ACCUMULATING",
-                           "BUY_FLOW_AND_OI_BUILD_BEFORE_BREAKOUT",snap)
-            elif phase=="BULLS_ACCUMULATING":
+            elif phase=="OI_BUILDUP" and cond["energy_building"]:
+                _set_phase(db,st,p,now,"ENERGY_BUILDUP",
+                           "BUY_FLOW_AND_OI_BUILD_DIRECTION_NOT_CONFIRMED",snap)
+            elif phase=="ENERGY_BUILDUP":
                 ceiling=_num(st.get("base_ceiling")) or _num(base.get("high"))
-                if ceiling is not None and p["last"]>=ceiling*(1+BREAKOUT_PCT/100):
-                    _set_phase(db,st,p,now,"BREAKOUT_READY",
-                               "PRICE_BREAKS_BASE_WITH_BUY_FLOW",snap)
-            elif phase=="BREAKOUT_READY":
-                ceiling=_num(st.get("base_ceiling"))
-                breakout_confirmed=(
+                bullish_break=(
                     ceiling is not None
                     and p["last"]>=ceiling*(1+BREAKOUT_PCT/100)
                     and cond["strong_oi"]
                     and (_num(cond["futures_imbalance_pct"]) or -999)>=BUY_IMB_MIN
                     and not cond["spot_block"]
                 )
-                if breakout_confirmed:
-                    _set_phase(db,st,p,now,"LONG_TRIGGER",
-                               "BREAKOUT_OI_BUY_FLOW_CONFIRMED",snap)
-                elif p["last"]<=float(st["episode_low"])*1.01:
+                if bullish_break:
+                    _set_phase(db,st,p,now,"BULLS_ACCUMULATING",
+                               "BULLISH_BASE_BREAK_OI_AND_BUY_FLOW_CONFIRMED",snap)
+                elif p["last"] < float(st["episode_low"])*0.995:
                     _set_phase(db,st,p,now,"FALLEN_COIN",
-                               "BREAKOUT_FAILED_BACK_TO_LOW",snap)
+                               "ENERGY_BUILDUP_FAILED_NEW_LOW",snap)
+            elif phase=="BULLS_ACCUMULATING":
+                ceiling=_num(st.get("base_ceiling"))
+                holds_break=(
+                    ceiling is not None
+                    and p["last"]>=ceiling*(1+BREAKOUT_HOLD_PCT/100)
+                    and cond["oi_build"]
+                    and (_num(cond["futures_imbalance_pct"]) or -999)>=BUY_IMB_MIN
+                    and not cond["spot_block"]
+                )
+                if now-float(st["phase_at"])>=BULL_CONFIRM_HOLD_SEC and holds_break:
+                    _set_phase(db,st,p,now,"BREAKOUT_READY",
+                               "BULLISH_BREAK_HELD_WITH_OI_AND_BUY_FLOW",snap)
+                elif ceiling is not None and p["last"]<ceiling:
+                    _set_phase(db,st,p,now,"ENERGY_BUILDUP",
+                               "BULLISH_BREAK_NOT_HELD_DIRECTION_UNCONFIRMED",snap)
+            elif phase=="BREAKOUT_READY":
+                ceiling=_num(st.get("base_ceiling"))
+                long_confirmed=(
+                    ceiling is not None
+                    and p["last"]>=ceiling*(1+BREAKOUT_HOLD_PCT/100)
+                    and cond["strong_oi"]
+                    and (_num(cond["futures_imbalance_pct"]) or -999)>=BUY_IMB_MIN
+                    and not cond["spot_block"]
+                )
+                if now-float(st["phase_at"])>=LONG_TRIGGER_HOLD_SEC and long_confirmed:
+                    _set_phase(db,st,p,now,"LONG_TRIGGER",
+                               "BULLISH_BREAK_HELD_AND_FLOW_RECONFIRMED",snap)
+                elif ceiling is not None and p["last"]<ceiling:
+                    _set_phase(db,st,p,now,"ENERGY_BUILDUP",
+                               "BREAKOUT_FAILED_BACK_INSIDE_BASE",snap)
 
             db.execute("""INSERT OR REPLACE INTO post_dump_accumulation_quotes
                 (symbol,ts,price) VALUES(?,?,?)""",(symbol,now,p["last"]))
@@ -263,16 +290,18 @@ def _message(e):
     titles={
         "BASE_FORMING":"МОНЕТА ЛЕЖИТ ПОСЛЕ ДАМПА — ФОРМИРУЕТСЯ БАЗА",
         "BUYER_ABSORPTION":"ПОКУПАТЕЛИ ПОЯВЛЯЮТСЯ — ЦЕНА ЕЩЁ НЕ УШЛА",
-        "BULLS_ACCUMULATING":"БЫКИ НАКАПЛИВАЮТ ПОЗИЦИЮ ДО ИМПУЛЬСА",
-        "BREAKOUT_READY":"НАКОПЛЕНИЕ ГОТОВО К ПРОБОЮ",
-        "LONG_TRIGGER":"LONG TRIGGER ПОСЛЕ НАКОПЛЕНИЯ",
+        "ENERGY_BUILDUP":"СЖАТИЕ ПОСЛЕ ДАМПА — ЭНЕРГИЯ НАКАПЛИВАЕТСЯ",
+        "BULLS_ACCUMULATING":"БЫЧЬЕ НАКОПЛЕНИЕ ПОДТВЕРЖДЕНО",
+        "BREAKOUT_READY":"ПРОБОЙ БАЗЫ УДЕРЖИВАЕТСЯ",
+        "LONG_TRIGGER":"LONG-СЦЕНАРИЙ ПОДТВЕРЖДЁН ПОСЛЕ УДЕРЖАНИЯ ПРОБОЯ",
     }
     priority={
         "BASE_FORMING":"⚪ ИНФО — НАБЛЮДАЕМ",
         "BUYER_ABSORPTION":"⚪ ИНФО — ПОКУПКИ ПОЯВИЛИСЬ",
-        "BULLS_ACCUMULATING":"🟡 ГОТОВЬСЯ — БЫКИ НАКАПЛИВАЮТ",
-        "BREAKOUT_READY":"🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ПРОБОЙ",
-        "LONG_TRIGGER":"🟢 РАБОЧИЙ СИГНАЛ — LONG",
+        "ENERGY_BUILDUP":"🟡 НАБЛЮДАЕМ — НАПРАВЛЕНИЕ НЕ ПОДТВЕРЖДЕНО",
+        "BULLS_ACCUMULATING":"🟡 ГОТОВЬСЯ — БЫЧЬЕ НАПРАВЛЕНИЕ ПОДТВЕРЖДЕНО",
+        "BREAKOUT_READY":"🟡 ГОТОВЬСЯ — ПРОБОЙ УДЕРЖИВАЕТСЯ",
+        "LONG_TRIGGER":"🟡 ТЕСТОВЫЙ LONG — НЕ ВХОДИТЬ АВТОМАТИЧЕСКИ",
     }
     lines=[priority[phase],titles[phase],f"<b>{e['symbol']}</b>",
            f"Цена: {e['price']:.8g}",
@@ -282,12 +311,19 @@ def _message(e):
            f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%"]
     if phase=="BUYER_ABSORPTION":
         lines+=["Покупки уже появились, но цена ещё сжата. Это раннее наблюдение, не вход."]
+    elif phase=="ENERGY_BUILDUP":
+        lines+=["OI и покупки растут внутри базы, но цена ещё не доказала направление.",
+                "Не входить. Ждём пробой зафиксированной верхней границы базы."]
     elif phase=="BULLS_ACCUMULATING":
-        lines+=["OI и покупки растут до импульса. Следим за верхом базы."]
+        lines+=["Цена пробила верх базы, а OI и покупки подтверждают движение вверх.",
+                "Это уже бычье подтверждение, но вход ещё не разрешён: ждём удержание пробоя."]
     elif phase=="BREAKOUT_READY":
-        lines+=["Цена вышла из базы. Ждём подтверждение, не догоняем свечу."]
+        lines+=["Пробой удерживается минимум 2 минуты вместе с OI и покупками.",
+                "Не догоняем цену. Ждём повторного подтверждения потока."]
     elif phase=="LONG_TRIGGER":
-        lines+=["Пробой подтверждён покупками и OI. Бот ордер не выставляет."]
+        lines+=["Пробой удержан и поток повторно подтверждён.",
+                "Сигнал пока тестовый: статистика ещё недостаточна для автоматического зелёного входа.",
+                "Бот ордер не выставляет."]
     return "\n".join(lines)
 
 
