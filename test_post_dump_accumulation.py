@@ -38,35 +38,37 @@ class AccumTests(unittest.TestCase):
         for i in range(1,11):
             self.drive(NOW+i*60,70.2 if i%2 else 70.0)
         self.assertEqual(self.state()["phase"],"BASE_FORMING")
-        self.drive(NOW+660,70.2)
+        for i in range(11,31):
+            self.drive(NOW+i*60,70.2 if i%2 else 70.0)
+        self.drive(NOW+1860,70.2)
         self.assertEqual(self.state()["phase"],"BUYER_ABSORPTION")
-        self.drive(NOW+720,70.2)
+        self.drive(NOW+1920,70.2)
         self.assertEqual(self.state()["phase"],"OI_BUILDUP")
-        self.drive(NOW+780,70.2)
+        self.drive(NOW+1980,70.2)
         self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
         ceiling=self.state()["base_ceiling"]
-        self.drive(NOW+840,ceiling*1.004)
+        self.drive(NOW+2040,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
-        self.drive(NOW+900,ceiling*1.004)
+        self.drive(NOW+2100,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
-        self.drive(NOW+960,ceiling*1.004)
+        self.drive(NOW+2160,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BREAKOUT_READY")
-        self.drive(NOW+1020,ceiling*1.004)
+        self.drive(NOW+2220,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"LONG_TRIGGER")
     def test_spot_selling_blocks_accumulation(self):
         bad=ev(fut=20,spot=-50,oi=1)
         self.drive(NOW,70,bad)
-        for i in range(1,12):
+        for i in range(1,32):
             self.drive(NOW+i*60,70.1,bad)
         self.assertEqual(self.state()["phase"],"BASE_FORMING")
 
     def test_energy_building_does_not_claim_bullish_direction(self):
         self.drive(NOW,70)
-        for i in range(1,11):
+        for i in range(1,31):
             self.drive(NOW+i*60,70.1)
-        self.drive(NOW+660,70.1)
-        self.drive(NOW+720,70.1)
-        self.drive(NOW+780,70.1)
+        self.drive(NOW+1860,70.1)
+        self.drive(NOW+1920,70.1)
+        self.drive(NOW+1980,70.1)
         self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
         with sqlite3.connect(self.path) as db:
             db.row_factory=sqlite3.Row
@@ -79,16 +81,24 @@ class AccumTests(unittest.TestCase):
 
     def test_failed_break_returns_to_direction_unconfirmed(self):
         self.drive(NOW,70)
+        for i in range(1,31):
+            self.drive(NOW+i*60,70.1)
+        self.drive(NOW+1860,70.1)
+        self.drive(NOW+1920,70.1)
+        self.drive(NOW+1980,70.1)
+        ceiling=self.state()["base_ceiling"]
+        self.drive(NOW+2040,ceiling*1.004)
+        self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
+        self.drive(NOW+2100,ceiling*0.999)
+        self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
+
+    def test_ten_minutes_is_early_base_not_mature_signal(self):
+        self.drive(NOW,70)
         for i in range(1,11):
             self.drive(NOW+i*60,70.1)
+        self.assertEqual(self.state()["phase"],"BASE_FORMING")
         self.drive(NOW+660,70.1)
-        self.drive(NOW+720,70.1)
-        self.drive(NOW+780,70.1)
-        ceiling=self.state()["base_ceiling"]
-        self.drive(NOW+840,ceiling*1.004)
-        self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
-        self.drive(NOW+900,ceiling*0.999)
-        self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
+        self.assertEqual(self.state()["phase"],"BASE_FORMING")
 
     def test_long_trigger_is_not_green_actionable_label(self):
         event={"phase":"LONG_TRIGGER","symbol":"TESTUSDT","price":70.5,
