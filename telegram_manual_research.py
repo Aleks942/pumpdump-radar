@@ -17,13 +17,9 @@ import time
 import requests
 
 from aggregated_oi import watch_symbol, get_aggregated_oi
-from oi_collector import get_oi_5m
-from trade_flow_collector_v3 import get_futures_windows
 from bybit_taker_stream import watch_symbol as watch_bybit_flow_symbol, get_flow as get_bybit_flow
 from spot_cvd_engine import get_spot_cvd
-from liquidation_engine import (
-    fetch_okx_liquidations, get_liquidation_summary, watch_bybit_symbol
-)
+from liquidation_engine import get_liquidation_summary, watch_bybit_symbol
 
 WATCH_TTL_SEC=6*3600
 REFRESH_SEC=60
@@ -145,10 +141,8 @@ def _agg_oi5(symbol):
 
 
 def _liqs(symbol):
-    try:
-        fetch_okx_liquidations(_okx_inst(symbol))
-    except Exception:
-        pass
+    # Manual mode is Bybit-first. Do not force an OKX liquidation REST call:
+    # Bybit-only symbols such as EVAA would generate false OKX errors.
     try:
         watch_bybit_symbol(symbol)
     except Exception:
@@ -207,7 +201,7 @@ def build_snapshot(symbol):
         spot=get_spot_cvd(_okx_inst(symbol)) or {}
     except Exception:
         spot={}
-    funding=fetch_funding(symbol)
+    funding=ticker.get("funding_pct")
     liq=_liqs(symbol)
     verdict,reasons=_verdict(ticker,oi_local,oi_agg,fut,spot,funding)
 
@@ -218,8 +212,10 @@ def build_snapshot(symbol):
     simb=_num(spot.get("cvd_percent")) if spot.get("available") else None
     sdelta=_num(spot.get("delta")) if spot.get("available") else None
 
-    long_liq=_num(liq.get("long_usd"))
-    short_liq=_num(liq.get("short_usd"))
+    long_liq=_num(liq.get("long_liq"))
+    short_liq=_num(liq.get("short_liq"))
+    liq_quality=str(liq.get("quality") or "UNAVAILABLE")
+    liq_sources=str(liq.get("exchanges") or "нет данных")
     lines=[
         "🔬 <b>РУЧНОЕ ИССЛЕДОВАНИЕ</b>",
         f"<b>{symbol}</b> · Bybit",
@@ -234,7 +230,7 @@ def build_snapshot(symbol):
         f"Spot delta: {sdelta:+,.2f} USDT" if sdelta is not None else "Spot delta: нет данных",
         f"Spot imbalance: {_fmt(simb)}",
         f"Funding Bybit: {_fmt(funding,4)}",
-        f"Ликвидации 5м LONG/SHORT: {long_liq:,.0f} USD / {short_liq:,.0f} USD" if long_liq is not None and short_liq is not None else "Ликвидации 5м: частично/нет данных",
+        f"Ликвидации 5м LONG/SHORT: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
         "",
         verdict,
         f"Почему: {reasons}",
@@ -266,7 +262,8 @@ class ManualResearchBot:
         now=time.time() if now is None else float(now)
         with self.lock:
             self.watch[symbol]={"expires":now+WATCH_TTL_SEC,
-                                "last_verdict":None,"last_sent":0.0}
+                                "last_verdict":None,"last_sent":0.0,
+                                "candidate_verdict":None,"candidate_count":0}
         try:
             watch_symbol(symbol)
             watch_bybit_symbol(symbol)
@@ -299,6 +296,8 @@ class ManualResearchBot:
                     if symbol in self.watch:
                         self.watch[symbol]["last_verdict"]=verdict
                         self.watch[symbol]["last_sent"]=time.time()
+                        self.watch[symbol]["candidate_verdict"]=None
+                        self.watch[symbol]["candidate_count"]=0
                 self._send(report,symbol)
             else:
                 self._send(f"⚠️ {symbol}: не удалось получить Bybit USDT perpetual данные.",symbol)
@@ -369,28 +368,53 @@ class ManualResearchBot:
             except Exception as exc:
                 print("[MANUAL_RESEARCH_REFRESH_ERROR]",symbol,type(exc).__name__,flush=True)
                 continue
-            changed=verdict!=state.get("last_verdict")
             periodic=now-state.get("last_sent",0)>=STATUS_REPEAT_SEC
-            if report and (changed or periodic):
+            confirmed_change=False
+            with self.lock:
+                current=self.watch.get(symbol)
+                if current is None:
+                    continue
+                if verdict==current.get("last_verdict"):
+                    current["candidate_verdict"]=None
+                    current["candidate_count"]=0
+                elif verdict==current.get("candidate_verdict"):
+                    current["candidate_count"]=int(current.get("candidate_count",0))+1
+                else:
+                    current["candidate_verdict"]=verdict
+                    current["candidate_count"]=1
+                # Direction must survive two consecutive refreshes before
+                # Telegram treats it as a real state change. This prevents
+                # 1-minute bearish/bullish/neutral flapping.
+                confirmed_change=current["candidate_count"]>=2
+            if report and (confirmed_change or periodic):
                 self._send(report,symbol)
                 with self.lock:
                     if symbol in self.watch:
                         self.watch[symbol]["last_verdict"]=verdict
                         self.watch[symbol]["last_sent"]=now
+                        self.watch[symbol]["candidate_verdict"]=None
+                        self.watch[symbol]["candidate_count"]=0
 
     def run_forever(self):
         print("[MANUAL_RESEARCH_BOT_STARTED]",flush=True)
         last_refresh=0.0
+        poll_errors=0
         while True:
             try:
                 self.poll_once()
+                poll_errors=0
             except Exception as exc:
-                print("[MANUAL_RESEARCH_POLL_ERROR]",type(exc).__name__,flush=True)
+                poll_errors+=1
+                print("[MANUAL_RESEARCH_POLL_ERROR]",type(exc).__name__,
+                      "streak=",poll_errors,flush=True)
             now=time.time()
             if now-last_refresh>=REFRESH_SEC:
                 self.refresh(now)
                 last_refresh=now
-            time.sleep(2)
+            # Telegram/network errors are transient. Back off instead of
+            # hammering getUpdates every two seconds during an outage.
+            delay=min(30,2**min(poll_errors,4)) if poll_errors else 2
+            time.sleep(delay)
 
 
 def start(token,chat_id,sender):
