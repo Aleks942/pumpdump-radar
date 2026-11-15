@@ -45,7 +45,7 @@ class AccumTests(unittest.TestCase):
         self.drive(NOW+1920,70.2)
         self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
         ceiling=self.state()["base_ceiling"]
-        self.drive(NOW+2040,ceiling*1.004)
+        self.drive(NOW+1980,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
         self.drive(NOW+2040,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
