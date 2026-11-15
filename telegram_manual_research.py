@@ -13,6 +13,7 @@ import math
 import re
 import threading
 import time
+from collections import deque
 
 import requests
 
@@ -24,6 +25,8 @@ from liquidation_engine import get_liquidation_summary, watch_bybit_symbol
 WATCH_TTL_SEC=6*3600
 REFRESH_SEC=60
 STATUS_REPEAT_SEC=30*60
+_BYBIT_OI_HISTORY={}
+_BYBIT_OI_LOCK=threading.RLock()
 _ALLOWED=re.compile(r"^[A-Z0-9]{1,20}$")
 
 
@@ -132,6 +135,32 @@ def _flow5(symbol):
     except Exception:
         return {}
 
+def _bybit_oi5(symbol,current_oi,now=None):
+    now=time.time() if now is None else float(now)
+    current=_num(current_oi)
+    if current is None or current<=0:
+        return {"ready":False,"quality":"NO_CURRENT_OI"}
+    with _BYBIT_OI_LOCK:
+        q=_BYBIT_OI_HISTORY.setdefault(symbol,deque(maxlen=20))
+        if not q or now-q[-1][0]>=20:
+            q.append((now,current))
+        while q and now-q[0][0]>15*60:
+            q.popleft()
+        target=now-300
+        candidates=[row for row in q if row[0]<=now-240]
+        if not candidates:
+            return {"ready":False,"quality":"WARMING"}
+        ts,previous=min(candidates,key=lambda row:abs(row[0]-target))
+        if abs(ts-target)>90 or previous<=0:
+            return {"ready":False,"quality":"WARMING"}
+        return {
+            "ready":True,
+            "quality":"READY",
+            "period_sec":now-ts,
+            "change_pct":100*(current/previous-1),
+        }
+
+
 def _agg_oi5(symbol):
     try:
         data=get_aggregated_oi(symbol) or {}
@@ -158,9 +187,10 @@ def _fmt(v,d=2,suffix="%"):
 
 
 def _verdict(ticker,oi_local,oi_agg,fut,spot,funding):
-    oi=_num(oi_agg.get("change_pct")) if oi_agg.get("ready") is True else None
+    # Manual mode is Bybit-first: local Bybit OI is primary.
+    oi=_num(oi_local.get("change_pct")) if oi_local.get("ready") is True else None
     if oi is None:
-        oi=_num(oi_local.get("change_pct")) if oi_local.get("ready") is True else None
+        oi=_num(oi_agg.get("change_pct")) if oi_agg.get("ready") is True else None
     fimb=_num(fut.get("imbalance_pct")) if fut.get("quality")=="READY" else None
     simb=_num(spot.get("cvd_percent")) if spot and spot.get("available") else None
     score=0
@@ -194,7 +224,7 @@ def build_snapshot(symbol):
         watch_bybit_flow_symbol(symbol)
     except Exception:
         pass
-    oi_local={}
+    oi_local=_bybit_oi5(symbol,ticker.get("open_interest"))
     oi_agg=_agg_oi5(symbol)
     fut=_flow5(symbol)
     try:
@@ -224,7 +254,8 @@ def build_snapshot(symbol):
         f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
         "",
         f"OI сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "OI сейчас: нет данных",
-        f"OI 5м изменение: {_fmt(agg_oi)}",
+        f"OI Bybit 5м: {_fmt(local_oi)}",
+        f"OI агрегированный 5м: {_fmt(agg_oi)}",
         f"Futures delta 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Futures delta 5м: нет данных",
         f"Futures imbalance 5м: {_fmt(fimb)}",
         f"Spot delta: {sdelta:+,.2f} USDT" if sdelta is not None else "Spot delta: нет данных",
