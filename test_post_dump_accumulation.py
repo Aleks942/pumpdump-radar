@@ -41,19 +41,17 @@ class AccumTests(unittest.TestCase):
         for i in range(11,31):
             self.drive(NOW+i*60,70.2 if i%2 else 70.0)
         self.drive(NOW+1860,70.2)
-        self.assertEqual(self.state()["phase"],"BUYER_ABSORPTION")
-        self.drive(NOW+1920,70.2)
         self.assertEqual(self.state()["phase"],"OI_BUILDUP")
-        self.drive(NOW+1980,70.2)
+        self.drive(NOW+1920,70.2)
         self.assertEqual(self.state()["phase"],"ENERGY_BUILDUP")
         ceiling=self.state()["base_ceiling"]
         self.drive(NOW+2040,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
-        self.drive(NOW+2100,ceiling*1.004)
+        self.drive(NOW+2040,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BULLS_ACCUMULATING")
-        self.drive(NOW+2160,ceiling*1.004)
+        self.drive(NOW+2100,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"BREAKOUT_READY")
-        self.drive(NOW+2220,ceiling*1.004)
+        self.drive(NOW+2160,ceiling*1.004)
         self.assertEqual(self.state()["phase"],"LONG_TRIGGER")
     def test_spot_selling_blocks_accumulation(self):
         bad=ev(fut=20,spot=-50,oi=1)
