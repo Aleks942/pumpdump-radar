@@ -296,6 +296,23 @@ class ManualResearchBot:
             return True
         return False
 
+    def prime_offset(self):
+        if not self.token:
+            return 0
+        try:
+            r=requests.get(f"https://api.telegram.org/bot{self.token}/getUpdates",
+                           params={"timeout":0,"limit":100,"allowed_updates":["message"]},
+                           timeout=10)
+            data=r.json()
+            if r.status_code!=200 or not isinstance(data,dict) or data.get("ok") is not True:
+                return 0
+            rows=data.get("result") or []
+            if rows:
+                self.offset=max(int(x.get("update_id") or 0) for x in rows)+1
+            return len(rows)
+        except Exception:
+            return 0
+
     def poll_once(self):
         if not self.token:
             return 0
@@ -361,6 +378,8 @@ class ManualResearchBot:
 
 def start(token,chat_id,sender):
     bot=ManualResearchBot(token,chat_id,sender)
+    skipped=bot.prime_offset()
+    print("[MANUAL_RESEARCH_PRIMED] skipped_old_updates=",skipped,flush=True)
     thread=threading.Thread(target=bot.run_forever,
                             name="telegram-manual-research",daemon=True)
     thread.start()
