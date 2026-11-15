@@ -541,7 +541,12 @@ def bybit_on_message(ws, message):
         payload = json.loads(message)
 
         if payload.get("success") is False:
-            raise ValueError("Bybit subscription rejected")
+            # One unsupported subscription must not poison the whole live
+            # Bybit liquidation stream. Valid subscriptions may continue.
+            print("[BYBIT_LIQ_SUB_REJECTED]",
+                  str(payload.get("ret_msg") or payload.get("retMsg") or "")[:160],
+                  flush=True)
+            return
 
         if (
             payload.get("op") == "subscribe"
@@ -568,25 +573,38 @@ def bybit_on_message(ws, message):
         if not isinstance(rows, list):
             raise ValueError("Invalid Bybit schema")
 
+        accepted=0
+        skipped=0
         for row in rows:
-            if row.get("s") != symbol:
-                raise ValueError("Bybit symbol mismatch")
+            if not isinstance(row,dict) or norm_symbol(row.get("s")) != symbol:
+                skipped+=1
+                continue
 
-            # Bybit передаёт сторону ликвидированной позиции.
-            # Buy = LONG, закрывающий ордер SELL.
+            # Bybit sends the side of the liquidated position:
+            # Buy = LONG position liquidated -> closing SELL.
             side = {
                 "BUY": "SELL",
                 "SELL": "BUY",
-            }.get(str(row.get("S")).upper())
+            }.get(str(row.get("S") or "").upper())
+            if side is None:
+                skipped+=1
+                continue
 
-            save_liq(
+            if save_liq(
                 symbol,
                 "Bybit",
                 side,
                 row.get("p"),
                 row.get("v"),
                 event_ts=row.get("T"),
-            )
+            ):
+                accepted+=1
+            else:
+                skipped+=1
+
+        if skipped:
+            print("[BYBIT_LIQ_ROWS_SKIPPED]",symbol,
+                  "accepted=",accepted,"skipped=",skipped,flush=True)
 
         if ws is not None:
             ws.liq_verified = True
