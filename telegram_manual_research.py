@@ -19,6 +19,7 @@ import requests
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from oi_collector import get_oi_5m
 from trade_flow_collector_v3 import get_futures_windows
+from bybit_taker_stream import watch_symbol as watch_bybit_flow_symbol, get_flow as get_bybit_flow
 from spot_cvd_engine import get_spot_cvd
 from liquidation_engine import (
     fetch_okx_liquidations, get_liquidation_summary, watch_bybit_symbol
@@ -84,45 +85,56 @@ def _get_json(url,params=None,timeout=7):
     return data
 
 
+def _bybit_json(path,params=None,timeout=7):
+    r=requests.get("https://api.bybit.com"+path,params=params,timeout=timeout)
+    r.raise_for_status()
+    data=r.json()
+    if not isinstance(data,dict) or data.get("retCode")!=0:
+        raise RuntimeError("BYBIT_SCHEMA")
+    return data
+
+
 def fetch_ticker(symbol):
-    data=_get_json("https://www.okx.com/api/v5/market/ticker",
-                   {"instId":_okx_inst(symbol)})
-    rows=data.get("data") or []
+    data=_bybit_json("/v5/market/tickers",
+                     {"category":"linear","symbol":symbol})
+    rows=((data.get("result") or {}).get("list") or [])
     if len(rows)!=1:
         return None
     row=rows[0]
-    last=_num(row.get("last")); high=_num(row.get("high24h"))
-    low=_num(row.get("low24h")); opening=_num(row.get("open24h"))
+    last=_num(row.get("lastPrice")); high=_num(row.get("highPrice24h"))
+    low=_num(row.get("lowPrice24h")); prev24=_num(row.get("prevPrice24h"))
+    oi=_num(row.get("openInterest")); oi_value=_num(row.get("openInterestValue"))
+    funding=_num(row.get("fundingRate"))
     if last is None or last<=0:
         return None
     return {
-        "last":last,"high24h":high,"low24h":low,"open24h":opening,
-        "change24h_pct":(100*(last/opening-1)) if opening and opening>0 else None,
+        "exchange":"Bybit",
+        "last":last,"high24h":high,"low24h":low,"open24h":prev24,
+        "change24h_pct":(100*(last/prev24-1)) if prev24 and prev24>0 else None,
         "drop_from_high_pct":(100*(1-last/high)) if high and high>0 else None,
+        "open_interest":oi,
+        "open_interest_value":oi_value,
+        "funding_pct":funding*100 if funding is not None else None,
     }
 
 
 def fetch_funding(symbol):
-    try:
-        data=_get_json("https://www.okx.com/api/v5/public/funding-rate",
-                       {"instId":_okx_inst(symbol)})
-        rows=data.get("data") or []
-        rate=_num(rows[0].get("fundingRate")) if len(rows)==1 else None
-        return rate*100 if rate is not None else None
-    except Exception:
-        return None
-
+    ticker=fetch_ticker(symbol)
+    return ticker.get("funding_pct") if ticker else None
 
 def _flow5(symbol):
     try:
-        rows=get_futures_windows(symbol) or {}
-        row=rows.get("5m") or rows.get(300) or {}
+        row=get_bybit_flow(symbol,category="linear") or {}
         if not isinstance(row,dict):
             return {}
+        # Manual research reports partial data while the 5m window warms.
+        if row.get("ready") is True:
+            row["quality"]="READY"
+        elif row.get("quality") in ("PARTIAL","WARMING"):
+            row["quality"]="WARMING"
         return row
     except Exception:
         return {}
-
 
 def _agg_oi5(symbol):
     try:
@@ -185,9 +197,10 @@ def build_snapshot(symbol):
         return None,None
     try:
         watch_symbol(symbol)
+        watch_bybit_flow_symbol(symbol)
     except Exception:
         pass
-    oi_local=get_oi_5m(symbol) or {}
+    oi_local={}
     oi_agg=_agg_oi5(symbol)
     fut=_flow5(symbol)
     try:
@@ -209,18 +222,18 @@ def build_snapshot(symbol):
     short_liq=_num(liq.get("short_usd"))
     lines=[
         "🔬 <b>РУЧНОЕ ИССЛЕДОВАНИЕ</b>",
-        f"<b>{symbol}</b>",
+        f"<b>{symbol}</b> · Bybit",
         f"Цена: {ticker['last']:.8g}",
         f"24ч: {_fmt(ticker.get('change24h_pct'))}",
         f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
         "",
-        f"OI 5м локальный: {_fmt(local_oi)}",
-        f"OI 5м агрегированный: {_fmt(agg_oi)}",
+        f"OI сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "OI сейчас: нет данных",
+        f"OI 5м изменение: {_fmt(agg_oi)}",
         f"Futures delta 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Futures delta 5м: нет данных",
         f"Futures imbalance 5м: {_fmt(fimb)}",
         f"Spot delta: {sdelta:+,.2f} USDT" if sdelta is not None else "Spot delta: нет данных",
         f"Spot imbalance: {_fmt(simb)}",
-        f"Funding OKX: {_fmt(funding,4)}",
+        f"Funding Bybit: {_fmt(funding,4)}",
         f"Ликвидации 5м LONG/SHORT: {long_liq:,.0f} USD / {short_liq:,.0f} USD" if long_liq is not None and short_liq is not None else "Ликвидации 5м: частично/нет данных",
         "",
         verdict,
@@ -273,6 +286,10 @@ class ManualResearchBot:
         if action=="CHECK" and symbol:
             self.add(symbol)
             try:
+                watch_bybit_flow_symbol(symbol)
+            except Exception:
+                pass
+            try:
                 report,verdict=build_snapshot(symbol)
             except Exception as exc:
                 print("[MANUAL_RESEARCH_ERROR]",symbol,type(exc).__name__,flush=True)
@@ -284,7 +301,7 @@ class ManualResearchBot:
                         self.watch[symbol]["last_sent"]=time.time()
                 self._send(report,symbol)
             else:
-                self._send(f"⚠️ {symbol}: не удалось получить OKX SWAP данные.",symbol)
+                self._send(f"⚠️ {symbol}: не удалось получить Bybit USDT perpetual данные.",symbol)
             return True
         if action=="STOP" and symbol:
             removed=self.remove(symbol)
