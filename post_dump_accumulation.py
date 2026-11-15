@@ -27,8 +27,9 @@ DB_PATH=os.getenv("PUMP_WATCH_DB","/data/pump_watch.sqlite3")
 MIN_DROP_FROM_HIGH_PCT=25.0
 MIN_NOTIONAL=8_000_000.0
 MAX_SPREAD_BPS=45.0
-SAMPLE_RETENTION_SEC=45*60
-BASE_MIN_AGE_SEC=10*60
+SAMPLE_RETENTION_SEC=90*60
+BASE_EARLY_AGE_SEC=10*60
+BASE_CONFIRM_AGE_SEC=30*60
 BASE_MAX_RANGE_PCT=3.0
 BASE_MAX_DISTANCE_FROM_LOW_PCT=4.0
 BUY_IMB_MIN=8.0
@@ -111,11 +112,16 @@ def _base_stats(db,symbol,now,current):
     rng=100*(hi/lo-1) if lo>0 else None
     dist=100*(current/lo-1) if lo>0 else None
     return {
-        "ready":age>=BASE_MIN_AGE_SEC,
+        "ready":age>=BASE_EARLY_AGE_SEC,
+        "confirmed_age":age>=BASE_CONFIRM_AGE_SEC,
         "age_sec":age,"low":lo,"high":hi,
         "range_pct":rng,"distance_from_low_pct":dist,
         "base_forming":(
-            age>=BASE_MIN_AGE_SEC and rng is not None and rng<=BASE_MAX_RANGE_PCT
+            age>=BASE_EARLY_AGE_SEC and rng is not None and rng<=BASE_MAX_RANGE_PCT
+            and dist is not None and dist<=BASE_MAX_DISTANCE_FROM_LOW_PCT
+        ),
+        "mature_base":(
+            age>=BASE_CONFIRM_AGE_SEC and rng is not None and rng<=BASE_MAX_RANGE_PCT
             and dist is not None and dist<=BASE_MAX_DISTANCE_FROM_LOW_PCT
         ),
     }
@@ -126,7 +132,7 @@ def _conditions(e,base,price):
     spot=_num(e.get("spot_taker_5m_imbalance_pct"))
     oi=_oi(e)
     spot_block=spot is not None and spot<=SPOT_BLOCK
-    buyer_absorption=(base.get("base_forming") is True and fut is not None
+    buyer_absorption=(base.get("mature_base") is True and fut is not None
                       and fut>=BUY_IMB_MIN and not spot_block)
     oi_build=oi is not None and oi>=OI_BUILD_MIN
     energy_building=buyer_absorption and oi_build
@@ -309,8 +315,11 @@ def _message(e):
            f"Диапазон базы: {b.get('range_pct') if b.get('range_pct') is not None else 'нет данных'}%",
            f"OI 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
            f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%"]
-    if phase=="BUYER_ABSORPTION":
-        lines+=["Покупки уже появились, но цена ещё сжата. Это раннее наблюдение, не вход."]
+    if phase=="BASE_FORMING":
+        lines+=["База найдена рано. Для рабочих выводов ждём минимум 30 минут устойчивого сжатия."]
+    elif phase=="BUYER_ABSORPTION":
+        lines+=["База держится минимум 30 минут, покупки уже появились, но цена ещё сжата.",
+                "Это наблюдение, не вход."]
     elif phase=="ENERGY_BUILDUP":
         lines+=["OI и покупки растут внутри базы, но цена ещё не доказала направление.",
                 "Не входить. Ждём пробой зафиксированной верхней границы базы."]
