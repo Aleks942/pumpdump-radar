@@ -43,6 +43,7 @@ from post_pump_short_research import (
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from post_dump_long_strategy import observe as observe_post_dump_long, deliver as deliver_post_dump_long
 from post_dump_accumulation import observe as observe_post_dump_accumulation, deliver as deliver_post_dump_accumulation
+from telegram_manual_research import start as start_manual_research
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
@@ -1402,6 +1403,8 @@ test_bybit()
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
 startup_sent = send_telegram("🚀 PumpDump Radar V2 ONLINE", symbol="SYSTEM")
 print("[STARTUP_TELEGRAM] sent=", startup_sent is True, flush=True)
+
+manual_research_bot = start_manual_research(BOT_TOKEN, CHAT_ID, send_telegram)
 
 start_liquidation_streams()
 
