@@ -240,9 +240,11 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
     fimb=_num(st.get("futures_imbalance_pct"))
     price5=_num(st.get("price5_pct"))
     if fimb is not None and fimb<=-8 and price5 is not None and price5>-0.25:
-        score+=4; reasons.append("Краткосрочно продавцы давят, но цена держится — возможное поглощение покупателем")
+        score+=4
+        reasons.insert(0,"Продавцы давят, но цена держится — возможное поглощение покупателем")
     if fimb is not None and fimb>=8 and price5 is not None and price5<0.25:
-        score-=4; risks.append("Краткосрочно покупают, но цена не растёт — возможное поглощение продавцом")
+        score-=4
+        risks.insert(0,"Покупают, но цена не растёт — возможное поглощение продавцом")
 
     score=max(0,min(100,int(round(score))))
     if score>=70:
