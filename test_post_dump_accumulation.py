@@ -98,6 +98,26 @@ class AccumTests(unittest.TestCase):
         self.drive(NOW+660,70.1)
         self.assertEqual(self.state()["phase"],"BASE_FORMING")
 
+    def test_deliver_sends_only_latest_current_stage(self):
+        self.drive(NOW,70)
+        for i in range(1,11):
+            self.drive(NOW+i*60,70.1)
+        self.assertEqual(self.state()["phase"],"BASE_FORMING")
+        for i in range(11,31):
+            self.drive(NOW+i*60,70.1)
+        self.drive(NOW+1860,70.1)
+        self.assertEqual(self.state()["phase"],"OI_BUILDUP")
+        sent=[]
+        n=s.deliver(lambda msg,symbol=None: sent.append((symbol,msg)) or True,
+                    now=NOW+1861,db_path=self.path)
+        self.assertEqual(n,0)
+        with sqlite3.connect(self.path) as db:
+            rows=db.execute("""SELECT phase,status FROM post_dump_accumulation_notify
+                ORDER BY audit_id""").fetchall()
+        statuses=dict(rows)
+        self.assertEqual(statuses.get("BASE_FORMING"),"EXPIRED")
+        self.assertEqual(statuses.get("BUYER_ABSORPTION"),"EXPIRED")
+
     def test_long_trigger_is_not_green_actionable_label(self):
         event={"phase":"LONG_TRIGGER","symbol":"TESTUSDT","price":70.5,
                "drop_from_high_pct":29.5,

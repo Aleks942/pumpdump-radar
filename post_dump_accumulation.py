@@ -342,10 +342,27 @@ def deliver(sender,now=None,db_path=None):
     with closing(sqlite3.connect(path,timeout=5)) as db:
         db.row_factory=sqlite3.Row; _setup(db)
         rows=db.execute("""SELECT * FROM post_dump_accumulation_notify
-            WHERE status='PENDING' ORDER BY audit_id LIMIT 3""").fetchall()
+            WHERE status='PENDING' ORDER BY audit_id LIMIT 20""").fetchall()
         sent=0
         for row in rows:
             e=json.loads(row["payload"])
+            state=db.execute("""SELECT phase FROM post_dump_accumulation_state
+                WHERE symbol=?""",(row["symbol"],)).fetchone()
+            latest=db.execute("""SELECT MAX(id) AS id FROM post_dump_accumulation_audit
+                WHERE symbol=?""",(row["symbol"],)).fetchone()
+            event_at=_num(e.get("at"))
+            fresh=event_at is not None and 0<=now-event_at<=600
+            current=(
+                state is not None
+                and state["phase"]==row["phase"]
+                and latest is not None
+                and latest["id"]==row["audit_id"]
+                and fresh
+            )
+            if not current:
+                db.execute("""UPDATE post_dump_accumulation_notify
+                    SET status='EXPIRED' WHERE audit_id=?""",(row["audit_id"],))
+                continue
             try:
                 ok=sender(_message(e),symbol=row["symbol"])
             except TypeError:
@@ -358,6 +375,8 @@ def deliver(sender,now=None,db_path=None):
                 print("[POST_DUMP_ACCUM_NOTIFY]",row["symbol"],row["phase"],
                       "status=SENT",flush=True)
             else:
+                break
+            if sent>=3:
                 break
         db.commit()
     return sent

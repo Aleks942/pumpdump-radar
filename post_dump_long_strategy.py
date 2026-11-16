@@ -432,7 +432,7 @@ def _message(e):
     title = {
         "DUMP_EXHAUSTED": "ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
         "BULLS_GAINING": "БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
-        "SQUEEZE_SETUP": "POST-DUMP SQUEEZE — ГОТОВИМСЯ К LONG",
+        "SQUEEZE_SETUP": "LONG-НАБОР ПОДТВЕРЖДЁН — ЕСТЬ ТОПЛИВО ДЛЯ ВЫНОСА ШОРТОВ",
         "LONG_CONFIRMED": "LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
         "RETEST": "LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
         "ENTRY_ZONE": "ЗОНА ВХОДА LONG",
@@ -468,7 +468,9 @@ def _message(e):
                   "✅ Цена подтверждает покупки ростом, а не стоит против положительной дельты.",
                   "⏳ До LONG ещё ждём слом локальной нисходящей структуры и squeeze."]
     elif phase == "SQUEEZE_SETUP":
-        lines += ["✅ Дамп выдохся, быки усиливаются, отрицательный funding даёт топливо для squeeze.",
+        lines += ["✅ Цена растёт, OI растёт и фьючерсы покупают — это больше похоже на набор новых LONG.",
+                  "✅ Отрицательный фандинг добавляет топливо для возможного выноса шортов.",
+                  "⚠️ Это ещё не классический шорт-сквиз: для него обычно ждём рост цены вместе со снижением OI и ликвидациями шортов.",
                   "Это ещё наблюдение, не вход."]
     elif phase == "LONG_CONFIRMED":
         lines += ["Покупатели подтверждены. Не догоняем цену — ждём откат/ретест."]
@@ -487,10 +489,30 @@ def deliver(sender, now=None, db_path=None):
         db.row_factory = sqlite3.Row
         _setup(db)
         rows = db.execute("""SELECT * FROM post_dump_long_notify
-            WHERE status='PENDING' ORDER BY audit_id LIMIT 3""").fetchall()
+            WHERE status='PENDING' ORDER BY audit_id LIMIT 20""").fetchall()
         sent = 0
         for row in rows:
             payload = json.loads(row["payload"])
+            state = db.execute("""SELECT phase,episode_at FROM post_dump_long_strategy
+                WHERE symbol=?""",(row["symbol"],)).fetchone()
+            latest = db.execute("""SELECT MAX(id) AS id FROM post_dump_long_audit
+                WHERE symbol=?""",(row["symbol"],)).fetchone()
+
+            payload_at = _num(payload.get("at"))
+            fresh = payload_at is not None and 0 <= now-payload_at <= 600
+            current = (
+                state is not None
+                and state["phase"] == row["phase"]
+                and latest is not None
+                and latest["id"] == row["audit_id"]
+                and fresh
+            )
+
+            if not current:
+                db.execute("""UPDATE post_dump_long_notify
+                    SET status='EXPIRED' WHERE audit_id=?""",(row["audit_id"],))
+                continue
+
             try:
                 ok = sender(_message(payload), symbol=row["symbol"])
             except TypeError:
@@ -502,6 +524,8 @@ def deliver(sender, now=None, db_path=None):
                 print("[POST_DUMP_LONG_NOTIFY] symbol=", row["symbol"],
                       "phase=", row["phase"], "status=SENT", flush=True)
             else:
+                break
+            if sent >= 3:
                 break
         db.commit()
     return sent
