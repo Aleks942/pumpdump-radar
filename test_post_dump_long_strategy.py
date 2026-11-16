@@ -152,7 +152,7 @@ class PostDumpLongTests(unittest.TestCase):
                 "price_state":{"change_5m_pct":1.0},"structure_break":True}}
         }
         msg=s._message(event)
-        self.assertIn("НАБОР",msg)
+        self.assertIn("НАБОР ЛОНГОВ",msg)
         self.assertIn("не классический шорт-сквиз",msg.lower())
 
 if __name__ == "__main__":
