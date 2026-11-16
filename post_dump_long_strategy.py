@@ -496,8 +496,7 @@ def deliver(sender, now=None, db_path=None):
             state = db.execute("""SELECT phase,episode_at FROM post_dump_long_strategy
                 WHERE symbol=?""",(row["symbol"],)).fetchone()
             latest = db.execute("""SELECT MAX(id) AS id FROM post_dump_long_audit
-                WHERE symbol=? AND episode_at=?""",
-                (row["symbol"], payload.get("episode_at", payload.get("at")))).fetchone()
+                WHERE symbol=?""",(row["symbol"],)).fetchone()
 
             payload_at = _num(payload.get("at"))
             fresh = payload_at is not None and 0 <= now-payload_at <= 600
