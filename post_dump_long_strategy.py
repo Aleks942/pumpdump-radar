@@ -1,15 +1,15 @@
-"""POST-DUMP LONG / squeeze reversal research strategy.
+"""POST-DUMP ЛОНГ / вынос шортов reversal research strategy.
 
 Research-only. No orders. Uses existing PumpDump Radar ticker/OI/flow caches plus
-a lightweight cached OKX funding read. Designed for cases where a strong prior
-pump has largely returned to its base and a squeeze/reversal may form.
+a lightweight cached OKX фандинг read. Designed for cases where a strong prior
+pump has largely returned to its base and a вынос шортов/reversal may form.
 
 Lifecycle:
 POST_DUMP_WATCH -> DUMP_EXHAUSTED -> BULLS_GAINING -> SQUEEZE_SETUP
--> LONG_CONFIRMED -> RETEST -> ENTRY_ZONE
+-> ЛОНГ_CONFIRMED -> RETEST -> ENTRY_ZONE
 
-A price dump alone is never enough. LONG confirmation requires bullish futures
-aggression, rising OI, negative funding, and no strong contradictory spot flow.
+A price dump alone is never enough. ЛОНГ confirmation requires bullish futures
+aggression, rising OI, negative фандинг, and no strong contradictory spot flow.
 """
 import json
 import math
@@ -43,7 +43,7 @@ PRICE_CONFIRM_SEC = 5 * 60
 MIN_PRICE_CONFIRM_PCT = 0.40
 MIN_STRUCTURE_BREAK_PCT = 0.20
 
-_funding_cache = {}
+_фандинг_cache = {}
 
 
 def _num(v):
@@ -146,9 +146,9 @@ def _setup(db):
         ON post_dump_long_quotes(symbol,ts)""")
 
 
-def _funding(inst, now=None, request_get=None):
+def _фандинг(inst, now=None, request_get=None):
     now = time.time() if now is None else float(now)
-    cached = _funding_cache.get(inst)
+    cached = _фандинг_cache.get(inst)
     if cached and 0 <= now - cached["at"] <= FUNDING_TTL_SEC:
         return dict(cached["data"])
     try:
@@ -156,7 +156,7 @@ def _funding(inst, now=None, request_get=None):
             import requests
             request_get = requests.get
         r = request_get(
-            "https://www.okx.com/api/v5/public/funding-rate",
+            "https://www.okx.com/api/v5/public/фандинг-rate",
             params={"instId": inst},
             timeout=(3, 6),
         )
@@ -165,13 +165,13 @@ def _funding(inst, now=None, request_get=None):
         rows = payload.get("data") if payload.get("code") == "0" else None
         if not isinstance(rows, list) or len(rows) != 1:
             raise ValueError("FUNDING_SCHEMA")
-        rate = _num(rows[0].get("fundingRate"))
+        rate = _num(rows[0].get("фандингRate"))
         pct = rate * 100.0 if rate is not None else None
-        data = {"available": pct is not None, "funding_pct": pct, "source": "OKX"}
+        data = {"available": pct is not None, "фандинг_pct": pct, "source": "OKX"}
     except Exception as exc:
-        data = {"available": False, "funding_pct": None, "source": "OKX",
+        data = {"available": False, "фандинг_pct": None, "source": "OKX",
                 "reason": type(exc).__name__}
-    _funding_cache[inst] = {"at": now, "data": dict(data)}
+    _фандинг_cache[inst] = {"at": now, "data": dict(data)}
     return data
 
 
@@ -219,15 +219,15 @@ def _record_price(db,symbol,now,price):
                (now-2*PRICE_LOOKBACK_SEC,))
 
 
-def _conditions(evidence, funding, recovery_pct, price_state):
+def _conditions(evidence, фандинг, recovery_pct, price_state):
     fut = _num(evidence.get("futures_taker_5m_imbalance_pct"))
     spot = _num(evidence.get("spot_taker_5m_imbalance_pct"))
     oi = _oi_value(evidence)
-    f = _num(funding.get("funding_pct"))
+    f = _num(фандинг.get("фандинг_pct"))
     futures_buy = fut is not None and fut >= MIN_FUTURES_IMB
     strong_futures_buy = fut is not None and fut >= CONFIRM_FUTURES_IMB
     oi_rising = oi is not None and oi >= MIN_OI_PCT
-    funding_negative = f is not None and f <= NEGATIVE_FUNDING_PCT
+    фандинг_negative = f is not None and f <= NEGATIVE_FUNDING_PCT
     spot_block = spot is not None and spot <= BLOCK_SPOT_IMB
     dump_exhausted = (
         recovery_pct >= DUMP_EXHAUSTED_RECOVERY_PCT
@@ -240,17 +240,17 @@ def _conditions(evidence, funding, recovery_pct, price_state):
         not price_confirming or not structure_break
     )
     bulls_gaining = buyers and price_confirming and structure_break and not spot_block
-    squeeze = (futures_buy and oi_rising and funding_negative and
+    вынос шортов = (futures_buy and oi_rising and фандинг_negative and
                price_confirming and structure_break and not spot_block)
-    confirmed = (strong_futures_buy and oi_rising and funding_negative and
+    confirmed = (strong_futures_buy and oi_rising and фандинг_negative and
                  price_confirming and structure_break and not spot_block)
-    reconfirmed = (strong_futures_buy and oi_rising and funding_negative and
+    reconfirmed = (strong_futures_buy and oi_rising and фандинг_negative and
                    price_confirming and not spot_block)
     return {
         "futures_imbalance_pct": fut,
         "spot_imbalance_pct": spot,
         "oi_5m_pct": oi,
-        "funding_pct": f,
+        "фандинг_pct": f,
         "price_state": price_state,
         "price_confirming": price_confirming,
         "structure_break": structure_break,
@@ -258,7 +258,7 @@ def _conditions(evidence, funding, recovery_pct, price_state):
         "dump_exhausted": dump_exhausted,
         "buyers": buyers,
         "bulls_gaining": bulls_gaining,
-        "squeeze": squeeze,
+        "вынос шортов": вынос шортов,
         "confirmed": confirmed,
         "reconfirmed": reconfirmed,
         "spot_block": spot_block,
@@ -274,11 +274,11 @@ def _audit(db, st, p, now, phase, reason, recovery_pct, snapshot):
          p["prior_pump_pct"], p["drop_from_high_pct"], recovery_pct,
          json.dumps(snapshot, sort_keys=True)))
     audit_id = int(cur.lastrowid)
-    if phase in ("BULLS_GAINING", "SQUEEZE_SETUP", "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
-        register_forward(db, "POST_DUMP_LONG", audit_id, p["symbol"], phase,
+    if phase in ("BULLS_GAINING", "SQUEEZE_SETUP", "ЛОНГ_CONFIRMED", "RETEST", "ENTRY_ZONE"):
+        register_forward(db, "POST_DUMP_ЛОНГ", audit_id, p["symbol"], phase,
                          now, p["last"])
     if phase in ("DUMP_EXHAUSTED", "BULLS_GAINING", "SQUEEZE_SETUP",
-                 "LONG_CONFIRMED", "RETEST", "ENTRY_ZONE"):
+                 "ЛОНГ_CONFIRMED", "RETEST", "ENTRY_ZONE"):
         payload = {
             "audit_id": audit_id, "symbol": p["symbol"], "phase": phase,
             "at": now, "price": p["last"], "prior_pump_pct": p["prior_pump_pct"],
@@ -303,11 +303,11 @@ def _set_phase(db, st, p, now, phase, reason, recovery_pct, snapshot, confirm_le
     _audit(db, st, p, now, phase, reason, recovery_pct, snapshot)
 
 
-def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reader=None):
+def observe(tickers, now=None, db_path=None, evidence_reader=None, фандинг_reader=None):
     now = time.time() if now is None else float(now)
     path = DB_PATH if db_path is None else db_path
     evidence_reader = evidence_reader or take_cached_evidence
-    funding_reader = funding_reader or _funding
+    фандинг_reader = фандинг_reader or _фандинг
     profiles = {p["symbol"]: p for p in map(_profile, tickers or ()) if p is not None}
 
     with closing(sqlite3.connect(path, timeout=5)) as db:
@@ -337,9 +337,9 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                             (p["symbol"],)).fetchone()
             _audit(db, st, p, now, "POST_DUMP_WATCH",
                    "STRONG_DUMP_RETURNED_TO_BASE", 0.0,
-                   {"funding": None, "evidence": {}})
+                   {"фандинг": None, "evidence": {}})
             states[p["symbol"]] = st
-            print("[POST_DUMP_LONG_DISCOVERED]", p["symbol"],
+            print("[POST_DUMP_ЛОНГ_DISCOVERED]", p["symbol"],
                   "prior_pump=", round(p["prior_pump_pct"], 2),
                   "drop=", round(p["drop_from_high_pct"], 2), flush=True)
 
@@ -352,10 +352,10 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
             low = min(old_low, p["last"])
             recovery_pct = _recovery(p["last"], low)
             ev = evidence_reader(symbol, now) or {}
-            fund = funding_reader(p["inst"], now) or {}
+            fund = фандинг_reader(p["inst"], now) or {}
             price_state = _price_state(db, symbol, now, p["last"], low)
             cond = _conditions(ev, fund, recovery_pct, price_state)
-            snapshot = {"evidence": ev, "funding": fund,
+            snapshot = {"evidence": ev, "фандинг": fund,
                         "price_state": price_state, "conditions": cond}
 
             db.execute("""UPDATE post_dump_long_strategy
@@ -366,7 +366,7 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
             phase = st["phase"]
             if made_new_low and phase != "POST_DUMP_WATCH":
                 _set_phase(db, st, p, now, "POST_DUMP_WATCH",
-                           "NEW_LOW_AFTER_BUYING_INVALIDATED_LONG",
+                           "NEW_LOW_AFTER_BUYING_INVALIDATED_ЛОНГ",
                            recovery_pct, snapshot)
             elif phase == "POST_DUMP_WATCH" and cond["dump_exhausted"]:
                 _set_phase(db, st, p, now, "DUMP_EXHAUSTED",
@@ -380,7 +380,7 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                         (reason, json.dumps(snapshot, sort_keys=True), symbol))
                     _audit(db, st, p, now, "ABSORPTION_RISK", reason,
                            recovery_pct, snapshot)
-                    print("[POST_DUMP_LONG_ABSORPTION_RISK]", symbol,
+                    print("[POST_DUMP_ЛОНГ_ABSORPTION_RISK]", symbol,
                           "futures_buy=", cond["futures_imbalance_pct"],
                           "oi=", cond["oi_5m_pct"],
                           "price5m=", price_state.get("change_5m_pct"),
@@ -390,18 +390,18 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
                 _set_phase(db, st, p, now, "BULLS_GAINING",
                            "FUTURES_BUYERS_AND_PRICE_CONFIRM",
                            recovery_pct, snapshot)
-            elif phase in ("DUMP_EXHAUSTED", "BULLS_GAINING") and cond["squeeze"] and recovery_pct >= MIN_RECOVERY_PCT:
+            elif phase in ("DUMP_EXHAUSTED", "BULLS_GAINING") and cond["вынос шортов"] and recovery_pct >= MIN_RECOVERY_PCT:
                 _set_phase(db, st, p, now, "SQUEEZE_SETUP",
                            "NEGATIVE_FUNDING_OI_AND_BUYERS_ALIGN", recovery_pct, snapshot)
             elif phase == "SQUEEZE_SETUP" and cond["confirmed"] and recovery_pct >= MIN_RECOVERY_PCT:
-                _set_phase(db, st, p, now, "LONG_CONFIRMED",
-                           "FUTURES_OI_FUNDING_LONG_CONFIRMED", recovery_pct, snapshot,
+                _set_phase(db, st, p, now, "ЛОНГ_CONFIRMED",
+                           "FUTURES_OI_FUNDING_ЛОНГ_CONFIRMED", recovery_pct, snapshot,
                            confirm_level=p["last"])
-            elif phase == "LONG_CONFIRMED":
+            elif phase == "ЛОНГ_CONFIRMED":
                 level = _num(st["confirm_level"]) or p["last"]
                 if p["last"] < low * 0.998:
                     _set_phase(db, st, p, now, "POST_DUMP_WATCH",
-                               "NEW_LOW_INVALIDATED_LONG", recovery_pct, snapshot)
+                               "NEW_LOW_INVALIDATED_ЛОНГ", recovery_pct, snapshot)
                 elif p["last"] <= level * 0.995 and p["last"] >= low * 1.003:
                     _set_phase(db, st, p, now, "RETEST",
                                "PULLBACK_HELD_ABOVE_DUMP_LOW", recovery_pct, snapshot)
@@ -422,8 +422,8 @@ def observe(tickers, now=None, db_path=None, evidence_reader=None, funding_reade
             _record_price(db, symbol, now, p["last"])
 
         quotes = {symbol: p["last"] for symbol, p in profiles.items()}
-        advance_forward(db, "POST_DUMP_LONG", quotes, now)
-        maybe_log_report(db, "POST_DUMP_LONG", now, days=30)
+        advance_forward(db, "POST_DUMP_ЛОНГ", quotes, now)
+        maybe_log_report(db, "POST_DUMP_ЛОНГ", now, days=30)
         db.commit()
 
 
@@ -432,18 +432,18 @@ def _message(e):
     title = {
         "DUMP_EXHAUSTED": "ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
         "BULLS_GAINING": "БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
-        "SQUEEZE_SETUP": "LONG-НАБОР ПОДТВЕРЖДЁН — ЕСТЬ ТОПЛИВО ДЛЯ ВЫНОСА ШОРТОВ",
-        "LONG_CONFIRMED": "LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
-        "RETEST": "LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
-        "ENTRY_ZONE": "ЗОНА ВХОДА LONG",
+        "SQUEEZE_SETUP": "ЛОНГ-НАБОР ПОДТВЕРЖДЁН — ЕСТЬ ТОПЛИВО ДЛЯ ВЫНОСА ШОРТОВ",
+        "ЛОНГ_CONFIRMED": "ЛОНГ ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
+        "RETEST": "ЛОНГ RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
+        "ENTRY_ZONE": "ЗОНА ВХОДА ЛОНГ",
     }[phase]
     priority = {
         "DUMP_EXHAUSTED": "⚪ ИНФО — НАБЛЮДАЕМ",
-        "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
-        "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
-        "LONG_CONFIRMED": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
-        "RETEST": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
-        "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
+        "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
+        "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
+        "ЛОНГ_CONFIRMED": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
+        "RETEST": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
+        "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
     }[phase]
     c = (e.get("evidence") or {}).get("conditions") or {}
     lines = [
@@ -454,30 +454,30 @@ def _message(e):
         f"Предыдущий памп: +{e['prior_pump_pct']:.1f}%",
         f"Падение от вершины: -{e['drop_from_high_pct']:.1f}%",
         f"Отскок от дна: +{e['recovery_pct']:.1f}%",
-        f"OI 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
-        f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
-        f"Funding: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
+        f"Открытый интерес (OI) 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
+        f"Дисбаланс фьючерсов 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
+        f"Фандинг: {c.get('фандинг_pct') if c.get('фандинг_pct') is not None else 'нет данных'}%",
         f"Цена 5м: {((c.get('price_state') or {}).get('change_5m_pct')) if (c.get('price_state') or {}).get('change_5m_pct') is not None else 'нет данных'}%",
         "Структура вверх: " + ("ДА" if c.get("structure_break") else "НЕТ"),
     ]
     if phase == "DUMP_EXHAUSTED":
         lines += ["✅ Цена перестала ускорять падение и начала отходить от локального дна.",
-                  "⚠️ Это ещё не LONG: ждём, чтобы покупатели реально забрали инициативу."]
+                  "⚠️ Это ещё не ЛОНГ: ждём, чтобы покупатели реально забрали инициативу."]
     elif phase == "BULLS_GAINING":
         lines += ["✅ Покупатели усиливаются: фьючерсный поток разворачивается вверх.",
                   "✅ Цена подтверждает покупки ростом, а не стоит против положительной дельты.",
-                  "⏳ До LONG ещё ждём слом локальной нисходящей структуры и squeeze."]
+                  "⏳ До ЛОНГ ещё ждём слом локальной нисходящей структуры и вынос шортов."]
     elif phase == "SQUEEZE_SETUP":
-        lines += ["✅ Цена растёт, OI растёт и фьючерсы покупают — это больше похоже на набор новых LONG.",
+        lines += ["✅ Цена растёт, OI растёт и фьючерсы покупают — это больше похоже на набор новых ЛОНГ.",
                   "✅ Отрицательный фандинг добавляет топливо для возможного выноса шортов.",
                   "⚠️ Это ещё не классический шорт-сквиз: для него обычно ждём рост цены вместе со снижением OI и ликвидациями шортов.",
                   "Это ещё наблюдение, не вход."]
-    elif phase == "LONG_CONFIRMED":
+    elif phase == "ЛОНГ_CONFIRMED":
         lines += ["Покупатели подтверждены. Не догоняем цену — ждём откат/ретест."]
     elif phase == "RETEST":
         lines += ["Цена откатила, но дно пока удержано. Ждём повторного включения покупателей."]
     else:
-        lines += ["Модель видит рабочую LONG-зону после подтверждённого ретеста.",
+        lines += ["Модель видит рабочую ЛОНГ-зону после подтверждённого ретеста.",
                   "Бот ордер не выставляет. Стоп — ниже локального дна/ретеста."]
     return "\n".join(lines)
 
@@ -521,7 +521,7 @@ def deliver(sender, now=None, db_path=None):
                 db.execute("UPDATE post_dump_long_notify SET status='SENT',sent_at=? WHERE audit_id=?",
                            (now, row["audit_id"]))
                 sent += 1
-                print("[POST_DUMP_LONG_NOTIFY] symbol=", row["symbol"],
+                print("[POST_DUMP_ЛОНГ_NOTIFY] symbol=", row["symbol"],
                       "phase=", row["phase"], "status=SENT", flush=True)
             else:
                 break
