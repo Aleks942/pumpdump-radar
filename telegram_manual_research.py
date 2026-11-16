@@ -5,9 +5,10 @@ Commands accepted only from configured CHAT_ID:
   /stop JCTUSDT
   /watchlist
 
-/check starts a six-hour research watch, sends an immediate factual snapshot,
-then refreshes every minute and only sends again when the compact verdict
-changes or after 30 minutes. No orders and no trade approval.
+/check starts a 72-hour medium-term research watch. Direction comes from
+1H/4H/1D structure; 5m/15m data are used only as entry timing/context.
+The bot refreshes every minute, while the heavier SWING context is cached.
+No orders and no automatic trade approval.
 """
 import math
 import re
@@ -22,8 +23,9 @@ from aggregated_oi import watch_symbol, get_aggregated_oi
 from bybit_taker_stream import watch_symbol as watch_bybit_flow_symbol, get_flow as get_bybit_flow
 from spot_cvd_engine import get_spot_cvd
 from liquidation_engine import get_liquidation_summary, watch_bybit_symbol
+from swing_strength_engine import analyze as analyze_swing, format_report as format_swing_report
 
-WATCH_TTL_SEC=6*3600
+WATCH_TTL_SEC=72*3600
 REFRESH_SEC=60
 STATUS_REPEAT_SEC=30*60
 _BYBIT_OI_HISTORY={}
@@ -315,7 +317,7 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
 
 def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
                   long_liq,short_liq,liq_available):
-    lines=["", "🧠 <b>ЧТО ПРОИСХОДИТ СЕЙЧАС</b>"]
+    lines=["", "⏱ <b>ЧТО ПРОИСХОДИТ СЕЙЧАС — ТОЛЬКО ДЛЯ ТОЧКИ ВХОДА</b>"]
     missing=[]
     if price5_pct is None: missing.append("изменение цены за 5 минут")
     if local_oi is None and agg_oi is None: missing.append("динамика открытого интереса за 5 минут")
@@ -382,13 +384,13 @@ def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
         if simb>=10: bull+=1
         elif simb<=-10: bear+=1
 
-    lines += ["", "⚖️ <b>КТО СИЛЬНЕЕ</b>"]
+    lines += ["", "⚖️ <b>КТО СИЛЬНЕЕ ПРЯМО СЕЙЧАС (5М)</b>"]
     if bull>=3 and bull>bear:
-        lines.append("• Сейчас преимущество у покупателей, но вход подтверждаем только ценой и структурой.")
+        lines.append("• На 5м преимущество у покупателей. Среднесрочное направление определяет SWING-блок выше.")
     elif bear>=3 and bear>bull:
-        lines.append("• Сейчас преимущество у продавцов, но вход подтверждаем только ценой и структурой.")
+        lines.append("• На 5м преимущество у продавцов. Среднесрочное направление определяет SWING-блок выше.")
     else:
-        lines.append("• Явного победителя пока нет: рынок в переходном состоянии или данных ещё мало.")
+        lines.append("• На 5м явного победителя нет. Это не отменяет среднесрочный сценарий.")
 
     lines += ["", "📌 <b>ЧТО ПОДТВЕРДИТ ЛОНГ</b>",
               "• Цена продолжает расти и ломает локальный максимум.",
@@ -434,7 +436,7 @@ def build_snapshot(symbol):
         spot={}
     funding=ticker.get("funding_pct")
     liq=_liqs(symbol)
-    verdict,reasons=_verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq)
+    short_verdict,reasons=_verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq)
 
     price5_pct=_num(price5.get("change_pct")) if price5.get("ready") else None
     local_oi=_num(oi_local.get("change_pct")) if oi_local.get("ready") else None
@@ -448,13 +450,29 @@ def build_snapshot(symbol):
     short_liq=_num(liq.get("short_liq"))
     liq_quality=str(liq.get("quality") or "UNAVAILABLE")
     liq_sources=str(liq.get("exchanges") or "нет данных")
+
+    short_term={
+        "price5_pct":price5_pct,
+        "futures_imbalance_pct":fimb,
+        "spot_imbalance_pct":simb,
+    }
+    swing=analyze_swing(
+        symbol,current_price=ticker.get("last"),short_term=short_term
+    )
+    swing_bias=str(swing.get("bias") or "UNKNOWN")
+    verdict=f"SWING:{swing_bias} | {short_verdict}"
+
     lines=[
-        "🔬 <b>РУЧНОЕ ИССЛЕДОВАНИЕ</b>",
+        "🧭 <b>СРЕДНЕСРОЧНОЕ ИССЛЕДОВАНИЕ</b>",
         f"<b>{symbol}</b> · Bybit",
         f"Цена: {ticker['last']:.8g}",
         f"24ч: {_fmt(ticker.get('change24h_pct'))}",
         f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
+    ]
+    lines.extend(format_swing_report(swing))
+    lines += [
         "",
+        "⏱ <b>ТАЙМИНГ ВХОДА — 5 МИНУТ</b>",
         f"Изменение цены 5м: {_fmt(price5_pct)}",
         f"Открытый интерес сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "Открытый интерес сейчас: нет данных",
         f"Открытый интерес Bybit 5м: {_fmt(local_oi)}",
@@ -465,9 +483,8 @@ def build_snapshot(symbol):
         f"Дисбаланс спота: {_fmt(simb)}",
         f"Фандинг Bybit: {_fmt(funding,4)}",
         f"Ликвидации 5м ЛОНГ/ШОРТ: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
-        "",
-        verdict,
-        f"Почему: {reasons}",
+        short_verdict,
+        f"Почему сейчас: {reasons}",
     ]
     lines.extend(_detail_lines(
         ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
@@ -606,7 +623,7 @@ class ManualResearchBot:
                 continue
             if now>=state["expires"]:
                 self.remove(symbol)
-                self._send(f"⌛ Ручное наблюдение {symbol} завершено через 6 часов.",symbol)
+                self._send(f"⌛ Среднесрочное наблюдение {symbol} завершено через 72 часа.",symbol)
                 continue
             try:
                 report,verdict=build_snapshot(symbol)
