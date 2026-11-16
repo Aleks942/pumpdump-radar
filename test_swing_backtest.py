@@ -79,6 +79,17 @@ class SwingBacktestTests(unittest.TestCase):
         self.assertEqual(same[0]["score"],anchor["score"])
         self.assertEqual(same[0]["direction"],anchor["direction"])
 
+    def test_repeated_same_direction_signals_are_spaced(self):
+        c1=hourly_series(1100)
+        oi=oi_series(c1)
+        events=b.build_signals("TESTUSDT",c1,oi,cooldown_hours=12)
+        longs=[e for e in events if e["direction"]=="LONG"]
+        self.assertTrue(longs)
+        self.assertTrue(all(
+            b2["ts"]-a["ts"]>=12*3600
+            for a,b2 in zip(longs,longs[1:])
+        ))
+
     def test_summary_separates_score_and_horizon(self):
         c1=hourly_series(1100)
         oi=oi_series(c1)
@@ -86,7 +97,7 @@ class SwingBacktestTests(unittest.TestCase):
         summary=b.summarize(events)
         self.assertTrue(summary)
         self.assertTrue(all(x["horizon_h"] in b.HORIZONS_H for x in summary))
-        self.assertTrue(all("win_pct" in x for x in summary))
+        self.assertTrue(all("win_pct_net" in x for x in summary))
 
 
 if __name__=="__main__":
