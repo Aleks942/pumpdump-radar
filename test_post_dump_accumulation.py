@@ -124,7 +124,7 @@ class AccumTests(unittest.TestCase):
                "evidence":{"conditions":{"oi_5m_pct":0.5,
                "futures_imbalance_pct":15},"base":{"range_pct":1.2}}}
         msg=s._message(event)
-        self.assertIn("ТЕСТОВЫЙ LONG",msg)
+        self.assertIn("ТЕСТОВЫЙ ЛОНГ",msg)
         self.assertNotIn("🟢 РАБОЧИЙ СИГНАЛ",msg)
 
 if __name__=="__main__":

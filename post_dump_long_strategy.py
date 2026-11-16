@@ -432,18 +432,18 @@ def _message(e):
     title = {
         "DUMP_EXHAUSTED": "ДАМП ВЫДЫХАЕТСЯ — ПРОДАВЕЦ ТЕРЯЕТ СИЛУ",
         "BULLS_GAINING": "БЫКИ НАБИРАЮТ СИЛУ — ПОКУПАТЕЛЬ ВКЛЮЧАЕТСЯ",
-        "SQUEEZE_SETUP": "LONG-НАБОР ПОДТВЕРЖДЁН — ЕСТЬ ТОПЛИВО ДЛЯ ВЫНОСА ШОРТОВ",
-        "LONG_CONFIRMED": "LONG ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
-        "RETEST": "LONG RETEST — ПОДДЕРЖКА ДЕРЖИТСЯ",
-        "ENTRY_ZONE": "ЗОНА ВХОДА LONG",
+        "SQUEEZE_SETUP": "НАБОР ЛОНГОВ ПОДТВЕРЖДЁН — ЕСТЬ ТОПЛИВО ДЛЯ ВЫНОСА ШОРТОВ",
+        "LONG_CONFIRMED": "ЛОНГ ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
+        "RETEST": "РЕТЕСТ ЛОНГА — ПОДДЕРЖКА ДЕРЖИТСЯ",
+        "ENTRY_ZONE": "ЗОНА ВХОДА В ЛОНГ",
     }[phase]
     priority = {
         "DUMP_EXHAUSTED": "⚪ ИНФО — НАБЛЮДАЕМ",
-        "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
-        "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН LONG",
-        "LONG_CONFIRMED": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
-        "RETEST": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
-        "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — LONG",
+        "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
+        "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
+        "LONG_CONFIRMED": "🟡 ЛОНГ ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
+        "RETEST": "🟡 РЕТЕСТ — ЖДЁМ ПОВТОРНОЕ ВКЛЮЧЕНИЕ ПОКУПАТЕЛЯ",
+        "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
     }[phase]
     c = (e.get("evidence") or {}).get("conditions") or {}
     lines = [
@@ -454,9 +454,9 @@ def _message(e):
         f"Предыдущий памп: +{e['prior_pump_pct']:.1f}%",
         f"Падение от вершины: -{e['drop_from_high_pct']:.1f}%",
         f"Отскок от дна: +{e['recovery_pct']:.1f}%",
-        f"OI 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
-        f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
-        f"Funding: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
+        f"Открытый интерес (OI) 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
+        f"Дисбаланс фьючерсов 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
+        f"Фандинг: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
         f"Цена 5м: {((c.get('price_state') or {}).get('change_5m_pct')) if (c.get('price_state') or {}).get('change_5m_pct') is not None else 'нет данных'}%",
         "Структура вверх: " + ("ДА" if c.get("structure_break") else "НЕТ"),
     ]
