@@ -175,7 +175,8 @@ def _weekly_position(daily,current):
     lo=min(x["l"] for x in rows); hi=max(x["h"] for x in rows)
     if hi<=lo:
         return None
-    return 100*(current-lo)/(hi-lo)
+    raw=100*(current-lo)/(hi-lo)
+    return max(0.0,min(100.0,raw))
 
 
 def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
@@ -239,9 +240,11 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
     fimb=_num(st.get("futures_imbalance_pct"))
     price5=_num(st.get("price5_pct"))
     if fimb is not None and fimb<=-8 and price5 is not None and price5>-0.25:
-        score+=4; reasons.append("Краткосрочно продавцы давят, но цена держится — возможное поглощение покупателем")
+        score+=4
+        reasons.insert(0,"Продавцы давят, но цена держится — возможное поглощение покупателем")
     if fimb is not None and fimb>=8 and price5 is not None and price5<0.25:
-        score-=4; risks.append("Краткосрочно покупают, но цена не растёт — возможное поглощение продавцом")
+        score-=4
+        risks.insert(0,"Покупают, но цена не растёт — возможное поглощение продавцом")
 
     score=max(0,min(100,int(round(score))))
     if score>=70:
@@ -340,4 +343,60 @@ def format_report(result):
     else:
         lines.append("• Среднесрочного преимущества пока нет. Сделку лучше не форсировать.")
     lines.append("• Расширенный контекст: до 7 дней; это не прогноз с гарантией.")
+    return lines
+
+
+def format_compact_report(result,short_verdict=None):
+    """Compact professional trader view: decision first, evidence second."""
+    if not isinstance(result,dict):
+        return ["⚪ Среднесрочный анализ недоступен."]
+
+    score=int(result.get("score",50))
+    bias=str(result.get("bias") or "UNKNOWN")
+    label=result.get("label") or "⚪ Нет оценки"
+    t1=(result.get("trend1h") or {}).get("regime","?")
+    t4=(result.get("trend4h") or {}).get("regime","?")
+    td=(result.get("trend1d") or {}).get("regime","?")
+    oi1=(result.get("oi1h") or {}).get("change_pct")
+    oi4=(result.get("oi4h") or {}).get("change_pct")
+    reasons=result.get("reasons") or []
+    risks=result.get("risks") or []
+
+    arrows={"UP":"↑","DOWN":"↓","MIXED":"↔","UNKNOWN":"?"}
+    structure=f"1H {arrows.get(t1,t1)} · 4H {arrows.get(t4,t4)} · 1D {arrows.get(td,td)}"
+    oi_text="OI 1H {0} · 4H {1}".format(
+        f"{oi1:+.2f}%" if oi1 is not None else "н/д",
+        f"{oi4:+.2f}%" if oi4 is not None else "н/д",
+    )
+
+    lines=[
+        f"{label} · {score}/100",
+        "Горизонт: 1ч–3д · контекст до 7д",
+        f"Структура: {structure}",
+        oi_text,
+    ]
+    if reasons:
+        lines.append("Сильная сторона: "+reasons[0])
+    if risks:
+        lines.append("Главный риск: "+risks[0])
+
+    if bias=="BULLISH":
+        lines.append("План: искать ЛОНГ только после отката/ретеста.")
+        lines.append("Отмена: слом 1H вниз; подтверждение отмены — 4H вниз.")
+    elif bias=="BEARISH":
+        lines.append("План: искать ШОРТ только после отката/ретеста.")
+        lines.append("Отмена: слом 1H вверх; подтверждение отмены — 4H вверх.")
+    else:
+        lines.append("План: вне сделки — среднесрочного преимущества нет.")
+
+    if short_verdict:
+        text=str(short_verdict)
+        if bias=="BULLISH" and any(x in text for x in ("БЫЧЬЕ","НОВЫХ ЛОНГОВ","ПОГЛОЩЕНИЕ","ШОРТ-СКВИЗ")):
+            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
+        elif bias=="BEARISH" and any(x in text for x in ("МЕДВЕЖЬЕ","НОВЫХ ШОРТОВ","ЛИКВИДАЦИЯ")):
+            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
+        else:
+            lines.append("Вход 5м: 🟡 пока нет подтверждения.")
+
+    lines.append("Подробнее: /detail SYMBOL")
     return lines

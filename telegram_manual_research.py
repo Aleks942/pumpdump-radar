@@ -23,7 +23,11 @@ from aggregated_oi import watch_symbol, get_aggregated_oi
 from bybit_taker_stream import watch_symbol as watch_bybit_flow_symbol, get_flow as get_bybit_flow
 from spot_cvd_engine import get_spot_cvd
 from liquidation_engine import get_liquidation_summary, watch_bybit_symbol
-from swing_strength_engine import analyze as analyze_swing, format_report as format_swing_report
+from swing_strength_engine import (
+    analyze as analyze_swing,
+    format_report as format_swing_report,
+    format_compact_report as format_swing_compact,
+)
 
 WATCH_TTL_SEC=72*3600
 REFRESH_SEC=60
@@ -58,6 +62,8 @@ def parse_command(text):
     cmd=parts[0].lower().split("@",1)[0]
     if cmd in ("/check","/research","/coin") and len(parts)>=2:
         return "CHECK",normalize_symbol(parts[1])
+    if cmd=="/detail" and len(parts)>=2:
+        return "DETAIL",normalize_symbol(parts[1])
     if cmd in ("/stop","/uncheck") and len(parts)>=2:
         return "STOP",normalize_symbol(parts[1])
     if cmd=="/watchlist":
@@ -417,7 +423,7 @@ def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
         lines.append("• Наблюдать. Направление ещё не подтверждено.")
     return lines
 
-def build_snapshot(symbol):
+def build_snapshot(symbol,detail=False):
     ticker=fetch_ticker(symbol)
     if ticker is None:
         return None,None
@@ -463,34 +469,34 @@ def build_snapshot(symbol):
     verdict=f"SWING:{swing_bias} | {short_verdict}"
 
     lines=[
-        "🧭 <b>СРЕДНЕСРОЧНОЕ ИССЛЕДОВАНИЕ</b>",
-        f"<b>{symbol}</b> · Bybit",
-        f"Цена: {ticker['last']:.8g}",
-        f"24ч: {_fmt(ticker.get('change24h_pct'))}",
-        f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
+        "🧭 <b>SWING RADAR</b>",
+        f"<b>{symbol}</b> · Bybit · Цена {ticker['last']:.8g}",
     ]
-    lines.extend(format_swing_report(swing))
-    lines += [
-        "",
-        "⏱ <b>ТАЙМИНГ ВХОДА — 5 МИНУТ</b>",
-        f"Изменение цены 5м: {_fmt(price5_pct)}",
-        f"Открытый интерес сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "Открытый интерес сейчас: нет данных",
-        f"Открытый интерес Bybit 5м: {_fmt(local_oi)}",
-        f"Открытый интерес по биржам 5м: {_fmt(agg_oi)}",
-        f"Дельта фьючерсов 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Дельта фьючерсов 5м: нет данных",
-        f"Дисбаланс фьючерсов 5м: {_fmt(fimb)}",
-        f"Дельта спота: {sdelta:+,.2f} USDT" if sdelta is not None else "Дельта спота: нет данных",
-        f"Дисбаланс спота: {_fmt(simb)}",
-        f"Фандинг Bybit: {_fmt(funding,4)}",
-        f"Ликвидации 5м ЛОНГ/ШОРТ: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
-        short_verdict,
-        f"Почему сейчас: {reasons}",
-    ]
-    lines.extend(_detail_lines(
-        ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
-        long_liq,short_liq,liq.get("available") is True
-    ))
-    lines += ["", "⚠️ Это исследование, не автоматическое разрешение на вход."]
+    if not detail:
+        lines.extend(format_swing_compact(swing,short_verdict=short_verdict))
+    else:
+        lines.extend(format_swing_report(swing))
+        lines += [
+            "",
+            "⏱ <b>ТАЙМИНГ ВХОДА — 5 МИНУТ</b>",
+            f"Изменение цены 5м: {_fmt(price5_pct)}",
+            f"Открытый интерес сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "Открытый интерес сейчас: нет данных",
+            f"Открытый интерес Bybit 5м: {_fmt(local_oi)}",
+            f"Открытый интерес по биржам 5м: {_fmt(agg_oi)}",
+            f"Дельта фьючерсов 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Дельта фьючерсов 5м: нет данных",
+            f"Дисбаланс фьючерсов 5м: {_fmt(fimb)}",
+            f"Дельта спота: {sdelta:+,.2f} USDT" if sdelta is not None else "Дельта спота: нет данных",
+            f"Дисбаланс спота: {_fmt(simb)}",
+            f"Фандинг Bybit: {_fmt(funding,4)}",
+            f"Ликвидации 5м ЛОНГ/ШОРТ: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
+            short_verdict,
+            f"Почему сейчас: {reasons}",
+        ]
+        lines.extend(_detail_lines(
+            ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
+            long_liq,short_liq,liq.get("available") is True
+        ))
+        lines += ["", "⚠️ Это исследование, не автоматическое разрешение на вход."]
     return "\n".join(lines),verdict
 
 
@@ -535,6 +541,17 @@ class ManualResearchBot:
 
     def _handle(self,text):
         action,symbol=parse_command(text)
+        if action=="DETAIL" and symbol:
+            try:
+                report,_=build_snapshot(symbol,detail=True)
+            except Exception as exc:
+                print("[MANUAL_RESEARCH_DETAIL_ERROR]",symbol,type(exc).__name__,flush=True)
+                report=None
+            if report:
+                self._send(report,symbol)
+            else:
+                self._send(f"⚠️ {symbol}: подробный анализ сейчас недоступен.",symbol)
+            return True
         if action=="CHECK" and symbol:
             try:
                 report,verdict=build_snapshot(symbol)

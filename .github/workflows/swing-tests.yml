@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install runtime dependencies
-        run: pip install requests
+        run: pip install requests websocket-client
       - name: Run SWING regression tests
         run: |
           python -m unittest -v             test_swing_strength_engine.py             test_swing_backtest.py             test_telegram_manual_research.py

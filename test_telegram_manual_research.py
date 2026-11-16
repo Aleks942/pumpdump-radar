@@ -13,6 +13,7 @@ class ManualResearchTests(unittest.TestCase):
         self.assertEqual(parse_command("JCTUSDT"),("CHECK","JCTUSDT"))
         self.assertEqual(parse_command("/stop JCT"),("STOP","JCTUSDT"))
         self.assertEqual(parse_command("/watchlist"),("LIST",None))
+        self.assertEqual(parse_command("/detail jct"),("DETAIL","JCTUSDT"))
     def test_bullish_pressure_requires_multiple_factors(self):
         v,_=_verdict({},{"ready":True,"change_pct":0.2},
                      {"ready":True,"change_pct":0.3},{},
@@ -62,6 +63,7 @@ class ManualResearchTests(unittest.TestCase):
 
     @patch.object(manual,"analyze_swing")
     @patch.object(manual,"format_swing_report")
+    @patch.object(manual,"format_swing_compact")
     @patch.object(manual,"fetch_ticker")
     @patch.object(manual,"_price5")
     @patch.object(manual,"_bybit_oi5")
@@ -69,8 +71,9 @@ class ManualResearchTests(unittest.TestCase):
     @patch.object(manual,"_flow5")
     @patch.object(manual,"get_spot_cvd")
     @patch.object(manual,"_liqs")
-    def test_report_uses_real_liquidation_keys(self,m_liqs,m_spot,m_flow,m_agg,m_local,m_price,m_ticker,m_format_swing,m_analyze_swing):
+    def test_report_uses_real_liquidation_keys(self,m_liqs,m_spot,m_flow,m_agg,m_local,m_price,m_ticker,m_compact,m_format_swing,m_analyze_swing):
         m_analyze_swing.return_value={"bias":"NEUTRAL","score":50}
+        m_compact.return_value=["🟡 СРЕДНЕСРОЧНО БАЛАНС НЕ РЕШЁН · 50/100","Подробнее: /detail SYMBOL"]
         m_format_swing.return_value=["🧭 СРЕДНЕСРОК: 1 ЧАС — 3 ДНЯ"]
         m_ticker.return_value={"last":1.0,"change24h_pct":0.0,
                                "drop_from_high_pct":0.0,
@@ -85,8 +88,17 @@ class ManualResearchTests(unittest.TestCase):
                              "exchanges":"Bybit","long_liq":1234.0,
                              "short_liq":5678.0}
         report,_=manual.build_snapshot("TESTUSDT")
-        self.assertIn("1,234 USD / 5,678 USD · Bybit",report)
-        self.assertIn("СРЕДНЕСРОК",report)
+        self.assertNotIn("1,234 USD / 5,678 USD · Bybit",report)
+        self.assertIn("50/100",report)
+        self.assertIn("/detail",report)
+
+    @patch.object(manual,"build_snapshot",return_value=("DETAIL REPORT","X"))
+    def test_detail_command_sends_full_report(self,m_build):
+        sent=[]
+        bot=manual.ManualResearchBot("token","1",lambda text,**kw: sent.append(text))
+        self.assertTrue(bot._handle("/detail ARIA"))
+        m_build.assert_called_once_with("ARIAUSDT",detail=True)
+        self.assertEqual(sent,["DETAIL REPORT"])
 
     def test_invalid_symbol_is_not_added_and_suggestion_is_sent(self):
         sent=[]
