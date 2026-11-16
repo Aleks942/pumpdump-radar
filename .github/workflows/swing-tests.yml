@@ -1,0 +1,38 @@
+name: SWING medium-term tests
+
+on:
+  pull_request:
+    paths:
+      - 'swing_strength_engine.py'
+      - 'swing_backtest.py'
+      - 'telegram_manual_research.py'
+      - 'test_swing_strength_engine.py'
+      - 'test_swing_backtest.py'
+      - 'test_telegram_manual_research.py'
+      - '.github/workflows/swing-tests.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'swing_strength_engine.py'
+      - 'swing_backtest.py'
+      - 'telegram_manual_research.py'
+      - 'test_swing_strength_engine.py'
+      - 'test_swing_backtest.py'
+      - 'test_telegram_manual_research.py'
+      - '.github/workflows/swing-tests.yml'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install runtime dependencies
+        run: pip install requests
+      - name: Run SWING regression tests
+        run: |
+          python -m unittest -v             test_swing_strength_engine.py             test_swing_backtest.py             test_telegram_manual_research.py
