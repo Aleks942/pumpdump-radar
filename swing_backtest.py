@@ -26,6 +26,8 @@ from swing_strength_engine import _score, _trend, _volume_state
 
 BYBIT_BASE="https://api.bybit.com"
 HORIZONS_H=(1,4,12,24,72,168)
+MODELED_ROUND_TRIP_COST_PCT=0.15
+DEFAULT_SIGNAL_COOLDOWN_H=12
 
 
 def _num(v):
@@ -208,12 +210,14 @@ def _future_markout(c1,index,hours,direction):
     }
 
 
-def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30):
+def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30,
+                  cooldown_hours=DEFAULT_SIGNAL_COOLDOWN_H):
     """Walk forward one hour at a time; every score uses only prior closed data."""
     c4=_resample(c1,4)
     cd=_daily_from_hourly(c1)
     by_ts={int(x["ts"]):i for i,x in enumerate(c1)}
     rows=[]
+    last_signal_at={"LONG":None,"SHORT":None}
     warmup=30*24
     for i in range(warmup,len(c1)-max(HORIZONS_H)):
         if i%max(1,step_hours):
@@ -237,6 +241,13 @@ def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30):
             direction="SHORT"
         else:
             continue
+        previous_at=last_signal_at.get(direction)
+        if (previous_at is not None and cooldown_hours>0
+                and ts-previous_at<cooldown_hours*3600):
+            continue
+        # Direction flips are allowed immediately; repeated same-direction
+        # signals are spaced out so one long trend cannot inflate sample size.
+        last_signal_at[direction]=ts
         event={
             "symbol":symbol,"ts":ts,"direction":direction,"score":score,
             "bias":scored["bias"],"reasons":scored["reasons"],
@@ -251,7 +262,7 @@ def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30):
     return rows
 
 
-def summarize(events):
+def summarize(events,cost_pct=MODELED_ROUND_TRIP_COST_PCT):
     buckets=defaultdict(list)
     for e in events:
         score=e["score"]
@@ -270,15 +281,18 @@ def summarize(events):
             vals=[x for x in vals if x is not None]
             if not vals:
                 continue
-            returns=[x["return_pct"] for x in vals]
+            gross=[x["return_pct"] for x in vals]
+            returns=[x-cost_pct for x in gross]
             mfes=[x["mfe_pct"] for x in vals]
             maes=[x["mae_pct"] for x in vals]
             result.append({
                 "direction":direction,"score_bucket":bucket,"horizon_h":h,
                 "n":len(vals),
-                "win_pct":round(100*sum(x>0 for x in returns)/len(returns),1),
-                "avg_return_pct":round(statistics.fmean(returns),3),
-                "median_return_pct":round(statistics.median(returns),3),
+                "modeled_cost_pct":cost_pct,
+                "win_pct_net":round(100*sum(x>0 for x in returns)/len(returns),1),
+                "avg_return_pct_net":round(statistics.fmean(returns),3),
+                "median_return_pct_net":round(statistics.median(returns),3),
+                "avg_return_pct_gross":round(statistics.fmean(gross),3),
                 "avg_mfe_pct":round(statistics.fmean(mfes),3),
                 "avg_mae_pct":round(statistics.fmean(maes),3),
             })
@@ -299,6 +313,7 @@ def backtest_symbol(symbol,days=60,request_get=None,now=None):
         "symbol":symbol,"days":days,
         "hourly_candles":len(c1),"oi_points":len(oi),
         "events":events,"summary":summarize(events),
+        "modeled_round_trip_cost_pct":MODELED_ROUND_TRIP_COST_PCT,
     }
 
 
@@ -309,15 +324,22 @@ def main():
     p.add_argument("--events",action="store_true")
     args=p.parse_args()
     reports=[]
+    all_events=[]
     for raw in args.symbols:
         symbol=raw.upper()
         if not symbol.endswith("USDT"):
             symbol+="USDT"
         report=backtest_symbol(symbol,args.days)
+        all_events.extend(report.get("events") or [])
         if not args.events:
             report=dict(report,events=[])
         reports.append(report)
-    print(json.dumps(reports,ensure_ascii=False,indent=2))
+    output={
+        "symbols":reports,
+        "portfolio_summary":summarize(all_events),
+        "note":"5m flow/spot/liquidations are excluded historically unless stored; results use price/OI only.",
+    }
+    print(json.dumps(output,ensure_ascii=False,indent=2))
 
 
 if __name__=="__main__":
