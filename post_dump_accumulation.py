@@ -299,7 +299,7 @@ def _message(e):
         "ENERGY_BUILDUP":"СЖАТИЕ ПОСЛЕ ДАМПА — ЭНЕРГИЯ НАКАПЛИВАЕТСЯ",
         "BULLS_ACCUMULATING":"БЫЧЬЕ НАКОПЛЕНИЕ ПОДТВЕРЖДЕНО",
         "BREAKOUT_READY":"ПРОБОЙ БАЗЫ УДЕРЖИВАЕТСЯ",
-        "LONG_TRIGGER":"LONG-СЦЕНАРИЙ ПОДТВЕРЖДЁН ПОСЛЕ УДЕРЖАНИЯ ПРОБОЯ",
+        "LONG_TRIGGER":"ЛОНГ-СЦЕНАРИЙ ПОДТВЕРЖДЁН ПОСЛЕ УДЕРЖАНИЯ ПРОБОЯ",
     }
     priority={
         "BASE_FORMING":"⚪ ИНФО — НАБЛЮДАЕМ",
@@ -307,14 +307,14 @@ def _message(e):
         "ENERGY_BUILDUP":"🟡 НАБЛЮДАЕМ — НАПРАВЛЕНИЕ НЕ ПОДТВЕРЖДЕНО",
         "BULLS_ACCUMULATING":"🟡 ГОТОВЬСЯ — БЫЧЬЕ НАПРАВЛЕНИЕ ПОДТВЕРЖДЕНО",
         "BREAKOUT_READY":"🟡 ГОТОВЬСЯ — ПРОБОЙ УДЕРЖИВАЕТСЯ",
-        "LONG_TRIGGER":"🟡 ТЕСТОВЫЙ LONG — НЕ ВХОДИТЬ АВТОМАТИЧЕСКИ",
+        "LONG_TRIGGER":"🟡 ТЕСТОВЫЙ ЛОНГ — НЕ ВХОДИТЬ АВТОМАТИЧЕСКИ",
     }
     lines=[priority[phase],titles[phase],f"<b>{e['symbol']}</b>",
            f"Цена: {e['price']:.8g}",
            f"Падение от 24ч максимума: -{e['drop_from_high_pct']:.1f}%",
            f"Диапазон базы: {b.get('range_pct') if b.get('range_pct') is not None else 'нет данных'}%",
-           f"OI 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
-           f"Futures imbalance 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%"]
+           f"Открытый интерес (OI) 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
+           f"Дисбаланс фьючерсов 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%"]
     if phase=="BASE_FORMING":
         lines+=["База найдена рано. Для рабочих выводов ждём минимум 30 минут устойчивого сжатия."]
     elif phase=="BUYER_ABSORPTION":
