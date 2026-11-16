@@ -441,8 +441,8 @@ def _message(e):
         "DUMP_EXHAUSTED": "⚪ ИНФО — НАБЛЮДАЕМ",
         "BULLS_GAINING": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
         "SQUEEZE_SETUP": "🟡 ГОТОВЬСЯ — ВОЗМОЖЕН ЛОНГ",
-        "LONG_CONFIRMED": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
-        "RETEST": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
+        "LONG_CONFIRMED": "🟡 ЛОНГ ПОДТВЕРЖДЁН — ЖДЁМ РЕТЕСТ",
+        "RETEST": "🟡 РЕТЕСТ — ЖДЁМ ПОВТОРНОЕ ВКЛЮЧЕНИЕ ПОКУПАТЕЛЯ",
         "ENTRY_ZONE": "🟢 РАБОЧИЙ СИГНАЛ — ЛОНГ",
     }[phase]
     c = (e.get("evidence") or {}).get("conditions") or {}
