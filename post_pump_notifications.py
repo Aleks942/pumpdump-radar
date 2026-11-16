@@ -34,10 +34,10 @@ PRIORITY_LABELS = {
     'TREND_SHIFT': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
     'QUALITY_REVERSAL': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
     'PRE_SHORT': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
-    'SHORT_CONFIRMED': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
-    'RETEST': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
-    'ENTRY_ZONE': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
-    'READY_RESEARCH': '🟢 РАБОЧИЙ СИГНАЛ — SHORT',
+    'SHORT_CONFIRMED': '🟡 ШОРТ ПОДТВЕРЖДЁН — ВХОДА ЕЩЁ НЕТ',
+    'RETEST': '🟡 РЕТЕСТ — ЖДЁМ ЗОНУ ВХОДА',
+    'ENTRY_ZONE': '🟢 РАБОЧАЯ ЗОНА — ШОРТ',
+    'READY_RESEARCH': '🟡 ТЕСТОВЫЙ ПЛАН — НЕ АВТОВХОД',
     'CANCELLED': '🔴 ОТМЕНА / ОПАСНОСТЬ — НЕ ВХОДИТЬ',
 }
 
@@ -92,17 +92,17 @@ def _research_lines(event):
     lines=['Проверки данных:']
     capital=d.get('capital_state') or {}
     if isinstance(capital,dict) and capital:
-        lines.append('OI / капитал: '+escape(str(capital.get('state') or 'НЕТ ДАННЫХ')[:70]))
-        lines.append('OI 5м: '+val(capital.get('oi_5m_pct'), '%')+' · '+escape(str(capital.get('oi_source') or 'нет источника')))
+        lines.append('Открытый интерес (OI) / капитал: '+escape(str(capital.get('state') or 'НЕТ ДАННЫХ')[:70]))
+        lines.append('Открытый интерес (OI) 5м: '+val(capital.get('oi_5m_pct'), '%')+' · '+escape(str(capital.get('oi_source') or 'нет источника')))
     else:
         agg_oi=_num(d.get('agg_oi_5m_pct'))
         local_oi=_num(d.get('local_oi_5m_pct'))
         raw_oi=agg_oi if agg_oi is not None else local_oi
         raw_source='AGGREGATED' if agg_oi is not None else 'LOCAL' if local_oi is not None else 'нет источника'
-        lines.append('OI / капитал: '+(
-            'OI уже есть, структура ещё не подтверждена'
+        lines.append('Открытый интерес (OI) / капитал: '+(
+            'Открытый интерес уже есть, структура ещё не подтверждена'
             if raw_oi is not None else 'НЕТ ДАННЫХ'))
-        lines.append('OI 5м: '+val(raw_oi, '%')+' · '+raw_source)
+        lines.append('Открытый интерес (OI) 5м: '+val(raw_oi, '%')+' · '+raw_source)
     cvd=d.get('bounded_cvd_5m') or {}
     if isinstance(cvd,dict) and cvd:
         lines.append('Дельта сделок 5м: '+escape(str(cvd.get('state') or 'НЕТ ДАННЫХ')[:70])+
@@ -129,7 +129,7 @@ def _research_lines(event):
         lo=_num(liq.get('long_usdt'))
         sh=_num(liq.get('short_usdt'))
         if liq.get('available') is True and lo is not None and sh is not None:
-            lines.append(f'Ликвидации (частично), 5м: LONG ${lo:,.0f} / SHORT ${sh:,.0f}')
+            lines.append(f'Ликвидации (частично), 5м: ЛОНГ ${lo:,.0f} / ШОРТ ${sh:,.0f}')
         else:
             lines.append('Ликвидации: данных недостаточно')
         sources=liq.get('sources') or {}
@@ -142,14 +142,14 @@ def _research_lines(event):
     funding=d.get('funding_context') or {}
     if isinstance(funding,dict):
         pct=_num(funding.get('funding_pct'))
-        lines.append(f'Funding: {pct:+.4f}%' if pct is not None and funding.get('available') is True
-                     else 'Funding: нет данных')
+        lines.append(f'Фандинг: {pct:+.4f}%' if pct is not None and funding.get('available') is True
+                     else 'Фандинг: нет данных')
         if funding.get('available') is True:
             age=_num(funding.get('age_sec'))
-            lines.append('Funding: OKX, за период биржи'+(f' · возраст {age:.0f} с' if age is not None else ''))
+            lines.append('Фандинг: OKX, за период биржи'+(f' · возраст {age:.0f} с' if age is not None else ''))
             when=_num(funding.get('funding_at'))
             if when is not None:
-                lines.append('Расчёт funding: '+datetime.fromtimestamp(when,ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M')+' (Польша)')
+                lines.append('Расчёт фандинга: '+datetime.fromtimestamp(when,ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M')+' (Польша)')
     return lines or ['Дополнительные данные: пока недоступны']
 
 
@@ -179,7 +179,7 @@ def message(event):
         if score is not None:
             lines.append(f'Качество раннего разворота: {int(score)}/6 признаков.')
     elif kind == 'PRE_SHORT':
-        lines += ['⚠️ Ранний SHORT-сценарий: подтверждены фьючерсы + OI + структура + продавец.',
+        lines += ['⚠️ Ранний ШОРТ-сценарий: подтверждены фьючерсы + OI + структура + продавец.',
                   'Спот — только дополнительная информация и не является препятствием для сигнала.',
                   'Не догоняем движение; ждём подтверждения продавцов и подходящей зоны входа.']
     elif kind == 'SHORT_CONFIRMED':
@@ -201,13 +201,13 @@ def message(event):
         lines += ['✅ Пробой подтверждён, закрытый 5м ретест отклонён продавцами.',
                   '✅ Фьючерсы + OI + структура + поток продавцов подтверждают давление вниз.',
                   'ℹ️ Спот учитывается как справочный контекст, но не как фильтр входа.',
-                  f"🎯 Зона входа SHORT: {zone}",
+                  f"🎯 Зона входа ШОРТ: {zone}",
                   f"Текущая расчётная цена: {event['entry']:.8g}",
                   f"🛑 Стоп / отмена: {event['stop']:.8g}",
                   f"Цель 1: {event['tp1']:.8g} | цель 2: {event['tp2']:.8g}",
                   'Бот ордер не выставляет. Это зона входа по модели, не гарантия падения.']
     else:
-        lines.append('Наблюдение, вход SHORT ещё не подтверждён.')
+        lines.append('Наблюдение, вход в ШОРТ ещё не подтверждён.')
     if kind != 'CANCELLED':
         lines.extend(_research_lines(event))
     return '\n'.join(lines)
