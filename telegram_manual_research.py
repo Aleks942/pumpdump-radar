@@ -317,7 +317,7 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
 
 def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
                   long_liq,short_liq,liq_available):
-    lines=["", "🧠 <b>ЧТО ПРОИСХОДИТ СЕЙЧАС</b>"]
+    lines=["", "⏱ <b>ЧТО ПРОИСХОДИТ СЕЙЧАС — ТОЛЬКО ДЛЯ ТОЧКИ ВХОДА</b>"]
     missing=[]
     if price5_pct is None: missing.append("изменение цены за 5 минут")
     if local_oi is None and agg_oi is None: missing.append("динамика открытого интереса за 5 минут")
@@ -384,13 +384,13 @@ def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
         if simb>=10: bull+=1
         elif simb<=-10: bear+=1
 
-    lines += ["", "⚖️ <b>КТО СИЛЬНЕЕ</b>"]
+    lines += ["", "⚖️ <b>КТО СИЛЬНЕЕ ПРЯМО СЕЙЧАС (5М)</b>"]
     if bull>=3 and bull>bear:
-        lines.append("• Сейчас преимущество у покупателей, но вход подтверждаем только ценой и структурой.")
+        lines.append("• На 5м преимущество у покупателей. Среднесрочное направление определяет SWING-блок выше.")
     elif bear>=3 and bear>bull:
-        lines.append("• Сейчас преимущество у продавцов, но вход подтверждаем только ценой и структурой.")
+        lines.append("• На 5м преимущество у продавцов. Среднесрочное направление определяет SWING-блок выше.")
     else:
-        lines.append("• Явного победителя пока нет: рынок в переходном состоянии или данных ещё мало.")
+        lines.append("• На 5м явного победителя нет. Это не отменяет среднесрочный сценарий.")
 
     lines += ["", "📌 <b>ЧТО ПОДТВЕРДИТ ЛОНГ</b>",
               "• Цена продолжает расти и ломает локальный максимум.",
@@ -468,7 +468,11 @@ def build_snapshot(symbol):
         f"Цена: {ticker['last']:.8g}",
         f"24ч: {_fmt(ticker.get('change24h_pct'))}",
         f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
+    ]
+    lines.extend(format_swing_report(swing))
+    lines += [
         "",
+        "⏱ <b>ТАЙМИНГ ВХОДА — 5 МИНУТ</b>",
         f"Изменение цены 5м: {_fmt(price5_pct)}",
         f"Открытый интерес сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "Открытый интерес сейчас: нет данных",
         f"Открытый интерес Bybit 5м: {_fmt(local_oi)}",
@@ -479,11 +483,6 @@ def build_snapshot(symbol):
         f"Дисбаланс спота: {_fmt(simb)}",
         f"Фандинг Bybit: {_fmt(funding,4)}",
         f"Ликвидации 5м ЛОНГ/ШОРТ: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
-    ]
-    lines.extend(format_swing_report(swing))
-    lines += [
-        "",
-        "⏱ <b>ТАЙМИНГ ВХОДА — 5 МИНУТ</b>",
         short_verdict,
         f"Почему сейчас: {reasons}",
     ]
