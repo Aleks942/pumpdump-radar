@@ -96,6 +96,20 @@ class ManualResearchTests(unittest.TestCase):
         self.assertIn("не найдено",sent[0])
 
 
+    def test_detailed_report_explains_missing_data(self):
+        lines=manual._detail_lines(
+            {"last":1.0},None,None,None,None,None,0.01,0.0,0.0,True)
+        text="\n".join(lines)
+        self.assertIn("ЧТО ПРОИСХОДИТ СЕЙЧАС",text)
+        self.assertIn("ЧЕГО ПОКА НЕ ХВАТАЕТ",text)
+        self.assertIn("Пока ждать",text)
+
+    def test_detailed_report_explains_bearish_pressure(self):
+        lines=manual._detail_lines(
+            {"last":1.0},-1.2,0.5,None,-20,-15,0.02,1000,0,True)
+        text="\n".join(lines)
+        self.assertIn("преимущество у продавцов",text)
+        self.assertIn("Готовиться к ШОРТ-сценарию",text)
     def test_direction_change_requires_two_refreshes(self):
         sent=[]
         bot=manual.ManualResearchBot("token","1",lambda text,**kw: sent.append(text))

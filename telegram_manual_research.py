@@ -313,6 +313,108 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
     return label,", ".join(reasons) if reasons else "данных недостаточно"
 
 
+def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
+                  long_liq,short_liq,liq_available):
+    lines=["", "🧠 <b>ЧТО ПРОИСХОДИТ СЕЙЧАС</b>"]
+    missing=[]
+    if price5_pct is None: missing.append("изменение цены за 5 минут")
+    if local_oi is None and agg_oi is None: missing.append("динамика открытого интереса за 5 минут")
+    if fimb is None: missing.append("поток фьючерсных сделок")
+    if simb is None: missing.append("спотовый поток")
+
+    if price5_pct is not None:
+        if price5_pct>=0.40:
+            lines.append(f"• Цена за 5м растёт: {price5_pct:+.2f}%. Покупатель пока двигает цену вверх.")
+        elif price5_pct<=-0.40:
+            lines.append(f"• Цена за 5м падает: {price5_pct:+.2f}%. Продавец пока двигает цену вниз.")
+        else:
+            lines.append(f"• Цена за 5м почти стоит: {price5_pct:+.2f}%. Идёт борьба без явного импульса.")
+
+    oi=local_oi if local_oi is not None else agg_oi
+    if oi is not None:
+        if oi>=0.10:
+            lines.append(f"• Открытый интерес растёт: {oi:+.2f}%. В рынок заходят новые позиции.")
+        elif oi<=-0.10:
+            lines.append(f"• Открытый интерес снижается: {oi:+.2f}%. Позиции закрываются или ликвидируются.")
+        else:
+            lines.append(f"• Открытый интерес почти не меняется: {oi:+.2f}%.")
+
+    if fimb is not None:
+        if fimb>=8:
+            lines.append(f"• Фьючерсы покупают: дисбаланс {fimb:+.2f}%. Агрессивный поток сейчас в сторону покупок.")
+        elif fimb<=-8:
+            lines.append(f"• Фьючерсы продают: дисбаланс {fimb:+.2f}%. Агрессивный поток сейчас в сторону продаж.")
+        else:
+            lines.append(f"• На фьючерсах перевес слабый: {fimb:+.2f}%.")
+
+    if simb is not None:
+        if simb>=10:
+            lines.append(f"• Спот покупает: {simb:+.2f}%. Это усиливает бычий сценарий.")
+        elif simb<=-10:
+            lines.append(f"• Спот продаёт: {simb:+.2f}%. Это усиливает медвежий сценарий.")
+        else:
+            lines.append(f"• На споте сильного перевеса нет: {simb:+.2f}%.")
+
+    if funding is not None:
+        if funding>0:
+            lines.append(f"• Фандинг {funding:+.4f}%: лонги платят шортам. Сильный плюс может означать перегрев лонгов.")
+        elif funding<0:
+            lines.append(f"• Фандинг {funding:+.4f}%: шорты платят лонгам. При росте цены это может стать топливом для выноса шортов.")
+        else:
+            lines.append("• Фандинг около нуля: выраженного перекоса по стоимости удержания позиции нет.")
+
+    if liq_available and long_liq is not None and short_liq is not None:
+        if long_liq>short_liq and long_liq>0:
+            lines.append(f"• За 5м больше ликвидировали лонгов: ${long_liq:,.0f} против ${short_liq:,.0f} шортов.")
+        elif short_liq>long_liq and short_liq>0:
+            lines.append(f"• За 5м больше ликвидировали шортов: ${short_liq:,.0f} против ${long_liq:,.0f} лонгов.")
+        elif long_liq==0 and short_liq==0:
+            lines.append("• В доступной выборке за 5м ликвидаций не зафиксировано. Это не означает, что их не было на всём рынке.")
+
+    bull=0; bear=0
+    if price5_pct is not None:
+        if price5_pct>=0.40: bull+=1
+        elif price5_pct<=-0.40: bear+=1
+    if fimb is not None:
+        if fimb>=8: bull+=2
+        elif fimb<=-8: bear+=2
+    if simb is not None:
+        if simb>=10: bull+=1
+        elif simb<=-10: bear+=1
+
+    lines += ["", "⚖️ <b>КТО СИЛЬНЕЕ</b>"]
+    if bull>=3 and bull>bear:
+        lines.append("• Сейчас преимущество у покупателей, но вход подтверждаем только ценой и структурой.")
+    elif bear>=3 and bear>bull:
+        lines.append("• Сейчас преимущество у продавцов, но вход подтверждаем только ценой и структурой.")
+    else:
+        lines.append("• Явного победителя пока нет: рынок в переходном состоянии или данных ещё мало.")
+
+    lines += ["", "📌 <b>ЧТО ПОДТВЕРДИТ ЛОНГ</b>",
+              "• Цена продолжает расти и ломает локальный максимум.",
+              "• Открытый интерес растёт вместе с ценой либо снижается на росте при явных ликвидациях шортов.",
+              "• Фьючерсный поток остаётся положительным; желательно, чтобы спот тоже покупал."]
+    lines += ["", "📌 <b>ЧТО ПОДТВЕРДИТ ШОРТ</b>",
+              "• Цена ломает локальную поддержку и не возвращается выше неё.",
+              "• При падении OI растёт — это усиливает сценарий набора новых шортов.",
+              "• Фьючерсный поток остаётся отрицательным; продажи на споте усиливают сценарий."]
+
+    if missing:
+        lines += ["", "⏳ <b>ЧЕГО ПОКА НЕ ХВАТАЕТ</b>",
+                  "• " + "; ".join(missing) + ".",
+                  "• Первые несколько минут после запуска наблюдения бот накапливает 5-минутную историю. До её появления вывод предварительный."]
+
+    lines += ["", "🎯 <b>ДЕЙСТВИЕ</b>"]
+    if missing:
+        lines.append("• Пока ждать. Не входить только по 24ч движению или одному фандингу.")
+    elif bull>=3 and bull>bear:
+        lines.append("• Готовиться к ЛОНГ-сценарию, но ждать подтверждения цены/структуры.")
+    elif bear>=3 and bear>bull:
+        lines.append("• Готовиться к ШОРТ-сценарию, но ждать подтверждения цены/структуры.")
+    else:
+        lines.append("• Наблюдать. Направление ещё не подтверждено.")
+    return lines
+
 def build_snapshot(symbol):
     ticker=fetch_ticker(symbol)
     if ticker is None:
@@ -366,8 +468,12 @@ def build_snapshot(symbol):
         "",
         verdict,
         f"Почему: {reasons}",
-        "Это исследование, не автоматическое разрешение на вход.",
     ]
+    lines.extend(_detail_lines(
+        ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
+        long_liq,short_liq,liq.get("available") is True
+    ))
+    lines += ["", "⚠️ Это исследование, не автоматическое разрешение на вход."]
     return "\n".join(lines),verdict
 
 
