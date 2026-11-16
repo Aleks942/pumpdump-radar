@@ -83,6 +83,19 @@ class ManualResearchTests(unittest.TestCase):
         report,_=manual.build_snapshot("TESTUSDT")
         self.assertIn("1,234 USD / 5,678 USD · Bybit",report)
 
+    def test_invalid_symbol_is_not_added_and_suggestion_is_sent(self):
+        sent=[]
+        bot=manual.ManualResearchBot("token","1",lambda text,**kw: sent.append(text))
+        with patch.object(manual,"build_snapshot",return_value=(None,None)), \
+             patch.object(manual,"suggest_bybit_symbol",return_value=["ARIAUSDT"]):
+            handled=bot._handle("ARIAL")
+        self.assertTrue(handled)
+        self.assertEqual(bot.list_symbols(),[])
+        self.assertEqual(len(sent),1)
+        self.assertIn("ARIAUSDT",sent[0])
+        self.assertIn("не найдено",sent[0])
+
+
     def test_direction_change_requires_two_refreshes(self):
         sent=[]
         bot=manual.ManualResearchBot("token","1",lambda text,**kw: sent.append(text))
