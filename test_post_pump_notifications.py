@@ -50,10 +50,10 @@ class NotificationsTests(unittest.TestCase):
                        'long_usdt':12000,'short_usdt':3000},
                    'funding_context':{'available':True,'funding_pct':0.015}})}
         msg=notify.message(event)
-        self.assertIn('OI / капитал',msg)
+        self.assertIn('Открытый интерес (OI) / капитал',msg)
         self.assertIn('не полный CVD',msg)
         self.assertIn('Ликвидации (частично)',msg)
-        self.assertIn('Funding: +0.0150%',msg)
+        self.assertIn('Фандинг: +0.0150%',msg)
         event['evidence_json']='{invalid'
         self.assertIn('недоступны',notify.message(event))
 
@@ -66,7 +66,7 @@ class NotificationsTests(unittest.TestCase):
                    'futures_taker_5m_delta_quote':-12500.0,
                })}
         msg=notify.message(event)
-        self.assertIn('OI уже есть',msg)
+        self.assertIn('Открытый интерес уже есть',msg)
         self.assertIn('+0.20%',msg)
         self.assertIn('свежий кэш',msg)
         self.assertIn('-18.50%',msg)
@@ -80,7 +80,7 @@ class NotificationsTests(unittest.TestCase):
         self.assertIn('КАЧЕСТВЕННЫЙ РАЗВОРОТ',msg)
         self.assertIn('переход давления к продавцам',msg)
         self.assertIn('не блокирует сигнал',msg)
-        self.assertNotIn('Зона входа SHORT:',msg)
+        self.assertNotIn('Зона входа ШОРТ:',msg)
 
     def test_pre_short_message_marks_higher_risk_and_missing_spot(self):
         event={'kind':'PRE_SHORT','symbol':'TESTUSDT','at':NOW,
@@ -96,7 +96,18 @@ class NotificationsTests(unittest.TestCase):
         msg=notify.message(event)
         self.assertIn('ШОРТ ПОДТВЕРЖДЁН',msg)
         self.assertIn('Ждём отдельный закрытый 5м ретест',msg)
-        self.assertNotIn('Зона входа SHORT:',msg)
+        self.assertNotIn('Зона входа ШОРТ:',msg)
+
+    def test_only_entry_zone_is_green_actionable_short(self):
+        base={'symbol':'TESTUSDT','at':NOW,'rise_pct':55.0,'retrace_pct':8.5,
+              'evidence_json':'{}'}
+        for kind in ('SHORT_CONFIRMED','RETEST','READY_RESEARCH'):
+            event=dict(base,kind=kind,entry=100,stop=104,tp1=92,tp2=88)
+            msg=notify.message(event)
+            self.assertNotIn('🟢 РАБОЧ',msg)
+        event=dict(base,kind='ENTRY_ZONE',entry=100,stop=104,tp1=92,tp2=88,
+                   evidence_json=json.dumps({'entry_zone':{'zone_low':99.5,'zone_high':100.5}}))
+        self.assertIn('🟢 РАБОЧАЯ ЗОНА — ШОРТ',notify.message(event))
 
     def test_full_lifecycle_and_restart_dedup(self):
         for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT',
