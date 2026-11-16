@@ -11,6 +11,7 @@ changes or after 30 minutes. No orders and no trade approval.
 """
 import math
 import re
+from difflib import get_close_matches
 import threading
 import time
 from collections import deque
@@ -93,6 +94,22 @@ def _bybit_json(path,params=None,timeout=7):
     if not isinstance(data,dict) or data.get("retCode")!=0:
         raise RuntimeError("BYBIT_SCHEMA")
     return data
+
+
+def suggest_bybit_symbol(symbol):
+    try:
+        data=_bybit_json("/v5/market/instruments-info",
+                         {"category":"linear","limit":1000})
+        rows=((data.get("result") or {}).get("list") or [])
+        symbols=[
+            str(row.get("symbol") or "").upper()
+            for row in rows
+            if str(row.get("quoteCoin") or "").upper()=="USDT"
+            and str(row.get("status") or "").lower()=="trading"
+        ]
+        return get_close_matches(str(symbol).upper(),symbols,n=3,cutoff=0.72)
+    except Exception:
+        return []
 
 
 def fetch_ticker(symbol):
@@ -396,17 +413,17 @@ class ManualResearchBot:
     def _handle(self,text):
         action,symbol=parse_command(text)
         if action=="CHECK" and symbol:
-            self.add(symbol)
-            try:
-                watch_bybit_flow_symbol(symbol)
-            except Exception:
-                pass
             try:
                 report,verdict=build_snapshot(symbol)
             except Exception as exc:
                 print("[MANUAL_RESEARCH_ERROR]",symbol,type(exc).__name__,flush=True)
                 report=None; verdict=None
             if report:
+                self.add(symbol)
+                try:
+                    watch_bybit_flow_symbol(symbol)
+                except Exception:
+                    pass
                 with self.lock:
                     if symbol in self.watch:
                         self.watch[symbol]["last_verdict"]=verdict
@@ -415,7 +432,14 @@ class ManualResearchBot:
                         self.watch[symbol]["candidate_count"]=0
                 self._send(report,symbol)
             else:
-                self._send(f"⚠️ {symbol}: не удалось получить Bybit USDT perpetual данные.",symbol)
+                suggestions=suggest_bybit_symbol(symbol)
+                if suggestions:
+                    msg=(f"⚠️ {symbol}: такого USDT-фьючерса на Bybit не найдено. "
+                         f"Возможно, ты имел в виду: {', '.join(suggestions)}")
+                else:
+                    msg=(f"⚠️ {symbol}: такого USDT-фьючерса на Bybit не найдено. "
+                         "Проверь тикер и отправь его ещё раз.")
+                self._send(msg,symbol)
             return True
         if action=="STOP" and symbol:
             removed=self.remove(symbol)
