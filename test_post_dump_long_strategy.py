@@ -133,11 +133,27 @@ class PostDumpLongTests(unittest.TestCase):
         sent = []
         n = s.deliver(lambda msg, symbol=None: sent.append((symbol,msg)) or True,
                       now=NOW+121, db_path=self.path)
-        self.assertEqual(n, 2)
+        self.assertEqual(n, 1)
         self.assertEqual(sent[0][0], "TESTUSDT")
-        self.assertIn("ДАМП ВЫДЫХАЕТСЯ", sent[0][1])
-        self.assertIn("БЫКИ НАБИРАЮТ СИЛУ", sent[1][1])
+        self.assertIn("БЫКИ НАБИРАЮТ СИЛУ", sent[0][1])
+        with sqlite3.connect(self.path) as db:
+            statuses=dict(db.execute(
+                "SELECT phase,status FROM post_dump_long_notify"))
+        self.assertEqual(statuses["DUMP_EXHAUSTED"],"EXPIRED")
+        self.assertEqual(statuses["BULLS_GAINING"],"SENT")
 
+    def test_squeeze_message_does_not_claim_classic_short_squeeze(self):
+        event={
+            "phase":"SQUEEZE_SETUP","symbol":"TESTUSDT","price":72.0,
+            "prior_pump_pct":50.0,"drop_from_high_pct":52.0,
+            "recovery_pct":3.0,
+            "evidence":{"conditions":{"oi_5m_pct":1.2,
+                "futures_imbalance_pct":20.0,"funding_pct":-0.08,
+                "price_state":{"change_5m_pct":1.0},"structure_break":True}}
+        }
+        msg=s._message(event)
+        self.assertIn("НАБОР",msg)
+        self.assertIn("не классический шорт-сквиз",msg.lower())
 
 if __name__ == "__main__":
     unittest.main()
