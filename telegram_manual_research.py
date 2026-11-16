@@ -27,6 +27,8 @@ REFRESH_SEC=60
 STATUS_REPEAT_SEC=30*60
 _BYBIT_OI_HISTORY={}
 _BYBIT_OI_LOCK=threading.RLock()
+_PRICE_HISTORY={}
+_PRICE_LOCK=threading.RLock()
 _ALLOWED=re.compile(r"^[A-Z0-9]{1,20}$")
 
 
@@ -161,6 +163,32 @@ def _bybit_oi5(symbol,current_oi,now=None):
         }
 
 
+def _price5(symbol,current_price,now=None):
+    now=time.time() if now is None else float(now)
+    current=_num(current_price)
+    if current is None or current<=0:
+        return {"ready":False,"quality":"NO_CURRENT_PRICE"}
+    with _PRICE_LOCK:
+        q=_PRICE_HISTORY.setdefault(symbol,deque(maxlen=20))
+        if not q or now-q[-1][0]>=20:
+            q.append((now,current))
+        while q and now-q[0][0]>15*60:
+            q.popleft()
+        target=now-300
+        candidates=[row for row in q if row[0]<=now-240]
+        if not candidates:
+            return {"ready":False,"quality":"WARMING"}
+        ts,previous=min(candidates,key=lambda row:abs(row[0]-target))
+        if abs(ts-target)>90 or previous<=0:
+            return {"ready":False,"quality":"WARMING"}
+        return {
+            "ready":True,
+            "quality":"READY",
+            "period_sec":now-ts,
+            "change_pct":100*(current/previous-1),
+        }
+
+
 def _agg_oi5(symbol):
     try:
         data=get_aggregated_oi(symbol) or {}
@@ -186,32 +214,85 @@ def _fmt(v,d=2,suffix="%"):
     return "нет данных" if v is None else f"{v:+.{d}f}{suffix}"
 
 
-def _verdict(ticker,oi_local,oi_agg,fut,spot,funding):
+def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
     # Manual mode is Bybit-first: local Bybit OI is primary.
+    p5=_num(price5.get("change_pct")) if price5.get("ready") is True else None
     oi=_num(oi_local.get("change_pct")) if oi_local.get("ready") is True else None
     if oi is None:
         oi=_num(oi_agg.get("change_pct")) if oi_agg.get("ready") is True else None
     fimb=_num(fut.get("imbalance_pct")) if fut.get("quality")=="READY" else None
     simb=_num(spot.get("cvd_percent")) if spot and spot.get("available") else None
-    score=0
+    long_liq=_num((liq or {}).get("long_liq"))
+    short_liq=_num((liq or {}).get("short_liq"))
+
     reasons=[]
+    if p5 is not None:
+        reasons.append("цена 5м растёт" if p5>=0.40 else
+                       "цена 5м падает" if p5<=-0.40 else
+                       "цена 5м держится")
     if oi is not None:
-        if oi>=0.10: score+=1; reasons.append("OI растёт")
-        elif oi<=-0.10: score-=1; reasons.append("OI снижается")
+        reasons.append("OI растёт" if oi>=0.10 else
+                       "OI снижается" if oi<=-0.10 else
+                       "OI почти не меняется")
     if fimb is not None:
-        if fimb>=8: score+=2; reasons.append("фьючерсные покупки")
-        elif fimb<=-8: score-=2; reasons.append("фьючерсные продажи")
+        if fimb>=8: reasons.append("фьючерсы покупают")
+        elif fimb<=-8: reasons.append("фьючерсы продают")
     if simb is not None:
-        if simb>=10: score+=1; reasons.append("спот покупает")
-        elif simb<=-10: score-=1; reasons.append("спот продаёт")
+        if simb>=10: reasons.append("спот покупает")
+        elif simb<=-10: reasons.append("спот продаёт")
     if funding is not None and funding<=-0.03:
-        reasons.append("отрицательный funding: возможное squeeze-топливо")
+        reasons.append("отрицательный фандинг даёт топливо для выноса шортов")
+
+    # Specific market-structure labels come before the generic pressure score.
+    if (p5 is not None and p5>=0.40 and oi is not None and oi<=-0.10
+            and ((fimb is not None and fimb>=5)
+                 or (short_liq is not None and short_liq>max(long_liq or 0,0)))):
+        return ("🟡 ФОРМИРУЕТСЯ ШОРТ-СКВИЗ",
+                ", ".join(reasons) or "цена растёт при сокращении OI")
+
+    if (p5 is not None and p5<=-0.40 and oi is not None and oi>=0.10
+            and fimb is not None and fimb<=-8):
+        return ("🟠 НАБОР НОВЫХ ШОРТОВ",
+                ", ".join(reasons) or "цена падает, OI растёт, фьючерсы продают")
+
+    if (p5 is not None and p5>=0.40 and oi is not None and oi>=0.10
+            and fimb is not None and fimb>=8):
+        return ("🟡 НАБОР НОВЫХ ЛОНГОВ",
+                ", ".join(reasons) or "цена и OI растут вместе с покупками")
+
+    if (p5 is not None and p5<=-0.40 and oi is not None and oi<=-0.10):
+        return ("🟠 ЛИКВИДАЦИЯ/ЗАКРЫТИЕ ЛОНГОВ",
+                ", ".join(reasons) or "цена и OI снижаются одновременно")
+
+    if (fimb is not None and fimb<=-8 and simb is not None and simb>=10
+            and (p5 is None or p5>-0.40)):
+        return ("🟡 ПОГЛОЩЕНИЕ ПРОДАЖ — СПОТ ВЫКУПАЕТ",
+                ", ".join(reasons) or "фьючерсы продают, а спот покупает")
+
+    score=0
+    if oi is not None:
+        if oi>=0.10: score+=1
+        elif oi<=-0.10: score-=1
+    if fimb is not None:
+        if fimb>=8: score+=2
+        elif fimb<=-8: score-=2
+    if simb is not None:
+        if simb>=10: score+=1
+        elif simb<=-10: score-=1
+
     if score>=3:
         label="🟡 БЫЧЬЕ ДАВЛЕНИЕ — НУЖНО ПОДТВЕРЖДЕНИЕ ЦЕНОЙ"
     elif score<=-3:
         label="🟡 МЕДВЕЖЬЕ ДАВЛЕНИЕ — НУЖНО ПОДТВЕРЖДЕНИЕ ЦЕНОЙ"
     else:
         label="⚪ НАПРАВЛЕНИЕ ПОКА НЕ ПОДТВЕРЖДЕНО"
+
+    missing=[]
+    if p5 is None: missing.append("изменение цены за 5м")
+    if oi is None: missing.append("OI за 5м")
+    if fimb is None: missing.append("поток фьючерсов")
+    if not reasons and missing:
+        reasons.append("ещё накапливаются данные: "+", ".join(missing))
     return label,", ".join(reasons) if reasons else "данных недостаточно"
 
 
@@ -224,6 +305,7 @@ def build_snapshot(symbol):
         watch_bybit_flow_symbol(symbol)
     except Exception:
         pass
+    price5=_price5(symbol,ticker.get("last"))
     oi_local=_bybit_oi5(symbol,ticker.get("open_interest"))
     oi_agg=_agg_oi5(symbol)
     fut=_flow5(symbol)
@@ -233,8 +315,9 @@ def build_snapshot(symbol):
         spot={}
     funding=ticker.get("funding_pct")
     liq=_liqs(symbol)
-    verdict,reasons=_verdict(ticker,oi_local,oi_agg,fut,spot,funding)
+    verdict,reasons=_verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq)
 
+    price5_pct=_num(price5.get("change_pct")) if price5.get("ready") else None
     local_oi=_num(oi_local.get("change_pct")) if oi_local.get("ready") else None
     agg_oi=_num(oi_agg.get("change_pct")) if oi_agg.get("ready") else None
     fimb=_num(fut.get("imbalance_pct")) if fut.get("quality")=="READY" else None
@@ -253,15 +336,16 @@ def build_snapshot(symbol):
         f"24ч: {_fmt(ticker.get('change24h_pct'))}",
         f"От максимума 24ч: {_fmt(-(ticker.get('drop_from_high_pct') or 0)) if ticker.get('drop_from_high_pct') is not None else 'нет данных'}",
         "",
-        f"OI сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "OI сейчас: нет данных",
-        f"OI Bybit 5м: {_fmt(local_oi)}",
-        f"OI агрегированный 5м: {_fmt(agg_oi)}",
-        f"Futures delta 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Futures delta 5м: нет данных",
-        f"Futures imbalance 5м: {_fmt(fimb)}",
-        f"Spot delta: {sdelta:+,.2f} USDT" if sdelta is not None else "Spot delta: нет данных",
-        f"Spot imbalance: {_fmt(simb)}",
-        f"Funding Bybit: {_fmt(funding,4)}",
-        f"Ликвидации 5м LONG/SHORT: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
+        f"Изменение цены 5м: {_fmt(price5_pct)}",
+        f"Открытый интерес сейчас: {ticker.get('open_interest_value'):,.0f} USDT" if ticker.get("open_interest_value") is not None else "Открытый интерес сейчас: нет данных",
+        f"Открытый интерес Bybit 5м: {_fmt(local_oi)}",
+        f"Открытый интерес по биржам 5м: {_fmt(agg_oi)}",
+        f"Дельта фьючерсов 5м: {fdelta:+,.2f} USDT" if fdelta is not None else "Дельта фьючерсов 5м: нет данных",
+        f"Дисбаланс фьючерсов 5м: {_fmt(fimb)}",
+        f"Дельта спота: {sdelta:+,.2f} USDT" if sdelta is not None else "Дельта спота: нет данных",
+        f"Дисбаланс спота: {_fmt(simb)}",
+        f"Фандинг Bybit: {_fmt(funding,4)}",
+        f"Ликвидации 5м ЛОНГ/ШОРТ: {long_liq:,.0f} USD / {short_liq:,.0f} USD · {liq_sources}" if liq.get("available") and long_liq is not None and short_liq is not None else f"Ликвидации 5м: нет подтверждённых данных · {liq_quality}",
         "",
         verdict,
         f"Почему: {reasons}",
