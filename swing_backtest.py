@@ -134,7 +134,8 @@ def _resample(c1,hours):
         if actual!=expected:
             continue
         out.append({
-            "ts":float(ts),"o":rows[0]["o"],"h":max(x["h"] for x in rows),
+            "ts":float(ts),"end_ts":float(ts+sec),
+            "o":rows[0]["o"],"h":max(x["h"] for x in rows),
             "l":min(x["l"] for x in rows),"c":rows[-1]["c"],
             "v":sum(x["v"] for x in rows),
         })
@@ -146,7 +147,14 @@ def _daily_from_hourly(c1):
 
 
 def _slice_before(rows,ts,limit=None):
-    data=[x for x in rows if x["ts"]<ts]
+    # A resampled 4H/1D bar is usable only after its full interval has closed.
+    # This prevents a 00:00-04:00 bar from leaking 02:00/03:00 data into a
+    # signal evaluated at 01:00.
+    data=[
+        x for x in rows
+        if (x.get("end_ts") is not None and x["end_ts"]<=ts)
+        or (x.get("end_ts") is None and x["ts"]<ts)
+    ]
     return data[-limit:] if limit else data
 
 
