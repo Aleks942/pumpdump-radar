@@ -37,6 +37,31 @@ class SwingStrengthTests(unittest.TestCase):
         self.assertEqual(r["bias"],"NEUTRAL")
         self.assertLess(r["score"],70)
 
+    def test_weekly_position_is_clamped_to_0_100(self):
+        daily=[
+            {"l":1.0,"h":2.0},{"l":1.1,"h":2.1},{"l":1.2,"h":2.2},
+            {"l":1.3,"h":2.3},{"l":1.4,"h":2.4},{"l":1.5,"h":2.5},
+            {"l":1.6,"h":2.6},
+        ]
+        self.assertEqual(s._weekly_position(daily,3.0),100.0)
+        self.assertEqual(s._weekly_position(daily,0.5),0.0)
+
+    def test_compact_report_is_short_and_actionable(self):
+        r={"score":82,"bias":"BULLISH",
+           "label":"🟢 СИЛЬНАЯ МОНЕТА / ПОКУПАТЕЛЬ КОНТРОЛИРУЕТ",
+           "trend1h":{"regime":"UP"},"trend4h":{"regime":"UP"},
+           "trend1d":{"regime":"MIXED"},
+           "oi1h":{"change_pct":1.2},"oi4h":{"change_pct":2.3},
+           "reasons":["1H: структура вверх","4H: структура вверх"],
+           "risks":["Фандинг перегрет"]}
+        lines=s.format_compact_report(r,"🟡 БЫЧЬЕ ДАВЛЕНИЕ")
+        text="\n".join(lines)
+        self.assertLessEqual(len(lines),10)
+        self.assertIn("82/100",text)
+        self.assertIn("План: искать ЛОНГ",text)
+        self.assertIn("Отмена:",text)
+        self.assertIn("/detail",text)
+
     def test_report_states_medium_term_horizon(self):
         r={"score":80,"bias":"BULLISH",
            "label":"🟢 СИЛЬНАЯ МОНЕТА / ПОКУПАТЕЛЬ КОНТРОЛИРУЕТ",
