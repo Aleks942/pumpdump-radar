@@ -14,26 +14,67 @@ class ManualResearchTests(unittest.TestCase):
         self.assertEqual(parse_command("/stop JCT"),("STOP","JCTUSDT"))
         self.assertEqual(parse_command("/watchlist"),("LIST",None))
     def test_bullish_pressure_requires_multiple_factors(self):
-        v,_=_verdict({},{"ready":True,"change_pct":0.3},{},
+        v,_=_verdict({},{"ready":True,"change_pct":0.2},
+                     {"ready":True,"change_pct":0.3},{},
                      {"quality":"READY","imbalance_pct":15},
-                     {"available":True,"cvd_percent":20},-0.05)
+                     {"available":True,"cvd_percent":20},-0.05,{})
         self.assertIn("БЫЧЬЕ ДАВЛЕНИЕ",v)
     def test_funding_alone_cannot_create_direction(self):
-        v,_=_verdict({},{"ready":False},{},{"quality":"WARMING"},
-                     {"available":False},-0.20)
+        v,_=_verdict({},{"ready":False},{"ready":False},{},
+                     {"quality":"WARMING"},{"available":False},-0.20,{})
         self.assertIn("НЕ ПОДТВЕРЖДЕНО",v)
 
+    def test_spot_absorption_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":-0.1},
+                     {"ready":True,"change_pct":0.0},{},
+                     {"quality":"READY","imbalance_pct":-25},
+                     {"available":True,"cvd_percent":18},0.01,{})
+        self.assertIn("ПОГЛОЩЕНИЕ ПРОДАЖ",v)
+
+    def test_short_squeeze_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":1.2},
+                     {"ready":True,"change_pct":-0.8},{},
+                     {"quality":"READY","imbalance_pct":12},
+                     {"available":False},-0.05,
+                     {"short_liq":5000,"long_liq":100})
+        self.assertIn("ШОРТ-СКВИЗ",v)
+
+    def test_new_short_buildup_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":-1.1},
+                     {"ready":True,"change_pct":0.6},{},
+                     {"quality":"READY","imbalance_pct":-20},
+                     {"available":True,"cvd_percent":-15},0.02,{})
+        self.assertIn("НОВЫХ ШОРТОВ",v)
+
+    def test_new_long_buildup_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":1.1},
+                     {"ready":True,"change_pct":0.6},{},
+                     {"quality":"READY","imbalance_pct":20},
+                     {"available":True,"cvd_percent":15},0.01,{})
+        self.assertIn("НОВЫХ ЛОНГОВ",v)
+
+    def test_long_liquidation_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":-1.1},
+                     {"ready":True,"change_pct":-0.6},{},
+                     {"quality":"READY","imbalance_pct":-5},
+                     {"available":False},0.01,{})
+        self.assertIn("ЛИКВИДАЦИЯ",v)
+
     @patch.object(manual,"fetch_ticker")
+    @patch.object(manual,"_price5")
+    @patch.object(manual,"_bybit_oi5")
     @patch.object(manual,"_agg_oi5")
     @patch.object(manual,"_flow5")
     @patch.object(manual,"get_spot_cvd")
     @patch.object(manual,"_liqs")
-    def test_report_uses_real_liquidation_keys(self,m_liqs,m_spot,m_flow,m_oi,m_ticker):
+    def test_report_uses_real_liquidation_keys(self,m_liqs,m_spot,m_flow,m_agg,m_local,m_price,m_ticker):
         m_ticker.return_value={"last":1.0,"change24h_pct":0.0,
                                "drop_from_high_pct":0.0,
                                "open_interest_value":1000.0,
                                "funding_pct":0.005}
-        m_oi.return_value={}
+        m_price.return_value={"ready":False}
+        m_local.return_value={"ready":False}
+        m_agg.return_value={}
         m_flow.return_value={}
         m_spot.return_value={"available":False}
         m_liqs.return_value={"available":True,"quality":"OBSERVED_PARTIAL",
