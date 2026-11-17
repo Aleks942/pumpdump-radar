@@ -1,0 +1,25 @@
+name: Historical SWING trade backtest
+on:
+  push:
+    paths:
+      - 'swing_trade_backtest.py'
+      - 'test_swing_trade_backtest.py'
+      - '.github/workflows/swing-trade-backtest.yml'
+  workflow_dispatch:
+jobs:
+  historical-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install requests
+      - run: python -m unittest -v test_swing_trade_backtest.py test_swing_backtest.py
+      - name: Historical 90-day evaluation
+        run: python swing_trade_backtest.py BTCUSDT ETHUSDT SOLUSDT --days 90 > swing_report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swing-historical-90d
+          path: swing_report.json
