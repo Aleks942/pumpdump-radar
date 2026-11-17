@@ -61,6 +61,8 @@ from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
 from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
+from swing_market_scanner import scan as scan_swing_market
+from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report
 
 from liquidation_engine import (
     start_liquidation_streams,
@@ -108,6 +110,11 @@ ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
+PRIMARY_SCAN_MODE = os.getenv("PRIMARY_SCAN_MODE", "SWING").strip().upper()
+if PRIMARY_SCAN_MODE not in ("SWING", "LEGACY"):
+    PRIMARY_SCAN_MODE = "SWING"
+SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
+SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -118,6 +125,7 @@ symbol_states = {}
 OI_HISTORY = {}
 OI_TIME_HISTORY = {}
 signal_memory = {}
+_SWING_ALERT_STATE = {}
 
 # Bounded, information-only price-threshold notifications. They do not
 # influence trade approval, signal_memory or entry trackers.
@@ -393,6 +401,26 @@ def get_market_tickers():
     except Exception as e:
         print("[OKX EXCEPTION]", e)
         return []
+
+
+def _swing_alert_allowed(symbol, bias, score, now=None):
+    now = time.time() if now is None else float(now)
+    state = _SWING_ALERT_STATE.get(symbol)
+    if state is None:
+        return True
+    if state.get("bias") != bias:
+        return True
+    if abs(float(score) - float(state.get("score", score))) >= 8:
+        return True
+    return now - float(state.get("at", 0)) >= SWING_ALERT_COOLDOWN_SEC
+
+
+def _mark_swing_alert(symbol, bias, score, now=None):
+    _SWING_ALERT_STATE[symbol] = {
+        "bias": bias,
+        "score": float(score),
+        "at": time.time() if now is None else float(now),
+    }
 
 
 def get_rotation_chunk(tickers):
@@ -1401,6 +1429,7 @@ test_binance()
 test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
+print("[PRIMARY_SCAN_MODE]", PRIMARY_SCAN_MODE, flush=True)
 startup_sent = send_telegram("🚀 PumpDump Radar V2 ONLINE", symbol="SYSTEM")
 print("[STARTUP_TELEGRAM] sent=", startup_sent is True, flush=True)
 
@@ -1737,13 +1766,104 @@ while True:
         except (TypeError, ValueError):
             continue
     
+    swing_candidates = []
+    if PRIMARY_SCAN_MODE == "SWING":
+        try:
+            swing_candidates = scan_swing_market(tickers)
+            print(
+                "[SWING_PREFILTER]",
+                "candidates=", len(swing_candidates),
+                "deep_top_n=", SWING_DEEP_TOP_N,
+                flush=True,
+            )
+            for candidate in swing_candidates[:SWING_DEEP_TOP_N]:
+                symbol = candidate.get("symbol")
+                if not symbol:
+                    continue
+                result = analyze_swing_strength(
+                    symbol,
+                    current_price=candidate.get("price"),
+                )
+                if not result.get("ready"):
+                    print("[SWING_SKIP_NOT_READY]", symbol, flush=True)
+                    continue
+
+                bias = result.get("bias")
+                score = int(result.get("score", 50))
+                t1 = (result.get("trend1h") or {}).get("regime")
+                t4 = (result.get("trend4h") or {}).get("regime")
+                pre_dir = candidate.get("direction")
+
+                aligned = (
+                    bias == "BULLISH"
+                    and pre_dir == "LONG"
+                    and t1 == "UP"
+                    and t4 == "UP"
+                ) or (
+                    bias == "BEARISH"
+                    and pre_dir == "SHORT"
+                    and t1 == "DOWN"
+                    and t4 == "DOWN"
+                )
+                if not aligned:
+                    print(
+                        "[SWING_SKIP_ALIGNMENT]",
+                        symbol,
+                        "prefilter=", pre_dir,
+                        "bias=", bias,
+                        "1h=", t1,
+                        "4h=", t4,
+                        "score=", score,
+                        flush=True,
+                    )
+                    continue
+
+                if bias not in ("BULLISH", "BEARISH"):
+                    continue
+                if bias == "BULLISH" and score < 70:
+                    continue
+                if bias == "BEARISH" and score > 30:
+                    continue
+
+                if not _swing_alert_allowed(symbol, bias, score):
+                    print("[SWING_SKIP_DUPLICATE]", symbol, score, flush=True)
+                    continue
+
+                lines = [
+                    f"🧭 <b>SWING RADAR — {symbol}</b>",
+                    *format_compact_report(result),
+                ]
+                sent = send_telegram("\n".join(lines), symbol=symbol)
+                if sent is True:
+                    _mark_swing_alert(symbol, bias, score)
+                    print(
+                        "[SWING_ALERT_SENT]",
+                        symbol,
+                        "bias=", bias,
+                        "score=", score,
+                        "prefilter_score=",
+                        round(float(candidate.get("signed_score", 0)), 1),
+                        flush=True,
+                    )
+                else:
+                    print("[SWING_ALERT_NOT_SENT]", symbol, flush=True)
+        except Exception as swing_scan_exc:
+            print(
+                "[SWING_SCAN_ERROR]",
+                type(swing_scan_exc).__name__,
+                str(swing_scan_exc)[:160],
+                flush=True,
+            )
+
     checked = 0
     signals = 0
     no_signal = 0
 
-    
+    # The legacy 5m pattern engine is a rollback path only. In SWING mode,
+    # 5m/15m stay timing/informational layers and cannot originate direction.
+    scan_chunk = current_chunk if PRIMARY_SCAN_MODE == "LEGACY" else []
 
-    for ticker in current_chunk:
+    for ticker in scan_chunk:
         checked += 1
 
         symbol = ticker.get("instId", "").replace("-USDT-SWAP", "USDT")
