@@ -5,7 +5,6 @@ If stop and target touch in the same candle, stop is assumed first.
 import argparse
 import json
 import statistics
-import math
 from swing_backtest import backtest_symbol, MODELED_ROUND_TRIP_COST_PCT
 
 def simulate(event, candles, stop_pct=2.0, target_pct=4.0, max_hours=72,
@@ -99,7 +98,7 @@ def main():
         if not symbol.endswith("USDT"):symbol+="USDT"
         base=backtest_symbol(symbol,args.days,now=now)
         candles=fetch_klines(symbol,"60",int((now-(args.days+35)*86400)*1000),int(now*1000))
-        coverage=base["oi_points"]/max(1,base["hourly_candles"])
+        # OI coverage must be measured over the evaluation window, not warm-up.\n        # A count alone can hide missing timestamps; require hourly alignment.\n        from swing_backtest import fetch_oi_1h\n        oi_rows=fetch_oi_1h(symbol,int((now-args.days*86400)*1000),int(now*1000))\n        candle_hours={int(x["ts"]) for x in candles if x["ts"]>=now-args.days*86400 and x["ts"]+3600<=now}\n        oi_hours={int(ts) for ts,_ in oi_rows}\n        coverage=len(candle_hours & oi_hours)/max(1,len(candle_hours))
         if coverage<args.min_oi_coverage:
             per_symbol.append({"symbol":symbol,"status":"INSUFFICIENT_OI_HISTORY",
                 "oi_coverage":round(coverage,3),"candles":len(candles),
