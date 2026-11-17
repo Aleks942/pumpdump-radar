@@ -191,6 +191,8 @@ def _future_markout(c1,index,hours,direction):
     if end>len(c1) or entry<=0:
         return None
     future=c1[index:end]
+    if any(future[j]["ts"]-future[j-1]["ts"]!=3600 for j in range(1,len(future))):
+        return None
     exit_px=future[-1]["c"]
     raw=100*(exit_px/entry-1)
     signed=raw if direction=="LONG" else -raw
@@ -219,7 +221,10 @@ def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30,
     rows=[]
     last_signal_at={"LONG":None,"SHORT":None}
     warmup=30*24
-    for i in range(warmup,len(c1)-max(HORIZONS_H)):
+    for i in range(warmup,len(c1)):
+        # Do not score incomplete or missing hourly history.
+        if i and c1[i]["ts"]-c1[i-1]["ts"]!=3600:
+            continue
         if i%max(1,step_hours):
             continue
         ts=c1[i]["ts"]  # entry is this hour open; evidence is strictly before ts
