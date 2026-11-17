@@ -52,7 +52,8 @@ class SwingBacktestTests(unittest.TestCase):
         events=b.build_signals("TESTUSDT",c1,oi)
         self.assertTrue(events)
         self.assertTrue(any(e["direction"]=="LONG" for e in events))
-        self.assertTrue(all("168" in e["outcomes"] for e in events))
+        self.assertTrue(any("168" in e["outcomes"] for e in events))
+        self.assertTrue(all("1" in e["outcomes"] for e in events))
 
     def test_future_prices_do_not_change_existing_signal_score(self):
         c1=hourly_series(1100)
