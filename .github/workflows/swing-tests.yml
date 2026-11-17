@@ -48,3 +48,8 @@ jobs:
             test_swing_strength_engine.py \
             test_swing_backtest.py \
             test_telegram_manual_research.py
+      - name: Run 60-day historical SWING validation sample
+        run: |
+          python swing_backtest.py \
+            BTCUSDT ETHUSDT SOLUSDT XRPUSDT DOGEUSDT ADAUSDT LINKUSDT AVAXUSDT \
+            --days 60
