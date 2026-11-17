@@ -111,6 +111,8 @@ def main():
         all_trades.extend(trades)
         per_symbol.append({"symbol":symbol,"candles":len(candles),
                            "oi_points":base["oi_points"],"stats":report(trades)})
+    if not all_trades:
+        raise RuntimeError("NO_VALID_HISTORICAL_TRADES: insufficient OI coverage or no signals")
     print(json.dumps({"parameters":vars(args),"symbols":per_symbol,
                       "combined":report(all_trades),
                       "limitations":"Bybit price/OI only; no historical CVD/liquidations. Slippage estimated, funding and price gaps not modeled. Stop-first if both touched."},
