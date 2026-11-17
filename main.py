@@ -63,6 +63,7 @@ from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report
+from swing_alert_state import alert_allowed as persistent_swing_alert_allowed, mark_alert as persistent_mark_swing_alert
 
 from liquidation_engine import (
     start_liquidation_streams,
@@ -116,6 +117,7 @@ if PRIMARY_SCAN_MODE not in ("SWING", "LEGACY"):
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
 SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
+SWING_LEGACY_TELEGRAM = os.getenv("SWING_LEGACY_TELEGRAM", "0") == "1"
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -145,6 +147,8 @@ def maybe_send_market_watch(signal, reason, now=None):
     Only called on a real, chronologically sampled 5m market move.
     Reserve frequency budget AFTER Telegram confirms successful delivery.
     """
+    if PRIMARY_SCAN_MODE == "SWING" and not SWING_LEGACY_TELEGRAM:
+        return False
     now = time.time() if now is None else float(now)
     if not math.isfinite(now):
         return False
@@ -405,23 +409,20 @@ def get_market_tickers():
 
 
 def _swing_alert_allowed(symbol, bias, score, now=None):
-    now = time.time() if now is None else float(now)
-    state = _SWING_ALERT_STATE.get(symbol)
-    if state is None:
+    try:
+        return persistent_swing_alert_allowed(
+            symbol, bias, score, SWING_ALERT_COOLDOWN_SEC, now=now
+        )
+    except Exception as exc:
+        print("[SWING_DEDUP_READ_ERROR]", type(exc).__name__, flush=True)
         return True
-    if state.get("bias") != bias:
-        return True
-    if abs(float(score) - float(state.get("score", score))) >= 8:
-        return True
-    return now - float(state.get("at", 0)) >= SWING_ALERT_COOLDOWN_SEC
 
 
 def _mark_swing_alert(symbol, bias, score, now=None):
-    _SWING_ALERT_STATE[symbol] = {
-        "bias": bias,
-        "score": float(score),
-        "at": time.time() if now is None else float(now),
-    }
+    try:
+        persistent_mark_swing_alert(symbol, bias, score, now=now)
+    except Exception as exc:
+        print("[SWING_DEDUP_WRITE_ERROR]", type(exc).__name__, flush=True)
 
 
 def get_rotation_chunk(tickers):
@@ -1699,14 +1700,16 @@ while True:
     # Research-only; reuses existing ticker/OI/flow caches and never places orders.
     try:
         observe_post_dump_long(tickers)
-        deliver_post_dump_long(send_telegram)
+        if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
+            deliver_post_dump_long(send_telegram)
     except Exception as post_dump_long_exc:
         print("[POST_DUMP_LONG_LOOP_ERROR]",
               type(post_dump_long_exc).__name__, str(post_dump_long_exc), flush=True)
 
     try:
         observe_post_dump_accumulation(tickers)
-        deliver_post_dump_accumulation(send_telegram)
+        if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
+            deliver_post_dump_accumulation(send_telegram)
     except Exception as post_dump_accum_exc:
         print("[POST_DUMP_ACCUM_LOOP_ERROR]",
               type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
@@ -1714,7 +1717,8 @@ while True:
 
     # User-enabled complete lifecycle. Preserves every strategy evidence gate;
     # messages explicitly label READY as a paper plan, never a live order.
-    if os.getenv("POST_PUMP_TELEGRAM", "1") == "1":
+    if (os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
+            and (PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM)):
         try:
             deliver_post_pump_notifications(send_telegram, tickers)
         except Exception as notify_error:
