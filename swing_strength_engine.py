@@ -143,6 +143,9 @@ def _oi_change(symbol,interval,lookback_points,request_get=None,now=None):
         pts.sort()
         if len(pts)<lookback_points+1:
             return {"ready":False,"quality":"WARMING"}
+        period=pts[-1][0]-pts[-1-lookback_points][0]
+        if not (lookback_points*3600-900<=period<=lookback_points*3600+900):
+            return {"ready":False,"quality":"GAPPED_OI_HISTORY"}
         current=pts[-1][1]
         previous=pts[-1-lookback_points][1]
         return {
@@ -269,7 +272,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
 
     try:
         ticker=_ticker(key,request_get)
-        price=current_price or ticker.get("last")
+        price=current_price if current_price is not None and current_price>0 else ticker.get("last")
         c15=_closed_klines(key,"15",80,request_get,now)
         c60=_closed_klines(key,"60",80,request_get,now)
         c240=_closed_klines(key,"240",80,request_get,now)
@@ -280,8 +283,14 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         weekly=_weekly_position(cd,price)
         vol1=_volume_state(c60)
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol1,short_term)
+        # Strong directional claims require complete higher-timeframe and OI evidence.
+        evidence_ready=all(x.get("ready") for x in (t1,t4,td,oi1,oi4))
+        if not evidence_ready:
+            scored=dict(scored,score=50,bias="NEUTRAL",
+                label="🟡 СРЕДНЕСРОЧНЫЕ ДАННЫЕ НЕПОЛНЫЕ",
+                risks=["Нет полного подтверждения 1H/4H/1D и OI; направление не подтверждено"])
         result={
-            "ready":all(x.get("ready") for x in (t1,t4,td)),
+            "ready":evidence_ready,
             "symbol":key,"price":price,"ticker":ticker,
             "trend15":t15,"trend1h":t1,"trend4h":t4,"trend1d":td,
             "oi1h":oi1,"oi4h":oi4,"weekly_position_pct":weekly,
