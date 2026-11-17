@@ -2,7 +2,7 @@
 
 Uses OKX 1H historical candles and contract-level 1H open-interest history, then
 reuses the same build_signals/summarize logic as swing_backtest.py. Research
-only; it does not alter the production scanner.
+only; it does not alter the production scanner. Regime-v2 validation run.
 """
 import argparse
 import json
