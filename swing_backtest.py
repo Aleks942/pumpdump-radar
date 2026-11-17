@@ -310,6 +310,8 @@ def backtest_symbol(symbol,days=60,request_get=None,now=None):
     # Warm-up: daily trend needs ~25 days before first evaluated signal.
     start_ms=int((now-(days+35)*86400)*1000)
     c1=fetch_klines(symbol,"60",start_ms,end_ms,request_get)
+    # Never score an unfinished hourly candle as a historical observation.
+    c1=[x for x in c1 if x["ts"]+3600<=now]
     oi=fetch_oi_1h(symbol,start_ms,end_ms,request_get)
     events=build_signals(symbol,c1,oi)
     cutoff=now-days*86400
