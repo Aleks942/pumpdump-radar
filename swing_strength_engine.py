@@ -357,6 +357,7 @@ def format_compact_report(result,short_verdict=None):
     score=int(result.get("score",50))
     bias=str(result.get("bias") or "UNKNOWN")
     label=result.get("label") or "⚪ Нет оценки"
+    t15=(result.get("trend15") or {}).get("regime","?")
     t1=(result.get("trend1h") or {}).get("regime","?")
     t4=(result.get("trend4h") or {}).get("regime","?")
     td=(result.get("trend1d") or {}).get("regime","?")
@@ -392,14 +393,13 @@ def format_compact_report(result,short_verdict=None):
     else:
         lines.append("План: вне сделки — среднесрочного преимущества нет.")
 
-    if short_verdict:
-        text=str(short_verdict)
-        if bias=="BULLISH" and any(x in text for x in ("БЫЧЬЕ","НОВЫХ ЛОНГОВ","ПОГЛОЩЕНИЕ","ШОРТ-СКВИЗ")):
-            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
-        elif bias=="BEARISH" and any(x in text for x in ("МЕДВЕЖЬЕ","НОВЫХ ШОРТОВ","ЛИКВИДАЦИЯ")):
-            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
-        else:
-            lines.append("Вход 5м: 🟡 пока нет подтверждения.")
+    if bias=="BULLISH" and t15=="UP":
+        lines.append("Тайминг: 15м ↑ · 5м только для отката/ретеста.")
+    elif bias=="BEARISH" and t15=="DOWN":
+        lines.append("Тайминг: 15м ↓ · 5м только для отката/ретеста.")
+    else:
+        lines.append("Тайминг: 15м пока не подтверждает · 5м не определяет направление.")
 
-    lines.append("Подробнее: /detail SYMBOL")
+    symbol=str(result.get("symbol") or "SYMBOL")
+    lines.append(f"Подробнее: /detail {symbol}")
     return lines
