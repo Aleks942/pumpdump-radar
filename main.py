@@ -115,6 +115,7 @@ if PRIMARY_SCAN_MODE not in ("SWING", "LEGACY"):
     PRIMARY_SCAN_MODE = "SWING"
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
+SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -1767,16 +1768,23 @@ while True:
             continue
     
     swing_candidates = []
+    swing_stats = {
+        "prefilter": 0,
+        "deep_checked": 0,
+        "not_ready": 0,
+        "alignment_reject": 0,
+        "score_reject": 0,
+        "duplicate": 0,
+        "eligible": 0,
+        "sent": 0,
+        "send_failed": 0,
+    }
     if PRIMARY_SCAN_MODE == "SWING":
         try:
             swing_candidates = scan_swing_market(tickers)
-            print(
-                "[SWING_PREFILTER]",
-                "candidates=", len(swing_candidates),
-                "deep_top_n=", SWING_DEEP_TOP_N,
-                flush=True,
-            )
+            swing_stats["prefilter"] = len(swing_candidates)
             for candidate in swing_candidates[:SWING_DEEP_TOP_N]:
+                swing_stats["deep_checked"] += 1
                 symbol = candidate.get("symbol")
                 if not symbol:
                     continue
@@ -1785,7 +1793,9 @@ while True:
                     current_price=candidate.get("price"),
                 )
                 if not result.get("ready"):
-                    print("[SWING_SKIP_NOT_READY]", symbol, flush=True)
+                    swing_stats["not_ready"] += 1
+                    if SWING_VERBOSE_LOGS:
+                        print("[SWING_SKIP_NOT_READY]", symbol, flush=True)
                     continue
 
                 bias = result.get("bias")
@@ -1806,27 +1816,35 @@ while True:
                     and t4 == "DOWN"
                 )
                 if not aligned:
-                    print(
-                        "[SWING_SKIP_ALIGNMENT]",
-                        symbol,
-                        "prefilter=", pre_dir,
-                        "bias=", bias,
-                        "1h=", t1,
-                        "4h=", t4,
-                        "score=", score,
-                        flush=True,
-                    )
+                    swing_stats["alignment_reject"] += 1
+                    if SWING_VERBOSE_LOGS:
+                        print(
+                            "[SWING_SKIP_ALIGNMENT]",
+                            symbol,
+                            "prefilter=", pre_dir,
+                            "bias=", bias,
+                            "1h=", t1,
+                            "4h=", t4,
+                            "score=", score,
+                            flush=True,
+                        )
                     continue
 
                 if bias not in ("BULLISH", "BEARISH"):
+                    swing_stats["score_reject"] += 1
                     continue
                 if bias == "BULLISH" and score < 70:
+                    swing_stats["score_reject"] += 1
                     continue
                 if bias == "BEARISH" and score > 30:
+                    swing_stats["score_reject"] += 1
                     continue
 
+                swing_stats["eligible"] += 1
                 if not _swing_alert_allowed(symbol, bias, score):
-                    print("[SWING_SKIP_DUPLICATE]", symbol, score, flush=True)
+                    swing_stats["duplicate"] += 1
+                    if SWING_VERBOSE_LOGS:
+                        print("[SWING_SKIP_DUPLICATE]", symbol, score, flush=True)
                     continue
 
                 lines = [
@@ -1835,6 +1853,7 @@ while True:
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
+                    swing_stats["sent"] += 1
                     _mark_swing_alert(symbol, bias, score)
                     print(
                         "[SWING_ALERT_SENT]",
@@ -1846,12 +1865,27 @@ while True:
                         flush=True,
                     )
                 else:
+                    swing_stats["send_failed"] += 1
                     print("[SWING_ALERT_NOT_SENT]", symbol, flush=True)
         except Exception as swing_scan_exc:
             print(
                 "[SWING_SCAN_ERROR]",
                 type(swing_scan_exc).__name__,
                 str(swing_scan_exc)[:160],
+                flush=True,
+            )
+        finally:
+            print(
+                "[SWING_SCAN_STATS]",
+                "prefilter=", swing_stats["prefilter"],
+                "deep_checked=", swing_stats["deep_checked"],
+                "eligible=", swing_stats["eligible"],
+                "sent=", swing_stats["sent"],
+                "duplicate=", swing_stats["duplicate"],
+                "not_ready=", swing_stats["not_ready"],
+                "alignment_reject=", swing_stats["alignment_reject"],
+                "score_reject=", swing_stats["score_reject"],
+                "send_failed=", swing_stats["send_failed"],
                 flush=True,
             )
 
@@ -2050,13 +2084,14 @@ while True:
             flush=True
         )
     
-    print(
-        "[SCAN_STATS]",
-        "checked=", checked,
-        "signals=", signals,
-        "no_signal=", no_signal,
-        flush=True
-    )
+    if PRIMARY_SCAN_MODE == "LEGACY":
+        print(
+            "[LEGACY_SCAN_STATS]",
+            "checked=", checked,
+            "signals=", signals,
+            "no_signal=", no_signal,
+            flush=True,
+        )
 
    
     try:
