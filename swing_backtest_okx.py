@@ -157,14 +157,26 @@ def main():
                 "error":type(exc).__name__+":"+str(exc)[:240],
             })
 
-    output={
-        "provider":"OKX public 1H candles + contract 1H OI history",
-        "symbols":reports,
-        "portfolio_event_count":len(all_events),
-        "portfolio_summary":summarize(all_events),
-        "note":"Historical 5m flow/spot CVD/liquidations excluded. Same SWING scoring core is used with 1H/4H/1D structure, volume and 1H/4H OI. Modeled round-trip cost 0.15%.",
-    }
-    print(json.dumps(output,ensure_ascii=False,indent=2))
+    portfolio_summary=summarize(all_events)
+    print("BACKTEST_PROVIDER|OKX_PUBLIC_1H_CANDLES_OI", flush=True)
+    for r in reports:
+        if r.get("error"):
+            print(f"SYMBOL|{r['symbol']}|ERROR|{r['error']}", flush=True)
+        else:
+            print(
+                f"SYMBOL|{r['symbol']}|events={r['event_count']}|candles={r['hourly_candles']}|oi={r['oi_points']}",
+                flush=True,
+            )
+    print(f"PORTFOLIO|events={len(all_events)}|cost_pct={MODELED_ROUND_TRIP_COST_PCT}", flush=True)
+    for row in portfolio_summary:
+        print(
+            "RESULT|"
+            f"{row['direction']}|{row['score_bucket']}|h={row['horizon_h']}|n={row['n']}|"
+            f"win={row['win_pct_net']}|avg={row['avg_return_pct_net']}|"
+            f"median={row['median_return_pct_net']}|mfe={row['avg_mfe_pct']}|mae={row['avg_mae_pct']}",
+            flush=True,
+        )
+    print("NOTE|Historical 5m flow, spot CVD and liquidations excluded; same SWING scoring core uses 1H/4H/1D structure, volume and 1H/4H OI.", flush=True)
 
 
 if __name__=="__main__":
