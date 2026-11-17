@@ -14,7 +14,7 @@ class SwingStrengthTests(unittest.TestCase):
                    {"price5_pct":0.1,"futures_imbalance_pct":-15})
         self.assertEqual(r["bias"],"BULLISH")
         self.assertGreaterEqual(r["score"],70)
-        self.assertTrue(any("поглощение" in x.lower() for x in r["reasons"]))
+        self.assertFalse(any("поглощение" in x.lower() for x in r["reasons"]))
 
     def test_bearish_medium_term_score(self):
         down={"ready":True,"regime":"DOWN","hh_hl":False,"lh_ll":True,
@@ -36,6 +36,24 @@ class SwingStrengthTests(unittest.TestCase):
                    {"price5_pct":2.0,"futures_imbalance_pct":50})
         self.assertEqual(r["bias"],"NEUTRAL")
         self.assertLess(r["score"],70)
+
+    def test_five_minute_flow_never_changes_medium_term_score(self):
+        up={"ready":True,"regime":"UP","hh_hl":False,"lh_ll":False,
+            "change_3bars_pct":0.4}
+        mixed={"ready":True,"regime":"MIXED","hh_hl":False,"lh_ll":False,
+               "change_3bars_pct":0.0}
+        oi={"ready":True,"change_pct":0.0}
+        vol={"ready":True,"ratio":1.0}
+        base=s._score(up,mixed,mixed,oi,oi,50,vol,
+                      {"price5_pct":0.0,"futures_imbalance_pct":0.0})
+        bullish_5m=s._score(up,mixed,mixed,oi,oi,50,vol,
+                            {"price5_pct":1.5,"futures_imbalance_pct":50.0})
+        bearish_5m=s._score(up,mixed,mixed,oi,oi,50,vol,
+                            {"price5_pct":-1.5,"futures_imbalance_pct":-50.0})
+        self.assertEqual(base["score"], bullish_5m["score"])
+        self.assertEqual(base["score"], bearish_5m["score"])
+        self.assertEqual(base["bias"], bullish_5m["bias"])
+        self.assertEqual(base["bias"], bearish_5m["bias"])
 
     def test_weekly_position_is_clamped_to_0_100(self):
         daily=[
