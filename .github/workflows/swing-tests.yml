@@ -7,6 +7,8 @@ on:
       - 'swing_market_scanner.py'
       - 'swing_strength_engine.py'
       - 'swing_backtest.py'
+      - 'swing_alert_state.py'
+      - 'test_swing_alert_state.py'
       - 'telegram_manual_research.py'
       - 'test_swing_market_scanner.py'
       - 'test_swing_strength_engine.py'
@@ -47,4 +49,5 @@ jobs:
             test_swing_market_scanner.py \
             test_swing_strength_engine.py \
             test_swing_backtest.py \
+            test_swing_alert_state.py \
             test_telegram_manual_research.py
