@@ -236,6 +236,9 @@ def build_signals(symbol,c1,oi_rows,step_hours=1,min_score=70,max_score=30,
         t1=_trend(h1); t4=_trend(h4); td=_trend(d1)
         oi1=_oi_change_at(oi_rows,ts,1)
         oi4=_oi_change_at(oi_rows,ts,4)
+        # Match live engine: incomplete OI cannot produce a strong signal.
+        if not (oi1.get("ready") and oi4.get("ready")):
+            continue
         weekly=_weekly_position_at(c1,ts,h1[-1]["c"])
         vol=_volume_state(h1)
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol,short_term=None)
