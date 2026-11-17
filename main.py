@@ -147,7 +147,8 @@ def maybe_send_market_watch(signal, reason, now=None):
     Only called on a real, chronologically sampled 5m market move.
     Reserve frequency budget AFTER Telegram confirms successful delivery.
     """
-    if PRIMARY_SCAN_MODE == "SWING" and not SWING_LEGACY_TELEGRAM:
+    if (globals().get("PRIMARY_SCAN_MODE", "LEGACY") == "SWING"
+            and not globals().get("SWING_LEGACY_TELEGRAM", False)):
         return False
     now = time.time() if now is None else float(now)
     if not math.isfinite(now):
