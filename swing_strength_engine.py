@@ -239,15 +239,9 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
         elif t1.get("regime")=="DOWN":
             score-=4; risks.append("1H: объём усиливается вместе с падением")
 
-    st=short_term or {}
-    fimb=_num(st.get("futures_imbalance_pct"))
-    price5=_num(st.get("price5_pct"))
-    if fimb is not None and fimb<=-8 and price5 is not None and price5>-0.25:
-        score+=4
-        reasons.insert(0,"Продавцы давят, но цена держится — возможное поглощение покупателем")
-    if fimb is not None and fimb>=8 and price5 is not None and price5<0.25:
-        score-=4
-        risks.insert(0,"Покупают, но цена не растёт — возможное поглощение продавцом")
+    # 5m/15m evidence is timing/context only. It must never alter
+    # the medium-term score or flip BULLISH/BEARISH direction.
+    # short_term is intentionally accepted for API compatibility.
 
     score=max(0,min(100,int(round(score))))
     if score>=70:
@@ -363,6 +357,7 @@ def format_compact_report(result,short_verdict=None):
     score=int(result.get("score",50))
     bias=str(result.get("bias") or "UNKNOWN")
     label=result.get("label") or "⚪ Нет оценки"
+    t15=(result.get("trend15") or {}).get("regime","?")
     t1=(result.get("trend1h") or {}).get("regime","?")
     t4=(result.get("trend4h") or {}).get("regime","?")
     td=(result.get("trend1d") or {}).get("regime","?")
@@ -398,14 +393,13 @@ def format_compact_report(result,short_verdict=None):
     else:
         lines.append("План: вне сделки — среднесрочного преимущества нет.")
 
-    if short_verdict:
-        text=str(short_verdict)
-        if bias=="BULLISH" and any(x in text for x in ("БЫЧЬЕ","НОВЫХ ЛОНГОВ","ПОГЛОЩЕНИЕ","ШОРТ-СКВИЗ")):
-            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
-        elif bias=="BEARISH" and any(x in text for x in ("МЕДВЕЖЬЕ","НОВЫХ ШОРТОВ","ЛИКВИДАЦИЯ")):
-            lines.append("Вход 5м: 🟢 тайминг улучшается, ждать ретест.")
-        else:
-            lines.append("Вход 5м: 🟡 пока нет подтверждения.")
+    if bias=="BULLISH" and t15=="UP":
+        lines.append("Тайминг: 15м ↑ · 5м только для отката/ретеста.")
+    elif bias=="BEARISH" and t15=="DOWN":
+        lines.append("Тайминг: 15м ↓ · 5м только для отката/ретеста.")
+    else:
+        lines.append("Тайминг: 15м пока не подтверждает · 5м не определяет направление.")
 
-    lines.append("Подробнее: /detail SYMBOL")
+    symbol=str(result.get("symbol") or "SYMBOL")
+    lines.append(f"Подробнее: /detail {symbol}")
     return lines
