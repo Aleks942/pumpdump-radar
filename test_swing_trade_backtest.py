@@ -7,17 +7,22 @@ class TradeTests(unittest.TestCase):
     def test_stop_before_target_same_candle(self):
         x=simulate(self.event,[{"ts":0.0,"h":105,"l":97,"c":104}])
         self.assertEqual(x["reason"],"STOP")
-        self.assertAlmostEqual(x["net_pct"],-2.15)
+        self.assertAlmostEqual(x["net_pct"],-2.25)
     def test_target(self):
         x=simulate(self.event,[{"ts":0.0,"h":105,"l":99,"c":103}])
         self.assertEqual(x["reason"],"TARGET")
-        self.assertAlmostEqual(x["net_pct"],3.85)
+        self.assertAlmostEqual(x["net_pct"],3.75)
     def test_short_stop(self):
         e=dict(self.event,direction="SHORT")
         x=simulate(e,[{"ts":0.0,"h":103,"l":95,"c":96}])
         self.assertEqual(x["reason"],"STOP")
     def test_no_candles(self):
         self.assertIsNone(simulate(self.event,[]))
+    def test_missing_hour_rejected(self):
+        candles=[{"ts":0.0,"h":101,"l":99,"c":100},{"ts":7200.0,"h":101,"l":99,"c":100}]
+        self.assertIsNone(simulate(self.event,candles,max_hours=2))
+    def test_incomplete_horizon_rejected(self):
+        self.assertIsNone(simulate(self.event,[{"ts":0.0,"h":101,"l":99,"c":100}],max_hours=2))
     def test_empty_report(self):
         self.assertEqual(report([])["n"],0)
 
