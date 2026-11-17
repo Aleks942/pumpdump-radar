@@ -52,6 +52,11 @@ def _num(v):
         return None
 
 
+def _pct(v):
+    x=_num(v)
+    return f"{x:.4g}%" if x is not None else "нет данных"
+
+
 def _profile(t):
     if not isinstance(t,dict):
         return None
