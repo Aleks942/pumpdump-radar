@@ -244,6 +244,20 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
     # short_term is intentionally accepted for API compatibility.
 
     score=max(0,min(100,int(round(score))))
+
+    # Higher-timeframe regime veto: a strong 1H/4H setup is not allowed to
+    # advertise a strong trade directly against the closed 1D structure.
+    # This is deliberately symmetric and conservative: MIXED daily structure
+    # is allowed, but a clear opposite 1D trend caps the setup below the
+    # directional threshold.
+    daily_regime=td.get("regime")
+    if daily_regime=="DOWN" and score>=70:
+        score=min(score,65)
+        risks.insert(0,"1D: структура вниз — сильный LONG заблокирован дневным режимом")
+    elif daily_regime=="UP" and score<=30:
+        score=max(score,35)
+        reasons.insert(0,"1D: структура вверх — сильный SHORT заблокирован дневным режимом")
+
     if score>=70:
         bias="BULLISH"; label="🟢 СИЛЬНАЯ МОНЕТА / ПОКУПАТЕЛЬ КОНТРОЛИРУЕТ"
     elif score<=30:
@@ -328,14 +342,20 @@ def format_report(result):
 
     reasons=result.get("reasons") or []
     risks=result.get("risks") or []
-    if reasons:
-        lines += ["", "✅ <b>ЧТО ГОВОРИТ ЗА СЦЕНАРИЙ</b>"]
-        lines += ["• "+x for x in reasons]
-    if risks:
-        lines += ["", "⚠️ <b>ЧТО МЕШАЕТ / РИСК</b>"]
-        lines += ["• "+x for x in risks]
-
     bias=result.get("bias")
+    if bias=="BEARISH":
+        support=risks
+        opposition=reasons
+    else:
+        support=reasons
+        opposition=risks
+    if support:
+        lines += ["", "✅ <b>ЧТО ГОВОРИТ ЗА СЦЕНАРИЙ</b>"]
+        lines += ["• "+x for x in support]
+    if opposition:
+        lines += ["", "⚠️ <b>ЧТО МЕШАЕТ / РИСК</b>"]
+        lines += ["• "+x for x in opposition]
+
     lines += ["", "🎯 <b>СРЕДНЕСРОЧНЫЙ ВЫВОД</b>"]
     if bias=="BULLISH":
         lines.append("• Приоритет — искать ЛОНГ после отката/ретеста. 5м используется только для точного входа.")
@@ -379,10 +399,16 @@ def format_compact_report(result,short_verdict=None):
         f"Структура: {structure}",
         oi_text,
     ]
-    if reasons:
-        lines.append("Сильная сторона: "+reasons[0])
-    if risks:
-        lines.append("Главный риск: "+risks[0])
+    if bias=="BEARISH":
+        support=risks
+        opposition=reasons
+    else:
+        support=reasons
+        opposition=risks
+    if support:
+        lines.append("Сильная сторона: "+support[0])
+    if opposition:
+        lines.append("Главный риск: "+opposition[0])
 
     if bias=="BULLISH":
         lines.append("План: искать ЛОНГ только после отката/ретеста.")

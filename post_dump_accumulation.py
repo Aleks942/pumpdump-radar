@@ -52,6 +52,11 @@ def _num(v):
         return None
 
 
+def _pct(v):
+    x=_num(v)
+    return f"{x:.4g}%" if x is not None else "нет данных"
+
+
 def _profile(t):
     if not isinstance(t,dict):
         return None
@@ -312,9 +317,9 @@ def _message(e):
     lines=[priority[phase],titles[phase],f"<b>{e['symbol']}</b>",
            f"Цена: {e['price']:.8g}",
            f"Падение от 24ч максимума: -{e['drop_from_high_pct']:.1f}%",
-           f"Диапазон базы: {b.get('range_pct') if b.get('range_pct') is not None else 'нет данных'}%",
-           f"Открытый интерес (OI) 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
-           f"Дисбаланс фьючерсов 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%"]
+           f"Диапазон базы: {_pct(b.get('range_pct'))}",
+           f"Открытый интерес (OI) 5м: {_pct(c.get('oi_5m_pct'))}",
+           f"Дисбаланс фьючерсов 5м: {_pct(c.get('futures_imbalance_pct'))}"]
     if phase=="BASE_FORMING":
         lines+=["База найдена рано. Для рабочих выводов ждём минимум 30 минут устойчивого сжатия."]
     elif phase=="BUYER_ABSORPTION":

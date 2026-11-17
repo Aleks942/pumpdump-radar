@@ -54,6 +54,11 @@ def _num(v):
         return None
 
 
+def _pct(v):
+    x=_num(v)
+    return f"{x:.4g}%" if x is not None else "нет данных"
+
+
 def _profile(t):
     if not isinstance(t, dict):
         return None
@@ -454,10 +459,10 @@ def _message(e):
         f"Предыдущий памп: +{e['prior_pump_pct']:.1f}%",
         f"Падение от вершины: -{e['drop_from_high_pct']:.1f}%",
         f"Отскок от дна: +{e['recovery_pct']:.1f}%",
-        f"Открытый интерес (OI) 5м: {c.get('oi_5m_pct') if c.get('oi_5m_pct') is not None else 'нет данных'}%",
-        f"Дисбаланс фьючерсов 5м: {c.get('futures_imbalance_pct') if c.get('futures_imbalance_pct') is not None else 'нет данных'}%",
-        f"Фандинг: {c.get('funding_pct') if c.get('funding_pct') is not None else 'нет данных'}%",
-        f"Цена 5м: {((c.get('price_state') or {}).get('change_5m_pct')) if (c.get('price_state') or {}).get('change_5m_pct') is not None else 'нет данных'}%",
+        f"Открытый интерес (OI) 5м: {_pct(c.get('oi_5m_pct'))}",
+        f"Дисбаланс фьючерсов 5м: {_pct(c.get('futures_imbalance_pct'))}",
+        f"Фандинг: {_pct(c.get('funding_pct'))}",
+        f"Цена 5м: {_pct((c.get('price_state') or {}).get('change_5m_pct'))}",
         "Структура вверх: " + ("ДА" if c.get("structure_break") else "НЕТ"),
     ]
     if phase == "DUMP_EXHAUSTED":

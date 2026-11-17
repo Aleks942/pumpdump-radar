@@ -1,0 +1,36 @@
+import os
+import tempfile
+import unittest
+
+import swing_alert_state as s
+
+
+class SwingAlertStateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.NamedTemporaryFile(delete=False)
+        self.tmp.close()
+        os.environ["SWING_ALERT_DB"]=self.tmp.name
+        s.clear_state()
+
+    def tearDown(self):
+        os.environ.pop("SWING_ALERT_DB",None)
+        try:
+            os.remove(self.tmp.name)
+        except FileNotFoundError:
+            pass
+
+    def test_persists_and_blocks_duplicate(self):
+        now=1_700_000_000
+        self.assertTrue(s.alert_allowed("AAAUSDT","BULLISH",80,7200,now))
+        s.mark_alert("AAAUSDT","BULLISH",80,now)
+        self.assertFalse(s.alert_allowed("AAAUSDT","BULLISH",80,7200,now+60))
+
+    def test_bias_flip_or_score_change_can_alert(self):
+        now=1_700_000_000
+        s.mark_alert("AAAUSDT","BULLISH",80,now)
+        self.assertTrue(s.alert_allowed("AAAUSDT","BEARISH",20,7200,now+60))
+        self.assertTrue(s.alert_allowed("AAAUSDT","BULLISH",89,7200,now+60))
+
+
+if __name__=="__main__":
+    unittest.main()
