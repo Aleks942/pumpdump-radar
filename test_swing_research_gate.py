@@ -6,15 +6,11 @@ class SwingResearchGateTests(unittest.TestCase):
     def setUp(self):
         self.code = Path(__file__).with_name("main.py").read_text(encoding="utf-8")
 
-    def test_swing_research_is_off_by_default(self):
-        self.assertIn(
-            'SWING_RESEARCH_ENABLED = os.getenv("SWING_RESEARCH_ENABLED", "0") == "1"',
-            self.code,
-        )
-        self.assertIn(
-            'RESEARCH_PIPELINE_ENABLED = (\n    PRIMARY_SCAN_MODE == "LEGACY" or SWING_RESEARCH_ENABLED\n)',
-            self.code,
-        )
+    def test_production_is_locked_to_swing_only(self):
+        self.assertIn('PRIMARY_SCAN_MODE = "SWING"', self.code)
+        self.assertIn('SWING_LEGACY_TELEGRAM = False', self.code)
+        self.assertIn('SWING_RESEARCH_ENABLED = False', self.code)
+        self.assertIn('RESEARCH_PIPELINE_ENABLED = False', self.code)
 
     def test_market_research_is_gated_before_swing_core(self):
         research_gate = self.code.index("    if RESEARCH_PIPELINE_ENABLED:\n        try:\n            observe_retrace_tickers")
