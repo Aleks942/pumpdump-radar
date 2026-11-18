@@ -329,10 +329,23 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
 def visual_market_state(symbol,current_price=None,now=None):
     """Return a compact 5m market-state label for SWING Telegram.
 
-    Uses already-free sources/caches. It is context only and never changes
-    the medium-term SWING direction.
+    Starts/warmups only the data feeds needed by the shortlisted symbol.
+    It is context only and never changes the medium-term SWING direction.
     """
     now=time.time() if now is None else float(now)
+    try:
+        watch_symbol(symbol)
+    except Exception:
+        pass
+    try:
+        watch_bybit_flow_symbol(symbol)
+    except Exception:
+        pass
+    try:
+        watch_bybit_symbol(symbol)
+    except Exception:
+        pass
+
     price5=_price5(symbol,current_price,now) if current_price is not None else {}
     oi_agg=_agg_oi5(symbol)
     fut=_flow5(symbol)
@@ -353,12 +366,25 @@ def visual_market_state(symbol,current_price=None,now=None):
     )
     # Keep Telegram visual and short. Generic pressure is still useful while
     # the six named states are not confirmed.
+    price_ready=price5.get("ready") is True
+    oi_ready=oi_agg.get("ready") is True
+    flow_ready=fut.get("quality")=="READY"
+    live_ready=price_ready and oi_ready and flow_ready
+    if not live_ready:
+        label="⚪ 5М ДАННЫЕ НАКАПЛИВАЮТСЯ"
+        missing=[]
+        if not price_ready: missing.append("цена 5м")
+        if not oi_ready: missing.append("OI 5м")
+        if not flow_ready: missing.append("фьючерсный поток 5м")
+        reasons="не готовы: "+", ".join(missing)
+
     return {
+        "ready":live_ready,
         "label":label,
         "reasons":reasons,
-        "price5_pct":_num(price5.get("change_pct")) if price5.get("ready") else None,
-        "oi5_pct":_num(oi_agg.get("change_pct")) if oi_agg.get("ready") else None,
-        "futures_imbalance_pct":_num(fut.get("imbalance_pct")) if fut.get("quality")=="READY" else None,
+        "price5_pct":_num(price5.get("change_pct")) if price_ready else None,
+        "oi5_pct":_num(oi_agg.get("change_pct")) if oi_ready else None,
+        "futures_imbalance_pct":_num(fut.get("imbalance_pct")) if flow_ready else None,
         "spot_imbalance_pct":_num(spot.get("cvd_percent")) if spot.get("available") else None,
     }
 
