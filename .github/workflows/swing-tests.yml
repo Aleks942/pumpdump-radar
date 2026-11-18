@@ -14,6 +14,7 @@ on:
       - 'test_swing_strength_engine.py'
       - 'test_swing_backtest.py'
       - 'test_telegram_manual_research.py'
+      - 'test_swing_research_gate.py'
       - '.github/workflows/swing-tests.yml'
   push:
     branches:
