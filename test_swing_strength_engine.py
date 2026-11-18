@@ -74,7 +74,7 @@ class SwingStrengthTests(unittest.TestCase):
            "risks":["Фандинг перегрет"]}
         lines=s.format_compact_report(r,"🟡 БЫЧЬЕ ДАВЛЕНИЕ")
         text="\n".join(lines)
-        self.assertLessEqual(len(lines),10)
+        self.assertLessEqual(len(lines),11)
         self.assertIn("82/100",text)
         self.assertIn("План: искать ЛОНГ",text)
         self.assertIn("Отмена:",text)
@@ -130,6 +130,34 @@ class SwingStrengthTests(unittest.TestCase):
         text="\n".join(s.format_compact_report(r))
         self.assertIn("Сильная сторона: 1H: структура вниз",text)
         self.assertNotIn("Главный риск: 1H: структура вниз",text)
+
+    def test_live_veto_pauses_long_after_large_drop(self):
+        r={"score":100,"bias":"BULLISH",
+           "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",
+           "price":100.0,"ticker":{"high24h":114.0,"low24h":80.0},
+           "trend15":{"regime":"DOWN"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "oi1h":{"change_pct":4.6},"oi4h":{"change_pct":-4.7},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        text="\n".join(s.format_compact_report(
+            r,"🟡 МЕДВЕЖЬЕ ДАВЛЕНИЕ — НУЖНО ПОДТВЕРЖДЕНИЕ ЦЕНОЙ"
+        ))
+        self.assertIn("SWING LONG, НО ВХОД НА ПАУЗЕ",text)
+        self.assertIn("НЕ ВХОДИТЬ",text)
+        self.assertIn("Состояние 5м:",text)
+
+    def test_live_veto_does_not_change_medium_term_score(self):
+        r={"score":88,"bias":"BULLISH",
+           "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",
+           "price":100.0,"ticker":{"high24h":112.0,"low24h":80.0},
+           "trend15":{"regime":"DOWN"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":-1.0},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        before=r["score"]
+        s.format_compact_report(r,"🟠 НАБОР НОВЫХ ШОРТОВ")
+        self.assertEqual(r["score"],before)
+
 
 
 if __name__=="__main__":
