@@ -43,7 +43,7 @@ from post_pump_short_research import (
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from post_dump_long_strategy import observe as observe_post_dump_long, deliver as deliver_post_dump_long
 from post_dump_accumulation import observe as observe_post_dump_accumulation, deliver as deliver_post_dump_accumulation
-from telegram_manual_research import start as start_manual_research
+from telegram_manual_research import start as start_manual_research, visual_market_state
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
@@ -1852,9 +1852,20 @@ while True:
                         print("[SWING_SKIP_DUPLICATE]", symbol, score, flush=True)
                     continue
 
+                try:
+                    visual_state = visual_market_state(
+                        symbol,
+                        current_price=candidate.get("price"),
+                    )
+                except Exception as exc:
+                    print("[SWING_VISUAL_STATE_ERROR]", symbol, type(exc).__name__, flush=True)
+                    visual_state = {}
+
+                state_label = str(visual_state.get("label") or "⚪ СОСТОЯНИЕ 5М ЕЩЁ НЕ ОПРЕДЕЛЕНО")
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
                     *format_compact_report(result),
+                    f"Состояние 5м: {state_label}",
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
