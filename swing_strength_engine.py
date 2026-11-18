@@ -259,9 +259,9 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
         reasons.insert(0,"1D: структура вверх — сильный SHORT заблокирован дневным режимом")
 
     if score>=70:
-        bias="BULLISH"; label="🟢 СИЛЬНАЯ МОНЕТА / ПОКУПАТЕЛЬ КОНТРОЛИРУЕТ"
+        bias="BULLISH"; label="🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА"
     elif score<=30:
-        bias="BEARISH"; label="🔴 СЛАБАЯ МОНЕТА / ПРОДАВЕЦ КОНТРОЛИРУЕТ"
+        bias="BEARISH"; label="🔴 МЕДВЕЖЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА"
     else:
         bias="NEUTRAL"; label="🟡 СРЕДНЕСРОЧНО БАЛАНС НЕ РЕШЁН"
 
@@ -369,6 +369,49 @@ def format_report(result):
     return lines
 
 
+def _entry_veto(result,short_verdict=None):
+    """Entry permission layer; never changes the medium-term SWING bias."""
+    if not isinstance(result,dict):
+        return False,None,None
+
+    bias=str(result.get("bias") or "UNKNOWN")
+    price=_num(result.get("price"))
+    ticker=result.get("ticker") or {}
+    high=_num(ticker.get("high24h"))
+    low=_num(ticker.get("low24h"))
+    t15=(result.get("trend15") or {}).get("regime")
+    state=str(short_verdict or "")
+
+    drop_from_high=(100*(1-price/high)) if price and high and high>0 else None
+    rebound_from_low=(100*(price/low-1)) if price and low and low>0 else None
+
+    bearish_now=any(x in state for x in (
+        "НАБОР НОВЫХ ШОРТОВ",
+        "ЛИКВИДАЦИЯ/ЗАКРЫТИЕ ЛОНГОВ",
+        "ПОГЛОЩЕНИЕ ПОКУПОК",
+        "МЕДВЕЖЬЕ ДАВЛЕНИЕ",
+    ))
+    bullish_now=any(x in state for x in (
+        "НАБОР НОВЫХ ЛОНГОВ",
+        "ШОРТ-СКВИЗ",
+        "ПОГЛОЩЕНИЕ ПРОДАЖ",
+        "БЫЧЬЕ ДАВЛЕНИЕ",
+    ))
+
+    if bias=="BULLISH":
+        if bearish_now:
+            return True,"LONG","5м поток сейчас против LONG"
+        if drop_from_high is not None and drop_from_high>=8.0 and t15!="UP":
+            return True,"LONG",f"цена уже откатила {drop_from_high:.1f}% от 24ч максимума, 15м не подтверждает рост"
+    elif bias=="BEARISH":
+        if bullish_now:
+            return True,"SHORT","5м поток сейчас против SHORT"
+        if rebound_from_low is not None and rebound_from_low>=8.0 and t15!="DOWN":
+            return True,"SHORT",f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"
+
+    return False,None,None
+
+
 def format_compact_report(result,short_verdict=None):
     """Compact professional trader view: decision first, evidence second."""
     if not isinstance(result,dict):
@@ -393,12 +436,21 @@ def format_compact_report(result,short_verdict=None):
         f"{oi4:+.2f}%" if oi4 is not None else "н/д",
     )
 
+    vetoed,veto_side,veto_reason=_entry_veto(result,short_verdict)
+    headline=label
+    if vetoed and veto_side=="LONG":
+        headline="🟡 SWING LONG, НО ВХОД НА ПАУЗЕ"
+    elif vetoed and veto_side=="SHORT":
+        headline="🟡 SWING SHORT, НО ВХОД НА ПАУЗЕ"
+
     lines=[
-        f"{label} · {score}/100",
+        f"{headline} · {score}/100",
         "Горизонт: 1ч–3д · контекст до 7д",
         f"Структура: {structure}",
         oi_text,
     ]
+    if short_verdict:
+        lines.append("Состояние 5м: "+str(short_verdict))
     if bias=="BEARISH":
         support=risks
         opposition=reasons
@@ -410,7 +462,10 @@ def format_compact_report(result,short_verdict=None):
     if opposition:
         lines.append("Главный риск: "+opposition[0])
 
-    if bias=="BULLISH":
+    if vetoed:
+        lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(veto_reason)+".")
+        lines.append("Ждём возврата 15м в сторону SWING и подтверждения 5м.")
+    elif bias=="BULLISH":
         lines.append("План: искать ЛОНГ только после отката/ретеста.")
         lines.append("Отмена: слом 1H вниз; подтверждение отмены — 4H вниз.")
     elif bias=="BEARISH":
@@ -419,12 +474,13 @@ def format_compact_report(result,short_verdict=None):
     else:
         lines.append("План: вне сделки — среднесрочного преимущества нет.")
 
-    if bias=="BULLISH" and t15=="UP":
-        lines.append("Тайминг: 15м ↑ · 5м только для отката/ретеста.")
-    elif bias=="BEARISH" and t15=="DOWN":
-        lines.append("Тайминг: 15м ↓ · 5м только для отката/ретеста.")
-    else:
-        lines.append("Тайминг: 15м пока не подтверждает · 5м не определяет направление.")
+    if not vetoed:
+        if bias=="BULLISH" and t15=="UP":
+            lines.append("Тайминг: 15м ↑ · 5м только для отката/ретеста.")
+        elif bias=="BEARISH" and t15=="DOWN":
+            lines.append("Тайминг: 15м ↓ · 5м только для отката/ретеста.")
+        else:
+            lines.append("Тайминг: 15м пока не подтверждает · 5м не определяет направление.")
 
     symbol=str(result.get("symbol") or "SYMBOL")
     lines.append(f"Подробнее: /detail {symbol}")
