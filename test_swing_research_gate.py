@@ -34,5 +34,25 @@ class SwingResearchGateTests(unittest.TestCase):
         )
 
 
+    def test_legacy_startup_workers_are_not_default_swing_core(self):
+        gate = self.code.index(
+            "if RESEARCH_PIPELINE_ENABLED:\n    # Legacy/research infrastructure only."
+        )
+        startup = self.code[gate:self.code.index('print("🚀 PumpDump Radar V2 ONLINE"', gate)]
+        self.assertIn("probe_bridge", startup)
+        self.assertIn("initialize_market_memory()", startup)
+        self.assertIn("test_binance()", startup)
+        self.assertIn("test_bybit()", startup)
+
+        workers = self.code.index(
+            "if RESEARCH_PIPELINE_ENABLED:\n    initial_tickers = get_market_tickers()"
+        )
+        worker_block = self.code[workers:self.code.index(
+            'print(\n    "[RESEARCH_PIPELINE]"', workers
+        )]
+        self.assertIn("run_stream_forever", worker_block)
+        self.assertIn("run_entry_tracker", worker_block)
+
+
 if __name__ == "__main__":
     unittest.main()
