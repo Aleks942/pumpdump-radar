@@ -1864,8 +1864,7 @@ while True:
                 state_label = str(visual_state.get("label") or "⚪ СОСТОЯНИЕ 5М ЕЩЁ НЕ ОПРЕДЕЛЕНО")
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
-                    *format_compact_report(result),
-                    f"Состояние 5м: {state_label}",
+                    *format_compact_report(result, short_verdict=state_label),
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
