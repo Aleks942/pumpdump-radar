@@ -121,6 +121,57 @@ def _volume_state(candles):
     return {"ready":ratio is not None,"ratio":ratio}
 
 
+def _atr(candles,n=14):
+    if len(candles)<n+1:
+        return None
+    trs=[]
+    prev=candles[-n-1]["c"]
+    for row in candles[-n:]:
+        trs.append(max(row["h"]-row["l"],abs(row["h"]-prev),abs(row["l"]-prev)))
+        prev=row["c"]
+    return sum(trs)/len(trs) if trs else None
+
+
+def _entry_setup(candles,bias):
+    """Closed-15m retest/reclaim trigger. It never creates SWING direction."""
+    if len(candles)<25 or bias not in ("BULLISH","BEARISH"):
+        return {"ready":False,"phase":"WAIT_RETEST","reason":"15м истории недостаточно"}
+
+    closes=[x["c"] for x in candles]
+    ema20=_ema(closes,20)
+    atr=_atr(candles,14)
+    if ema20 is None or atr is None or atr<=0:
+        return {"ready":False,"phase":"WAIT_RETEST","reason":"15м EMA/ATR ещё не готовы"}
+
+    last=candles[-1]
+    prev=candles[-2]
+    recent=candles[-5:-1]
+    band=0.60*atr
+
+    if bias=="BULLISH":
+        touched=any(x["l"]<=ema20+band and x["h"]>=ema20-band for x in recent)
+        reclaimed=last["c"]>ema20 and last["c"]>prev["h"] and last["c"]>last["o"]
+        if touched and reclaimed:
+            return {"ready":True,"phase":"READY_ENTRY",
+                    "reason":"15м ретест завершён возвратом покупателей выше локального максимума"}
+        if touched:
+            return {"ready":False,"phase":"RETEST_FORMING",
+                    "reason":"15м ретест есть, но возврат покупателей ещё не подтверждён"}
+        return {"ready":False,"phase":"WAIT_RETEST",
+                "reason":"ждать 15м откат к рабочей зоне; цену не догонять"}
+
+    touched=any(x["h"]>=ema20-band and x["l"]<=ema20+band for x in recent)
+    reclaimed=last["c"]<ema20 and last["c"]<prev["l"] and last["c"]<last["o"]
+    if touched and reclaimed:
+        return {"ready":True,"phase":"READY_ENTRY",
+                "reason":"15м ретест завершён возвратом продавцов ниже локального минимума"}
+    if touched:
+        return {"ready":False,"phase":"RETEST_FORMING",
+                "reason":"15м ретест есть, но возврат продавцов ещё не подтверждён"}
+    return {"ready":False,"phase":"WAIT_RETEST",
+            "reason":"ждать 15м откат к рабочей зоне; цену не догонять"}
+
+
 def _oi_change(symbol,interval,lookback_points,request_get=None,now=None):
     now=time.time() if now is None else float(now)
     try:
@@ -198,14 +249,8 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
         else:
             reasons.append(f"{name}: смешанная структура")
 
-    if t1.get("hh_hl"):
-        score+=7; reasons.append("1H: максимумы и минимумы повышаются")
-    if t1.get("lh_ll"):
-        score-=7; risks.append("1H: максимумы и минимумы снижаются")
-    if t4.get("hh_hl"):
-        score+=8; reasons.append("4H: повышающаяся структура")
-    if t4.get("lh_ll"):
-        score-=8; risks.append("4H: понижающаяся структура")
+    # HH/HL and LH/LL are already required by _trend() for UP/DOWN.
+    # Scoring them again would double-count the same structural evidence.
 
     p1=_num(t1.get("change_3bars_pct"))
     oi1c=_num(oi1.get("change_pct")) if oi1.get("ready") else None
@@ -226,11 +271,8 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
         elif t4.get("regime")=="DOWN" and oi4c>0.2:
             score-=6; risks.append("4H: OI поддерживает нисходящую структуру")
 
-    if weekly_pos is not None:
-        if weekly_pos>=70:
-            score+=5; reasons.append(f"Цена в верхней части недельного диапазона ({weekly_pos:.0f}%)")
-        elif weekly_pos<=30:
-            score-=5; risks.append(f"Цена в нижней части недельного диапазона ({weekly_pos:.0f}%)")
+    # 7d range position is context only. High is not automatically bullish
+    # and low is not automatically bearish; scoring it encouraged late entries.
 
     vr=_num(vol1.get("ratio")) if vol1.get("ready") else None
     if vr is not None and vr>=1.4:
@@ -245,18 +287,8 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
 
     score=max(0,min(100,int(round(score))))
 
-    # Higher-timeframe regime veto: a strong 1H/4H setup is not allowed to
-    # advertise a strong trade directly against the closed 1D structure.
-    # This is deliberately symmetric and conservative: MIXED daily structure
-    # is allowed, but a clear opposite 1D trend caps the setup below the
-    # directional threshold.
-    daily_regime=td.get("regime")
-    if daily_regime=="DOWN" and score>=70:
-        score=min(score,65)
-        risks.insert(0,"1D: структура вниз — сильный LONG заблокирован дневным режимом")
-    elif daily_regime=="UP" and score<=30:
-        score=max(score,35)
-        reasons.insert(0,"1D: структура вверх — сильный SHORT заблокирован дневным режимом")
+    # 1D is already part of the weighted score. A second hard veto made
+    # 1H-3D reversals detectable only after the daily chart had already flipped.
 
     if score>=70:
         bias="BULLISH"; label="🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА"
@@ -291,6 +323,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         weekly=_weekly_position(cd,price)
         vol1=_volume_state(c60)
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol1,short_term)
+        entry_setup=_entry_setup(c15,scored.get("bias"))
         # Strong directional claims require complete higher-timeframe and OI evidence.
         evidence_ready=all(x.get("ready") for x in (t1,t4,td,oi1,oi4))
         if not evidence_ready:
@@ -302,7 +335,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
             "symbol":key,"price":price,"ticker":ticker,
             "trend15":t15,"trend1h":t1,"trend4h":t4,"trend1d":td,
             "oi1h":oi1,"oi4h":oi4,"weekly_position_pct":weekly,
-            "volume1h":vol1,
+            "volume1h":vol1,"entry_setup":entry_setup,
             **scored,
         }
     except Exception as exc:
@@ -415,10 +448,18 @@ def entry_decision(result,short_verdict=None,live_ready=True):
         if rebound_from_low is not None and rebound_from_low>=8.0 and t15!="DOWN":
             return {"state":"BLOCKED","side":"SHORT","reason":f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"}
 
-    expected_15m="UP" if side=="LONG" else "DOWN"
-    if t15!=expected_15m:
-        return {"state":"WAIT_RETEST","side":side,"reason":"15м ещё не подтверждает направление SWING"}
-    return {"state":"WAIT_RETEST","side":side,"reason":"направление подтверждено; ждать отката/ретеста, точный вход ещё не сформирован"}
+    setup=result.get("entry_setup") or {}
+    phase=str(setup.get("phase") or "WAIT_RETEST")
+    setup_reason=str(setup.get("reason") or "15м ретест ещё не подтверждён")
+
+    if phase=="READY_ENTRY":
+        expected_15m="UP" if side=="LONG" else "DOWN"
+        if t15!=expected_15m:
+            return {"state":"WAIT_RETEST","side":side,
+                    "reason":"ретест есть, но 15м структура ещё не подтверждает SWING"}
+        return {"state":"READY_ENTRY","side":side,"reason":setup_reason}
+
+    return {"state":"WAIT_RETEST","side":side,"reason":setup_reason}
 
 
 def format_compact_report(result,short_verdict=None,live_ready=True):
@@ -476,6 +517,8 @@ def format_compact_report(result,short_verdict=None,live_ready=True):
 
     if entry_state in ("BLOCKED","WARMING"):
         lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(entry_reason)+".")
+    elif entry_state=="READY_ENTRY":
+        lines.append("🟢 Вход: ГОТОВ — "+str(entry_reason)+".")
     elif entry_state=="WAIT_RETEST":
         lines.append("🟡 Вход: ЖДАТЬ — "+str(entry_reason)+".")
     else:
