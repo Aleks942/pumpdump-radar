@@ -4,6 +4,9 @@ import ast
 import threading
 import time
 import unittest
+from unittest.mock import patch
+
+import bybit_taker_stream as stream
 
 
 class BybitTakerStreamTests(unittest.TestCase):
@@ -23,6 +26,7 @@ class BybitTakerStreamTests(unittest.TestCase):
             "_connected": {"linear": True, "spot": True},
             "_watch_at": {},
             "_events": {},
+            "_expire_idle_watches": lambda now=None: [],
             "WINDOW_SEC": 300,
             "SOURCE_TTL_SEC": 45,
         }
@@ -64,6 +68,42 @@ class BybitTakerStreamTests(unittest.TestCase):
         result = ns["get_flow"](symbol, category="linear", now=now)
         self.assertTrue(result["ready"])
         self.assertGreaterEqual(result["coverage_sec"], 240)
+
+
+    def test_repeated_watch_is_idempotent_and_does_not_reset_start(self):
+        symbol="TESTUSDT"
+        with stream._lock:
+            stream._watch_ref.clear()
+            stream._watch_at.clear()
+            stream._watch_seen.clear()
+            stream._events.clear()
+            stream._spot_support[symbol]=False
+        with patch.object(stream,"_ensure_started"), patch.object(stream,"_subscribe",return_value=True):
+            with patch.object(stream.time,"time",return_value=1000.0):
+                self.assertTrue(stream.watch_symbol(symbol))
+            with patch.object(stream.time,"time",return_value=1060.0):
+                self.assertTrue(stream.watch_symbol(symbol))
+        with stream._lock:
+            self.assertEqual(stream._watch_ref[symbol],1)
+            self.assertEqual(stream._watch_at[symbol],1000.0)
+            self.assertEqual(stream._watch_seen[symbol],1060.0)
+
+    def test_idle_watch_expires(self):
+        symbol="OLDUSDT"
+        with stream._lock:
+            stream._watch_ref[symbol]=1
+            stream._watch_at[symbol]=1000.0
+            stream._watch_seen[symbol]=1000.0
+            stream._events[("linear",symbol)]=deque()
+            stream._events[("spot",symbol)]=deque()
+        with patch.object(stream,"_unsubscribe"):
+            stale=stream._expire_idle_watches(
+                1000.0+stream.WATCH_IDLE_TTL_SEC+1
+            )
+        self.assertIn(symbol,stale)
+        with stream._lock:
+            self.assertNotIn(symbol,stream._watch_ref)
+            self.assertNotIn(symbol,stream._events)
 
 
 if __name__ == "__main__":
