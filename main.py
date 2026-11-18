@@ -111,17 +111,16 @@ ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
-PRIMARY_SCAN_MODE = os.getenv("PRIMARY_SCAN_MODE", "SWING").strip().upper()
-if PRIMARY_SCAN_MODE not in ("SWING", "LEGACY"):
-    PRIMARY_SCAN_MODE = "SWING"
+# Production is intentionally SWING-only.
+# Legacy/research modules stay in the repository for offline studies and
+# backtests, but environment variables cannot re-attach them to live decisions.
+PRIMARY_SCAN_MODE = "SWING"
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
 SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
-SWING_LEGACY_TELEGRAM = os.getenv("SWING_LEGACY_TELEGRAM", "0") == "1"
-SWING_RESEARCH_ENABLED = os.getenv("SWING_RESEARCH_ENABLED", "0") == "1"
-RESEARCH_PIPELINE_ENABLED = (
-    PRIMARY_SCAN_MODE == "LEGACY" or SWING_RESEARCH_ENABLED
-)
+SWING_LEGACY_TELEGRAM = False
+SWING_RESEARCH_ENABLED = False
+RESEARCH_PIPELINE_ENABLED = False
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
