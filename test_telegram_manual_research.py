@@ -146,5 +146,30 @@ class ManualResearchTests(unittest.TestCase):
             bot.refresh(now=1060.0)
             self.assertEqual(sent,["R"])
 
+
+    @patch.object(manual,"watch_symbol")
+    @patch.object(manual,"watch_bybit_flow_symbol")
+    @patch.object(manual,"watch_bybit_symbol")
+    @patch.object(manual,"_price5")
+    @patch.object(manual,"_agg_oi5")
+    @patch.object(manual,"_flow5")
+    @patch.object(manual,"get_spot_cvd")
+    @patch.object(manual,"_liqs")
+    def test_visual_state_warms_required_live_sources(
+        self,m_liqs,m_spot,m_flow,m_agg,m_price,
+        m_watch_liq,m_watch_flow,m_watch_oi
+    ):
+        m_price.return_value={"ready":False}
+        m_agg.return_value={"ready":False}
+        m_flow.return_value={"quality":"WARMING"}
+        m_spot.return_value={"available":False}
+        m_liqs.return_value={"available":False}
+        result=manual.visual_market_state("TESTUSDT",current_price=1.0,now=1000)
+        self.assertFalse(result["ready"])
+        self.assertIn("НАКАПЛИВАЮТСЯ",result["label"])
+        m_watch_oi.assert_called_once_with("TESTUSDT")
+        m_watch_flow.assert_called_once_with("TESTUSDT")
+        m_watch_liq.assert_called_once_with("TESTUSDT")
+
 if __name__=="__main__":
     unittest.main()

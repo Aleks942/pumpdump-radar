@@ -76,8 +76,8 @@ class SwingStrengthTests(unittest.TestCase):
         text="\n".join(lines)
         self.assertLessEqual(len(lines),11)
         self.assertIn("82/100",text)
-        self.assertIn("План: искать ЛОНГ",text)
-        self.assertIn("Отмена:",text)
+        self.assertIn("Вход: ЖДАТЬ",text)
+        self.assertIn("Отмена SWING:",text)
         self.assertIn("/detail",text)
 
     def test_report_states_medium_term_horizon(self):
@@ -157,6 +157,37 @@ class SwingStrengthTests(unittest.TestCase):
         before=r["score"]
         s.format_compact_report(r,"🟠 НАБОР НОВЫХ ШОРТОВ")
         self.assertEqual(r["score"],before)
+
+
+    def test_missing_live_data_never_allows_entry(self):
+        r={"score":82,"bias":"BULLISH",
+           "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",
+           "price":100.0,"ticker":{"high24h":105.0,"low24h":90.0},
+           "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":1.0},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        decision=s.entry_decision(
+            r,"⚪ 5М ДАННЫЕ НАКАПЛИВАЮТСЯ",live_ready=False
+        )
+        self.assertEqual(decision["state"],"WARMING")
+        text="\n".join(s.format_compact_report(
+            r,"⚪ 5М ДАННЫЕ НАКАПЛИВАЮТСЯ",live_ready=False
+        ))
+        self.assertIn("НЕ ВХОДИТЬ",text)
+
+    def test_confirmed_direction_still_waits_for_retest(self):
+        r={"score":82,"bias":"BULLISH",
+           "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",
+           "price":100.0,"ticker":{"high24h":103.0,"low24h":90.0},
+           "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":1.0},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        decision=s.entry_decision(
+            r,"🟡 НАБОР НОВЫХ ЛОНГОВ",live_ready=True
+        )
+        self.assertEqual(decision["state"],"WAIT_RETEST")
 
 
 

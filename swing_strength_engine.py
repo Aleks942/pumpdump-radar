@@ -369,10 +369,10 @@ def format_report(result):
     return lines
 
 
-def _entry_veto(result,short_verdict=None):
-    """Entry permission layer; never changes the medium-term SWING bias."""
+def entry_decision(result,short_verdict=None,live_ready=True):
+    """Truthful entry state; never changes the medium-term SWING bias."""
     if not isinstance(result,dict):
-        return False,None,None
+        return {"state":"BLOCKED","side":None,"reason":"нет среднесрочных данных"}
 
     bias=str(result.get("bias") or "UNKNOWN")
     price=_num(result.get("price"))
@@ -381,6 +381,12 @@ def _entry_veto(result,short_verdict=None):
     low=_num(ticker.get("low24h"))
     t15=(result.get("trend15") or {}).get("regime")
     state=str(short_verdict or "")
+
+    side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
+    if side is None:
+        return {"state":"BLOCKED","side":None,"reason":"нет подтверждённого SWING-направления"}
+    if not live_ready:
+        return {"state":"WARMING","side":side,"reason":"5м данные ещё накапливаются; вход не разрешён"}
 
     drop_from_high=(100*(1-price/high)) if price and high and high>0 else None
     rebound_from_low=(100*(price/low-1)) if price and low and low>0 else None
@@ -400,19 +406,22 @@ def _entry_veto(result,short_verdict=None):
 
     if bias=="BULLISH":
         if bearish_now:
-            return True,"LONG","5м поток сейчас против LONG"
+            return {"state":"BLOCKED","side":"LONG","reason":"5м поток сейчас против LONG"}
         if drop_from_high is not None and drop_from_high>=8.0 and t15!="UP":
-            return True,"LONG",f"цена уже откатила {drop_from_high:.1f}% от 24ч максимума, 15м не подтверждает рост"
+            return {"state":"BLOCKED","side":"LONG","reason":f"цена уже откатила {drop_from_high:.1f}% от 24ч максимума, 15м не подтверждает рост"}
     elif bias=="BEARISH":
         if bullish_now:
-            return True,"SHORT","5м поток сейчас против SHORT"
+            return {"state":"BLOCKED","side":"SHORT","reason":"5м поток сейчас против SHORT"}
         if rebound_from_low is not None and rebound_from_low>=8.0 and t15!="DOWN":
-            return True,"SHORT",f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"
+            return {"state":"BLOCKED","side":"SHORT","reason":f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"}
 
-    return False,None,None
+    expected_15m="UP" if side=="LONG" else "DOWN"
+    if t15!=expected_15m:
+        return {"state":"WAIT_RETEST","side":side,"reason":"15м ещё не подтверждает направление SWING"}
+    return {"state":"WAIT_RETEST","side":side,"reason":"направление подтверждено; ждать отката/ретеста, точный вход ещё не сформирован"}
 
 
-def format_compact_report(result,short_verdict=None):
+def format_compact_report(result,short_verdict=None,live_ready=True):
     """Compact professional trader view: decision first, evidence second."""
     if not isinstance(result,dict):
         return ["⚪ Среднесрочный анализ недоступен."]
@@ -436,11 +445,14 @@ def format_compact_report(result,short_verdict=None):
         f"{oi4:+.2f}%" if oi4 is not None else "н/д",
     )
 
-    vetoed,veto_side,veto_reason=_entry_veto(result,short_verdict)
+    entry=entry_decision(result,short_verdict,live_ready=live_ready)
+    entry_state=entry.get("state")
+    entry_side=entry.get("side")
+    entry_reason=entry.get("reason")
     headline=label
-    if vetoed and veto_side=="LONG":
+    if entry_state in ("BLOCKED","WARMING") and entry_side=="LONG":
         headline="🟡 SWING LONG, НО ВХОД НА ПАУЗЕ"
-    elif vetoed and veto_side=="SHORT":
+    elif entry_state in ("BLOCKED","WARMING") and entry_side=="SHORT":
         headline="🟡 SWING SHORT, НО ВХОД НА ПАУЗЕ"
 
     lines=[
@@ -462,25 +474,17 @@ def format_compact_report(result,short_verdict=None):
     if opposition:
         lines.append("Главный риск: "+opposition[0])
 
-    if vetoed:
-        lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(veto_reason)+".")
-        lines.append("Ждём возврата 15м в сторону SWING и подтверждения 5м.")
-    elif bias=="BULLISH":
-        lines.append("План: искать ЛОНГ только после отката/ретеста.")
-        lines.append("Отмена: слом 1H вниз; подтверждение отмены — 4H вниз.")
-    elif bias=="BEARISH":
-        lines.append("План: искать ШОРТ только после отката/ретеста.")
-        lines.append("Отмена: слом 1H вверх; подтверждение отмены — 4H вверх.")
+    if entry_state in ("BLOCKED","WARMING"):
+        lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(entry_reason)+".")
+    elif entry_state=="WAIT_RETEST":
+        lines.append("🟡 Вход: ЖДАТЬ — "+str(entry_reason)+".")
     else:
-        lines.append("План: вне сделки — среднесрочного преимущества нет.")
+        lines.append("⛔ Вход: НЕ ВХОДИТЬ — состояние входа не определено.")
 
-    if not vetoed:
-        if bias=="BULLISH" and t15=="UP":
-            lines.append("Тайминг: 15м ↑ · 5м только для отката/ретеста.")
-        elif bias=="BEARISH" and t15=="DOWN":
-            lines.append("Тайминг: 15м ↓ · 5м только для отката/ретеста.")
-        else:
-            lines.append("Тайминг: 15м пока не подтверждает · 5м не определяет направление.")
+    if bias=="BULLISH":
+        lines.append("Отмена SWING: слом 1H вниз; подтверждение отмены — 4H вниз.")
+    elif bias=="BEARISH":
+        lines.append("Отмена SWING: слом 1H вверх; подтверждение отмены — 4H вверх.")
 
     symbol=str(result.get("symbol") or "SYMBOL")
     lines.append(f"Подробнее: /detail {symbol}")
