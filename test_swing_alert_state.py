@@ -32,5 +32,18 @@ class SwingAlertStateTests(unittest.TestCase):
         self.assertTrue(s.alert_allowed("AAAUSDT","BULLISH",89,7200,now+60))
 
 
+    def test_entry_state_change_can_alert_even_when_score_is_same(self):
+        now=1_700_000_000
+        s.mark_alert(
+            "AAAUSDT","BULLISH",80,now,entry_state="WAIT_RETEST"
+        )
+        self.assertTrue(
+            s.alert_allowed(
+                "AAAUSDT","BULLISH",80,7200,now+60,
+                entry_state="BLOCKED",
+            )
+        )
+
+
 if __name__=="__main__":
     unittest.main()
