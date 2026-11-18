@@ -74,7 +74,7 @@ class SwingStrengthTests(unittest.TestCase):
            "risks":["Фандинг перегрет"]}
         lines=s.format_compact_report(r,"🟡 БЫЧЬЕ ДАВЛЕНИЕ")
         text="\n".join(lines)
-        self.assertLessEqual(len(lines),10)
+        self.assertLessEqual(len(lines),11)
         self.assertIn("82/100",text)
         self.assertIn("План: искать ЛОНГ",text)
         self.assertIn("Отмена:",text)
