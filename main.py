@@ -118,6 +118,10 @@ SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
 SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
 SWING_LEGACY_TELEGRAM = os.getenv("SWING_LEGACY_TELEGRAM", "0") == "1"
+SWING_RESEARCH_ENABLED = os.getenv("SWING_RESEARCH_ENABLED", "0") == "1"
+RESEARCH_PIPELINE_ENABLED = (
+    PRIMARY_SCAN_MODE == "LEGACY" or SWING_RESEARCH_ENABLED
+)
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -1458,11 +1462,18 @@ threading.Thread(
     daemon=True,
 ).start()
 
-register_forward_oi()
+if RESEARCH_PIPELINE_ENABLED:
+    register_forward_oi()
+print(
+    "[RESEARCH_PIPELINE]",
+    "enabled=", RESEARCH_PIPELINE_ENABLED,
+    "mode=", PRIMARY_SCAN_MODE,
+    flush=True,
+)
 _last_edge_report_mono = 0.0
 
 while True:
-    if time.monotonic() - _last_edge_report_mono >= 3600:
+    if RESEARCH_PIPELINE_ENABLED and time.monotonic() - _last_edge_report_mono >= 3600:
         print_candle_edge_report()
         print_exit_research()
         print_factor_edge()
@@ -1477,113 +1488,69 @@ while True:
 
     tickers = get_market_tickers()
     print(f"[TICKERS] {len(tickers)}")
-    try:
-        observe_retrace_tickers(tickers, "OKX")
-        daily_retrace = pending_retrace_daily_digest()
-        if daily_retrace:
-            daily_sent = send_telegram(
-                daily_retrace["text"], symbol="PUMP_STATS"
-            )
-            ack_retrace_daily_digest(
-                daily_retrace["session_key"], daily_sent
-            )
-            print(
-                "[PUMP_RETRACE_DAILY]",
-                "session=", daily_retrace["session_key"],
-                "sent=", daily_sent is True,
-                flush=True,
-            )
-    except Exception as retrace_exc:
-        print("[PUMP_RETRACE_OKX_ERROR]", type(retrace_exc).__name__, flush=True)
-    # Quote markouts use the same OKX market snapshot. No new REST calls.
-    try:
-        observe_pump_info_quotes(tickers, "OKX")
-    except Exception as audit_error:
-        print("[PUMP_INFO_AUDIT_OKX_ERROR]",
-              type(audit_error).__name__, flush=True)
+    if RESEARCH_PIPELINE_ENABLED:
+        try:
+            observe_retrace_tickers(tickers, "OKX")
+            daily_retrace = pending_retrace_daily_digest()
+            if daily_retrace:
+                daily_sent = send_telegram(
+                    daily_retrace["text"], symbol="PUMP_STATS"
+                )
+                ack_retrace_daily_digest(
+                    daily_retrace["session_key"], daily_sent
+                )
+                print(
+                    "[PUMP_RETRACE_DAILY]",
+                    "session=", daily_retrace["session_key"],
+                    "sent=", daily_sent is True,
+                    flush=True,
+                )
+        except Exception as retrace_exc:
+            print("[PUMP_RETRACE_OKX_ERROR]", type(retrace_exc).__name__, flush=True)
+        # Quote markouts use the same OKX market snapshot. No new REST calls.
+        try:
+            observe_pump_info_quotes(tickers, "OKX")
+        except Exception as audit_error:
+            print("[PUMP_INFO_AUDIT_OKX_ERROR]",
+                  type(audit_error).__name__, flush=True)
 
-    # Read the existing market-wide ticker history with zero extra HTTP calls.
-    mover_rows = []
-    try:
-        mover_rows = observe_movers(tickers)
-        # Identical ticker batch: 5/15/30m quote markouts; NO extra API calls.
-        observe_mover_forward(mover_rows)
-        report_mover_forward()
-    except Exception as mover_exc:
-        print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
+        # Read the existing market-wide ticker history with zero extra HTTP calls.
+        mover_rows = []
+        try:
+            mover_rows = observe_movers(tickers)
+            # Identical ticker batch: 5/15/30m quote markouts; NO extra API calls.
+            observe_mover_forward(mover_rows)
+            report_mover_forward()
+        except Exception as mover_exc:
+            print("[MOVER_RESEARCH_ERROR]", type(mover_exc).__name__, flush=True)
 
-    # Early informational notices now require price follow-through AFTER
-    # crossing the user-controlled 5m threshold. No OI/CVD requests, no
-    # changes to the independent strict trade entry gate.
-    early_continuations = []
-    try:
-        quote_rows = inspect_price_quotes(tickers)
-        # Research-only lifecycle based on existing quotes. No extra HTTP,
-        # Telegram or effect on the strict trading decision.
-        observe_pump_lifecycle(quote_rows, TIME_WINDOWS["5m"]["pump"])
-        # Collect at the first observed threshold crossing, even if subsequent
-        # continuation fails or Telegram is rate-limited. The collector's own
-        # 15m global / 30m per-symbol throttles bound external requests.
-        first_moves = select_threshold_moves(
-            quote_rows, TIME_WINDOWS["5m"]["pump"],
-            -TIME_WINDOWS["5m"]["dump"])
-        if first_moves:
-            schedule_public_exchange_context(first_moves[0]["symbol"])
-        early_continuations = select_continuing_moves(
-            quote_rows,
-            TIME_WINDOWS["5m"]["pump"],
-            -TIME_WINDOWS["5m"]["dump"],
-        )
-        # Ordinary informational PUMP/DUMP notifications follow the user's
-        # observed 5m percentage thresholds. The stronger continuation study
-        # remains separate and never gates these notices.
-        for market_move in first_moves:
-            market_move["exchange"] = "OKX"
-            try:
-                register_retrace_event(market_move)
-            except Exception as retrace_exc:
-                print("[PUMP_RETRACE_REGISTER_ERROR]",
-                      market_move.get("symbol"),
-                      type(retrace_exc).__name__, flush=True)
-            maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
-    except Exception as info_exc:
-        print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
-
-    # The longer timeframes use separately sampled, real 10/20/30m quotes.
-    # This watch never affects the existing OKX/Bybit 5m notification path or
-    # strict OI/CVD/price entry logic.
-    try:
-        extended_okx_quotes = sample_multi_window_prices(tickers, "OKX")
-    except Exception as extended_exc:
-        print("[MULTI_WINDOW_OKX_ERROR]", type(extended_exc).__name__, flush=True)
-        extended_okx_quotes = []
-
-    extended_bybit_quotes = []
-    # Separate Bybit linear watch: does not alter OKX trade scanning.
-    # Same sender deduplicates cross-exchange symbol+direction observations.
-    try:
-        bybit_tickers = fetch_bybit_movers()
-        if bybit_tickers is not None:
-            try:
-                observe_retrace_tickers(bybit_tickers, "Bybit")
-            except Exception as retrace_exc:
-                print("[PUMP_RETRACE_BYBIT_ERROR]",
-                      type(retrace_exc).__name__, flush=True)
-            try:
-                observe_pump_info_quotes(bybit_tickers, "Bybit")
-            except Exception as audit_error:
-                print("[PUMP_INFO_AUDIT_BYBIT_ERROR]",
-                      type(audit_error).__name__, flush=True)
-            bybit_quotes = sample_bybit_movers(bybit_tickers)
-            extended_bybit_quotes = sample_multi_window_prices(
-                bybit_tickers, "Bybit")
-            bybit_moves = select_threshold_moves(
-                bybit_quotes, TIME_WINDOWS["5m"]["pump"],
+        # Early informational notices now require price follow-through AFTER
+        # crossing the user-controlled 5m threshold. No OI/CVD requests, no
+        # changes to the independent strict trade entry gate.
+        early_continuations = []
+        try:
+            quote_rows = inspect_price_quotes(tickers)
+            # Research-only lifecycle based on existing quotes. No extra HTTP,
+            # Telegram or effect on the strict trading decision.
+            observe_pump_lifecycle(quote_rows, TIME_WINDOWS["5m"]["pump"])
+            # Collect at the first observed threshold crossing, even if subsequent
+            # continuation fails or Telegram is rate-limited. The collector's own
+            # 15m global / 30m per-symbol throttles bound external requests.
+            first_moves = select_threshold_moves(
+                quote_rows, TIME_WINDOWS["5m"]["pump"],
                 -TIME_WINDOWS["5m"]["dump"])
-            print("[BYBIT_WATCH] tickers=", len(bybit_tickers),
-                  "threshold_moves=", len(bybit_moves), flush=True)
-            for market_move in bybit_moves:
-                market_move["exchange"] = "Bybit"
+            if first_moves:
+                schedule_public_exchange_context(first_moves[0]["symbol"])
+            early_continuations = select_continuing_moves(
+                quote_rows,
+                TIME_WINDOWS["5m"]["pump"],
+                -TIME_WINDOWS["5m"]["dump"],
+            )
+            # Ordinary informational PUMP/DUMP notifications follow the user's
+            # observed 5m percentage thresholds. The stronger continuation study
+            # remains separate and never gates these notices.
+            for market_move in first_moves:
+                market_move["exchange"] = "OKX"
                 try:
                     register_retrace_event(market_move)
                 except Exception as retrace_exc:
@@ -1591,159 +1558,204 @@ while True:
                           market_move.get("symbol"),
                           type(retrace_exc).__name__, flush=True)
                 maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
-    except Exception as bybit_exc:
-        print("[BYBIT_WATCH_ERROR]", type(bybit_exc).__name__, flush=True)
+        except Exception as info_exc:
+            print("[PUMP_CONTINUATION_ERROR]", type(info_exc).__name__, flush=True)
 
-    # Each longer period can notify independently even if 5m is quiet.
-    try:
-        extended_events = select_multi_window_events(
-            extended_okx_quotes + extended_bybit_quotes, TIME_WINDOWS)
-        print("[MULTI_WINDOW_WATCH] 10m_20m_30m_events=",
-              len(extended_events), "okx_quotes=", len(extended_okx_quotes),
-              "bybit_quotes=", len(extended_bybit_quotes), flush=True)
-        for event in extended_events:
-            try:
-                register_retrace_event(event)
-            except Exception as retrace_exc:
-                print("[PUMP_RETRACE_REGISTER_ERROR]",
-                      event.get("symbol"),
-                      type(retrace_exc).__name__, flush=True)
-            if maybe_send_market_watch(event, "PRICE_THRESHOLD"):
-                mark_multi_window_sent(event)
-    except Exception as extended_exc:
-        print("[MULTI_WINDOW_WATCH_ERROR]", type(extended_exc).__name__,
-              flush=True)
+        # The longer timeframes use separately sampled, real 10/20/30m quotes.
+        # This watch never affects the existing OKX/Bybit 5m notification path or
+        # strict OI/CVD/price entry logic.
+        try:
+            extended_okx_quotes = sample_multi_window_prices(tickers, "OKX")
+        except Exception as extended_exc:
+            print("[MULTI_WINDOW_OKX_ERROR]", type(extended_exc).__name__, flush=True)
+            extended_okx_quotes = []
 
-    # Summaries are explicitly non-trading observations, not entry alerts.
-    try:
-        report_pump_info_audit()
-        send_pump_info_daily_digest(
-            lambda msg: send_telegram(msg, symbol="PUMP_AUDIT"))
-    except Exception as audit_error:
-        print("[PUMP_INFO_AUDIT_REPORT_ERROR]",
-              type(audit_error).__name__, flush=True)
-
-    # Parallel research-only watchlist. Does NOT gate or alter the original
-    # price/OI/CVD/long-liquidation signal conditions below.
-    try:
-        watch_events = observe_pump_peak(tickers)
-        for watch_event in watch_events:
-            oi_watch = None
-            futures_imbalance = None
-            if watch_event["level"] >= 2 and TELEGRAM_POLICY == "LEGACY":
+        extended_bybit_quotes = []
+        # Separate Bybit linear watch: does not alter OKX trade scanning.
+        # Same sender deduplicates cross-exchange symbol+direction observations.
+        try:
+            bybit_tickers = fetch_bybit_movers()
+            if bybit_tickers is not None:
                 try:
-                    oi_watch = get_oi_5m(watch_event["symbol"])
-                    flow_watch = get_futures_windows(watch_event["symbol"]).get("5m") or {}
-                    if flow_watch.get("window_ready"):
-                        futures_imbalance = flow_watch.get("imbalance_pct")
-                except Exception as watch_context_exc:
-                    print("[PUMP_WATCH_CONTEXT_ERROR]",
-                          type(watch_context_exc).__name__, flush=True)
+                    observe_retrace_tickers(bybit_tickers, "Bybit")
+                except Exception as retrace_exc:
+                    print("[PUMP_RETRACE_BYBIT_ERROR]",
+                          type(retrace_exc).__name__, flush=True)
+                try:
+                    observe_pump_info_quotes(bybit_tickers, "Bybit")
+                except Exception as audit_error:
+                    print("[PUMP_INFO_AUDIT_BYBIT_ERROR]",
+                          type(audit_error).__name__, flush=True)
+                bybit_quotes = sample_bybit_movers(bybit_tickers)
+                extended_bybit_quotes = sample_multi_window_prices(
+                    bybit_tickers, "Bybit")
+                bybit_moves = select_threshold_moves(
+                    bybit_quotes, TIME_WINDOWS["5m"]["pump"],
+                    -TIME_WINDOWS["5m"]["dump"])
+                print("[BYBIT_WATCH] tickers=", len(bybit_tickers),
+                      "threshold_moves=", len(bybit_moves), flush=True)
+                for market_move in bybit_moves:
+                    market_move["exchange"] = "Bybit"
+                    try:
+                        register_retrace_event(market_move)
+                    except Exception as retrace_exc:
+                        print("[PUMP_RETRACE_REGISTER_ERROR]",
+                              market_move.get("symbol"),
+                              type(retrace_exc).__name__, flush=True)
+                    maybe_send_market_watch(market_move, "PRICE_THRESHOLD")
+        except Exception as bybit_exc:
+            print("[BYBIT_WATCH_ERROR]", type(bybit_exc).__name__, flush=True)
+
+        # Each longer period can notify independently even if 5m is quiet.
+        try:
+            extended_events = select_multi_window_events(
+                extended_okx_quotes + extended_bybit_quotes, TIME_WINDOWS)
+            print("[MULTI_WINDOW_WATCH] 10m_20m_30m_events=",
+                  len(extended_events), "okx_quotes=", len(extended_okx_quotes),
+                  "bybit_quotes=", len(extended_bybit_quotes), flush=True)
+            for event in extended_events:
+                try:
+                    register_retrace_event(event)
+                except Exception as retrace_exc:
+                    print("[PUMP_RETRACE_REGISTER_ERROR]",
+                          event.get("symbol"),
+                          type(retrace_exc).__name__, flush=True)
+                if maybe_send_market_watch(event, "PRICE_THRESHOLD"):
+                    mark_multi_window_sent(event)
+        except Exception as extended_exc:
+            print("[MULTI_WINDOW_WATCH_ERROR]", type(extended_exc).__name__,
+                  flush=True)
+
+        # Summaries are explicitly non-trading observations, not entry alerts.
+        try:
+            report_pump_info_audit()
+            send_pump_info_daily_digest(
+                lambda msg: send_telegram(msg, symbol="PUMP_AUDIT"))
+        except Exception as audit_error:
+            print("[PUMP_INFO_AUDIT_REPORT_ERROR]",
+                  type(audit_error).__name__, flush=True)
+
+        # Parallel research-only watchlist. Does NOT gate or alter the original
+        # price/OI/CVD/long-liquidation signal conditions below.
+        try:
+            watch_events = observe_pump_peak(tickers)
+            for watch_event in watch_events:
+                oi_watch = None
+                futures_imbalance = None
+                if watch_event["level"] >= 2 and TELEGRAM_POLICY == "LEGACY":
+                    try:
+                        oi_watch = get_oi_5m(watch_event["symbol"])
+                        flow_watch = get_futures_windows(watch_event["symbol"]).get("5m") or {}
+                        if flow_watch.get("window_ready"):
+                            futures_imbalance = flow_watch.get("imbalance_pct")
+                    except Exception as watch_context_exc:
+                        print("[PUMP_WATCH_CONTEXT_ERROR]",
+                              type(watch_context_exc).__name__, flush=True)
+                if TELEGRAM_POLICY == "CONFIRMED_ONLY":
+                    # Silent samples remain observable in SQLite. Do not turn a
+                    # possible dump into a trading confirmation.
+                    ack_pump_peak(watch_event, False, research_only=True)
+                    print("[PUMP_WATCH_RESEARCH_ONLY]", watch_event["symbol"],
+                          "level=", watch_event["level"], flush=True)
+                else:
+                    watch_sent = send_telegram(
+                        pump_peak_message(watch_event, oi_watch, futures_imbalance),
+                        symbol=watch_event["symbol"],
+                    )
+                    ack_pump_peak(watch_event, watch_sent)
+                    print("[PUMP_WATCH_NOTIFY]", watch_event["symbol"],
+                          "level=", watch_event["level"],
+                          "sent=", watch_sent is True, flush=True)
+        except Exception as watch_exc:
+            print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
+
+        # Opt-in informational +30% watch. Independent of Order Flow and the
+        # CONFIRMED_ONLY gate for actual trading signals. No new market requests.
+        if (os.getenv("PUMP_30_INFO_ALERTS", "0") == "1"
+                and os.getenv("POST_PUMP_TELEGRAM", "1") != "1"):
+            try:
+                for pump30_event in observe_30_pumps(tickers):
+                    delivered = send_telegram(
+                        pump_30_message(pump30_event),
+                        symbol=pump30_event["symbol"],
+                    )
+                    ack_30_pump(pump30_event, delivered)
+                    print("[PUMP_30_INFO]", pump30_event["symbol"],
+                          "stage=", pump30_event["stage"],
+                          "sent=", delivered is True, flush=True)
+            except Exception as pump30_error:
+                print("[PUMP_30_INFO_ERROR]",
+                      type(pump30_error).__name__, flush=True)
+
+        # Research-only pump lifecycle: correlates observed chronological pivots
+        # with authenticated Bybit Flow sell pressure, never sends Telegram.
+        # Works from the same ticker batch and existing Pump Watch SQLite volume.
+        try:
+            observe_pump_cycle(tickers, seeded_pumps=early_continuations)
+            observe_cycle_outcomes(tickers)
+            report_cycle_outcomes()
+        except Exception as cycle_exc:
+            print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
+
+        # Complete independent POST-PUMP SHORT strategy. Discovers +30% pumps
+        # directly from the same OKX ticker list, including late pullbacks
+        # excluded by earlier Pump Watch. Max three candidates checked per scan,
+        # 5m/15m/H1 closed candles, verified 5m Spot + cached OI/futures.
+        # PAPER ONLY: never opens positions or overrides trading gates.
+        try:
+            observe_complete_post_pump_short(tickers)
+        except Exception as complete_short_exc:
+            print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
+                  type(complete_short_exc).__name__,
+                  str(complete_short_exc)[:300], flush=True)
+
+        # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
+        # Research-only; reuses existing ticker/OI/flow caches and never places orders.
+        try:
+            observe_post_dump_long(tickers)
+            if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
+                deliver_post_dump_long(send_telegram)
+        except Exception as post_dump_long_exc:
+            print("[POST_DUMP_LONG_LOOP_ERROR]",
+                  type(post_dump_long_exc).__name__, str(post_dump_long_exc), flush=True)
+
+        try:
+            observe_post_dump_accumulation(tickers)
+            if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
+                deliver_post_dump_accumulation(send_telegram)
+        except Exception as post_dump_accum_exc:
+            print("[POST_DUMP_ACCUM_LOOP_ERROR]",
+                  type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
+                  flush=True)
+
+        # User-enabled complete lifecycle. Preserves every strategy evidence gate;
+        # messages explicitly label READY as a paper plan, never a live order.
+        if (os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
+                and (PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM)):
+            try:
+                deliver_post_pump_notifications(send_telegram, tickers)
+            except Exception as notify_error:
+                print("[POST_PUMP_NOTIFY_ERROR]", type(notify_error).__name__, flush=True)
+
+        # Retain the prior Pump Cycle research cohorts as a separate experiment.
+        try:
+            observe_post_pump_short(tickers)
+            report_post_pump_short()
+        except Exception as post_short_exc:
+            print("[POST_PUMP_SHORT_LOOP_ERROR]",
+                  type(post_short_exc).__name__, flush=True)
+
+        # Evaluate forward checkpoints from the same already-fetched ticker list.
+        # Research-only: NEVER modifies original signal decisions or orders.
+        try:
+            observe_watch_forward(tickers)
+            report_watch_forward()
             if TELEGRAM_POLICY == "CONFIRMED_ONLY":
-                # Silent samples remain observable in SQLite. Do not turn a
-                # possible dump into a trading confirmation.
-                ack_pump_peak(watch_event, False, research_only=True)
-                print("[PUMP_WATCH_RESEARCH_ONLY]", watch_event["symbol"],
-                      "level=", watch_event["level"], flush=True)
-            else:
-                watch_sent = send_telegram(
-                    pump_peak_message(watch_event, oi_watch, futures_imbalance),
-                    symbol=watch_event["symbol"],
-                )
-                ack_pump_peak(watch_event, watch_sent)
-                print("[PUMP_WATCH_NOTIFY]", watch_event["symbol"],
-                      "level=", watch_event["level"],
-                      "sent=", watch_sent is True, flush=True)
-    except Exception as watch_exc:
-        print("[PUMP_WATCH_LOOP_ERROR]", type(watch_exc).__name__, flush=True)
-
-    # Opt-in informational +30% watch. Independent of Order Flow and the
-    # CONFIRMED_ONLY gate for actual trading signals. No new market requests.
-    if (os.getenv("PUMP_30_INFO_ALERTS", "0") == "1"
-            and os.getenv("POST_PUMP_TELEGRAM", "1") != "1"):
-        try:
-            for pump30_event in observe_30_pumps(tickers):
-                delivered = send_telegram(
-                    pump_30_message(pump30_event),
-                    symbol=pump30_event["symbol"],
-                )
-                ack_30_pump(pump30_event, delivered)
-                print("[PUMP_30_INFO]", pump30_event["symbol"],
-                      "stage=", pump30_event["stage"],
-                      "sent=", delivered is True, flush=True)
-        except Exception as pump30_error:
-            print("[PUMP_30_INFO_ERROR]",
-                  type(pump30_error).__name__, flush=True)
-
-    # Research-only pump lifecycle: correlates observed chronological pivots
-    # with authenticated Bybit Flow sell pressure, never sends Telegram.
-    # Works from the same ticker batch and existing Pump Watch SQLite volume.
-    try:
-        observe_pump_cycle(tickers, seeded_pumps=early_continuations)
-        observe_cycle_outcomes(tickers)
-        report_cycle_outcomes()
-    except Exception as cycle_exc:
-        print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
-
-    # Complete independent POST-PUMP SHORT strategy. Discovers +30% pumps
-    # directly from the same OKX ticker list, including late pullbacks
-    # excluded by earlier Pump Watch. Max three candidates checked per scan,
-    # 5m/15m/H1 closed candles, verified 5m Spot + cached OI/futures.
-    # PAPER ONLY: never opens positions or overrides trading gates.
-    try:
-        observe_complete_post_pump_short(tickers)
-    except Exception as complete_short_exc:
-        print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
-              type(complete_short_exc).__name__,
-              str(complete_short_exc)[:300], flush=True)
-
-    # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
-    # Research-only; reuses existing ticker/OI/flow caches and never places orders.
-    try:
-        observe_post_dump_long(tickers)
-        if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
-            deliver_post_dump_long(send_telegram)
-    except Exception as post_dump_long_exc:
-        print("[POST_DUMP_LONG_LOOP_ERROR]",
-              type(post_dump_long_exc).__name__, str(post_dump_long_exc), flush=True)
-
-    try:
-        observe_post_dump_accumulation(tickers)
-        if PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM:
-            deliver_post_dump_accumulation(send_telegram)
-    except Exception as post_dump_accum_exc:
-        print("[POST_DUMP_ACCUM_LOOP_ERROR]",
-              type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
-              flush=True)
-
-    # User-enabled complete lifecycle. Preserves every strategy evidence gate;
-    # messages explicitly label READY as a paper plan, never a live order.
-    if (os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
-            and (PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM)):
-        try:
-            deliver_post_pump_notifications(send_telegram, tickers)
-        except Exception as notify_error:
-            print("[POST_PUMP_NOTIFY_ERROR]", type(notify_error).__name__, flush=True)
-
-    # Retain the prior Pump Cycle research cohorts as a separate experiment.
-    try:
-        observe_post_pump_short(tickers)
-        report_post_pump_short()
-    except Exception as post_short_exc:
-        print("[POST_PUMP_SHORT_LOOP_ERROR]",
-              type(post_short_exc).__name__, flush=True)
-
-    # Evaluate forward checkpoints from the same already-fetched ticker list.
-    # Research-only: NEVER modifies original signal decisions or orders.
-    try:
-        observe_watch_forward(tickers)
-        report_watch_forward()
-        if TELEGRAM_POLICY == "CONFIRMED_ONLY":
-            advance_trend_study()
-            advance_horizon_audit()
-    except Exception as forward_exc:
-        print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
-              type(forward_exc).__name__, flush=True)
+                advance_trend_study()
+                advance_horizon_audit()
+        except Exception as forward_exc:
+            print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
+                  type(forward_exc).__name__, flush=True)
 
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
