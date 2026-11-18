@@ -62,7 +62,7 @@ from pattern_detector import detect_pattern
 from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market
-from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report
+from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
 from swing_alert_state import alert_allowed as persistent_swing_alert_allowed, mark_alert as persistent_mark_swing_alert
 
 from liquidation_engine import (
@@ -413,19 +413,22 @@ def get_market_tickers():
         return []
 
 
-def _swing_alert_allowed(symbol, bias, score, now=None):
+def _swing_alert_allowed(symbol, bias, score, entry_state="UNKNOWN", now=None):
     try:
         return persistent_swing_alert_allowed(
-            symbol, bias, score, SWING_ALERT_COOLDOWN_SEC, now=now
+            symbol, bias, score, SWING_ALERT_COOLDOWN_SEC,
+            now=now, entry_state=entry_state
         )
     except Exception as exc:
         print("[SWING_DEDUP_READ_ERROR]", type(exc).__name__, flush=True)
         return True
 
 
-def _mark_swing_alert(symbol, bias, score, now=None):
+def _mark_swing_alert(symbol, bias, score, entry_state="UNKNOWN", now=None):
     try:
-        persistent_mark_swing_alert(symbol, bias, score, now=now)
+        persistent_mark_swing_alert(
+            symbol, bias, score, now=now, entry_state=entry_state
+        )
     except Exception as exc:
         print("[SWING_DEDUP_WRITE_ERROR]", type(exc).__name__, flush=True)
 
@@ -1408,32 +1411,28 @@ def should_send_signal(signal):
 
 print("🚀 PumpDump Radar V2 started")
 
-# Read-only verification of credentials and network path. No trading signals.
-threading.Thread(target=probe_bridge, name="pump-flow-probe", daemon=True).start()
+if RESEARCH_PIPELINE_ENABLED:
+    # Legacy/research infrastructure only. It is not part of the SWING decision.
+    threading.Thread(target=probe_bridge, name="pump-flow-probe", daemon=True).start()
 
-initialize_market_memory()
-print("========== INIT DONE ==========", flush=True)
+    initialize_market_memory()
+    print("========== INIT DONE ==========", flush=True)
+    market_memory_healthcheck()
+    print("========== HEALTH DONE ==========", flush=True)
 
-market_memory_healthcheck()
-print("========== HEALTH DONE ==========", flush=True)
+    restored_oi_history = load_recent_oi_history(limit=60)
+    if restored_oi_history:
+        OI_HISTORY.clear()
+        OI_HISTORY.update(restored_oi_history)
 
-restored_oi_history = load_recent_oi_history(limit=60)
-
-if restored_oi_history:
-    OI_HISTORY.clear()
-    OI_HISTORY.update(restored_oi_history)
-
-print(
-    "[OI_HISTORY_READY]",
-    "symbols=",
-    len(OI_HISTORY),
-    "points=",
-    sum(len(values) for values in OI_HISTORY.values()),
-    flush=True
-)
-
-test_binance()
-test_bybit()
+    print(
+        "[OI_HISTORY_READY]",
+        "symbols=", len(OI_HISTORY),
+        "points=", sum(len(values) for values in OI_HISTORY.values()),
+        flush=True,
+    )
+    test_binance()
+    test_bybit()
 
 print("🚀 PumpDump Radar V2 ONLINE", flush=True)
 print("[PRIMARY_SCAN_MODE]", PRIMARY_SCAN_MODE, flush=True)
@@ -1444,25 +1443,21 @@ manual_research_bot = start_manual_research(BOT_TOKEN, CHAT_ID, send_telegram)
 
 start_liquidation_streams()
 
-initial_tickers = get_market_tickers()
-
-swap_symbols = [t.get("instId") for t in initial_tickers if t.get("instId")]
-
-threading.Thread(
-    target=run_stream_forever,
-    args=(swap_symbols,),
-    daemon=True,
-).start()
-
-print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
-
-threading.Thread(
-    target=run_entry_tracker,
-    name="entry-tracker",
-    daemon=True,
-).start()
-
 if RESEARCH_PIPELINE_ENABLED:
+    initial_tickers = get_market_tickers()
+    swap_symbols = [t.get("instId") for t in initial_tickers if t.get("instId")]
+    threading.Thread(
+        target=run_stream_forever,
+        args=(swap_symbols,),
+        daemon=True,
+    ).start()
+    print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
+
+    threading.Thread(
+        target=run_entry_tracker,
+        name="entry-tracker",
+        daemon=True,
+    ).start()
     register_forward_oi()
 print(
     "[RESEARCH_PIPELINE]",
@@ -1805,10 +1800,7 @@ while True:
                 symbol = candidate.get("symbol")
                 if not symbol:
                     continue
-                result = analyze_swing_strength(
-                    symbol,
-                    current_price=candidate.get("price"),
-                )
+                result = analyze_swing_strength(symbol)
                 if not result.get("ready"):
                     swing_stats["not_ready"] += 1
                     if SWING_VERBOSE_LOGS:
@@ -1858,35 +1850,58 @@ while True:
                     continue
 
                 swing_stats["eligible"] += 1
-                if not _swing_alert_allowed(symbol, bias, score):
-                    swing_stats["duplicate"] += 1
-                    if SWING_VERBOSE_LOGS:
-                        print("[SWING_SKIP_DUPLICATE]", symbol, score, flush=True)
-                    continue
 
+                # Live timing is sampled before duplicate suppression so the
+                # 5m history can actually warm up and a later BLOCKED/WARMING
+                # transition cannot be hidden by an unchanged SWING score.
                 try:
                     visual_state = visual_market_state(
                         symbol,
-                        current_price=candidate.get("price"),
+                        current_price=result.get("price"),
                     )
                 except Exception as exc:
                     print("[SWING_VISUAL_STATE_ERROR]", symbol, type(exc).__name__, flush=True)
-                    visual_state = {}
+                    visual_state = {"ready":False}
 
-                state_label = str(visual_state.get("label") or "⚪ СОСТОЯНИЕ 5М ЕЩЁ НЕ ОПРЕДЕЛЕНО")
+                live_ready = visual_state.get("ready") is True
+                state_label = str(
+                    visual_state.get("label")
+                    or "⚪ 5М ДАННЫЕ НАКАПЛИВАЮТСЯ"
+                )
+                entry = entry_decision(
+                    result,
+                    short_verdict=state_label,
+                    live_ready=live_ready,
+                )
+                entry_state = str(entry.get("state") or "UNKNOWN")
+
+                if not _swing_alert_allowed(symbol, bias, score, entry_state):
+                    swing_stats["duplicate"] += 1
+                    if SWING_VERBOSE_LOGS:
+                        print(
+                            "[SWING_SKIP_DUPLICATE]",
+                            symbol, score, entry_state, flush=True
+                        )
+                    continue
+
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
-                    *format_compact_report(result, short_verdict=state_label),
+                    *format_compact_report(
+                        result,
+                        short_verdict=state_label,
+                        live_ready=live_ready,
+                    ),
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
                     swing_stats["sent"] += 1
-                    _mark_swing_alert(symbol, bias, score)
+                    _mark_swing_alert(symbol, bias, score, entry_state)
                     print(
                         "[SWING_ALERT_SENT]",
                         symbol,
                         "bias=", bias,
                         "score=", score,
+                        "entry_state=", entry_state,
                         "prefilter_score=",
                         round(float(candidate.get("signed_score", 0)), 1),
                         flush=True,
