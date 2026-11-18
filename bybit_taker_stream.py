@@ -18,6 +18,7 @@ LINEAR_WS = "wss://stream.bybit.com/v5/public/linear"
 SPOT_WS = "wss://stream.bybit.com/v5/public/spot"
 WINDOW_SEC = 300
 SOURCE_TTL_SEC = 45
+WATCH_IDLE_TTL_SEC = 30 * 60
 MAX_EVENTS_PER_SYMBOL = 120000
 
 _lock = threading.RLock()
@@ -27,6 +28,7 @@ _connected = {"linear": False, "spot": False}
 _subscribed = {"linear": set(), "spot": set()}
 _watch_ref = {}
 _watch_at = {}
+_watch_seen = {}
 _events = {}
 _spot_support = {}
 
@@ -80,6 +82,44 @@ def _subscribe(category, symbols):
         return False
 
 
+def _unsubscribe(category, symbols):
+    sock = _ws.get(category)
+    symbols = [s for s in symbols if s in _subscribed.get(category, set())]
+    if sock is None or not symbols:
+        return
+    try:
+        for i in range(0, len(symbols), 10):
+            batch = symbols[i:i + 10]
+            sock.send(json.dumps({
+                "op": "unsubscribe",
+                "args": ["publicTrade." + symbol for symbol in batch],
+            }))
+        with _lock:
+            _subscribed[category].difference_update(symbols)
+        print("[BYBIT_FLOW_UNSUBSCRIBE]", category, ",".join(symbols), flush=True)
+    except Exception as exc:
+        print("[BYBIT_FLOW_UNSUBSCRIBE_ERROR]", category, type(exc).__name__, flush=True)
+
+
+def _expire_idle_watches(now=None):
+    now = time.time() if now is None else float(now)
+    with _lock:
+        stale = [
+            symbol for symbol, seen in _watch_seen.items()
+            if now - seen > WATCH_IDLE_TTL_SEC
+        ]
+        for symbol in stale:
+            _watch_ref.pop(symbol, None)
+            _watch_at.pop(symbol, None)
+            _watch_seen.pop(symbol, None)
+            _events.pop(("linear", symbol), None)
+            _events.pop(("spot", symbol), None)
+    if stale:
+        _unsubscribe("linear", stale)
+        _unsubscribe("spot", stale)
+    return stale
+
+
 def _spot_exists(symbol):
     symbol = _norm(symbol)
     try:
@@ -117,10 +157,16 @@ def watch_symbol(symbol, started_at=None):
     symbol = _norm(symbol)
     if not symbol.endswith("USDT"):
         return False
-    at = time.time() if started_at is None else float(started_at)
+    now = time.time()
+    at = now if started_at is None else float(started_at)
+    _expire_idle_watches(now)
     with _lock:
-        _watch_ref[symbol] = _watch_ref.get(symbol, 0) + 1
-        _watch_at.setdefault(symbol, at)
+        # Idempotent: repeated SWING scans refresh interest without resetting
+        # the 5m observation start or growing an unused reference counter.
+        if symbol not in _watch_ref:
+            _watch_ref[symbol] = 1
+            _watch_at[symbol] = at
+        _watch_seen[symbol] = now
         _events.setdefault(("linear", symbol), deque(maxlen=MAX_EVENTS_PER_SYMBOL))
         _events.setdefault(("spot", symbol), deque(maxlen=MAX_EVENTS_PER_SYMBOL))
         need_spot_check = symbol not in _spot_support
@@ -141,12 +187,16 @@ def watch_symbol(symbol, started_at=None):
 def unwatch_symbol(symbol):
     symbol = _norm(symbol)
     with _lock:
-        count = _watch_ref.get(symbol, 0)
-        if count <= 1:
-            _watch_ref.pop(symbol, None)
-            _watch_at.pop(symbol, None)
-        else:
-            _watch_ref[symbol] = count - 1
+        existed = symbol in _watch_ref
+        _watch_ref.pop(symbol, None)
+        _watch_at.pop(symbol, None)
+        _watch_seen.pop(symbol, None)
+        _events.pop(("linear", symbol), None)
+        _events.pop(("spot", symbol), None)
+    if existed:
+        _unsubscribe("linear", [symbol])
+        _unsubscribe("spot", [symbol])
+    return existed
 
 
 def _on_open(category, sock):
@@ -250,6 +300,7 @@ def _ensure_started():
 def get_flow(symbol, category="linear", now=None, since=None):
     symbol = _norm(symbol)
     now = time.time() if now is None else float(now)
+    _expire_idle_watches(now)
     if category not in ("linear", "spot"):
         return {"quality": "INVALID", "ready": False}
     with _lock:
