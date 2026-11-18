@@ -32,6 +32,13 @@ class ManualResearchTests(unittest.TestCase):
                      {"available":True,"cvd_percent":18},0.01,{})
         self.assertIn("ПОГЛОЩЕНИЕ ПРОДАЖ",v)
 
+    def test_seller_absorption_label(self):
+        v,_=_verdict({},{"ready":True,"change_pct":0.1},
+                     {"ready":True,"change_pct":0.0},{},
+                     {"quality":"READY","imbalance_pct":25},
+                     {"available":True,"cvd_percent":-18},0.01,{})
+        self.assertIn("ПОГЛОЩЕНИЕ ПОКУПОК",v)
+
     def test_short_squeeze_label(self):
         v,_=_verdict({},{"ready":True,"change_pct":1.2},
                      {"ready":True,"change_pct":-0.8},{},

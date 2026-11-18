@@ -291,8 +291,13 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
 
     if (fimb is not None and fimb<=-8 and simb is not None and simb>=10
             and (p5 is None or p5>-0.40)):
-        return ("🟡 ПОГЛОЩЕНИЕ ПРОДАЖ — СПОТ ВЫКУПАЕТ",
+        return ("🟡 ПОГЛОЩЕНИЕ ПРОДАЖ — ПОКУПАТЕЛЬ ДЕРЖИТ",
                 ", ".join(reasons) or "фьючерсы продают, а спот покупает")
+
+    if (fimb is not None and fimb>=8 and simb is not None and simb<=-10
+            and (p5 is None or p5<0.40)):
+        return ("🟣 ПОГЛОЩЕНИЕ ПОКУПОК — ПРОДАВЕЦ ДЕРЖИТ",
+                ", ".join(reasons) or "фьючерсы покупают, а спот продаёт")
 
     score=0
     if oi is not None:
@@ -319,6 +324,43 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
     if not reasons and missing:
         reasons.append("ещё накапливаются данные: "+", ".join(missing))
     return label,", ".join(reasons) if reasons else "данных недостаточно"
+
+
+def visual_market_state(symbol,current_price=None,now=None):
+    """Return a compact 5m market-state label for SWING Telegram.
+
+    Uses already-free sources/caches. It is context only and never changes
+    the medium-term SWING direction.
+    """
+    now=time.time() if now is None else float(now)
+    price5=_price5(symbol,current_price,now) if current_price is not None else {}
+    oi_agg=_agg_oi5(symbol)
+    fut=_flow5(symbol)
+    try:
+        spot=get_spot_cvd(_okx_inst(symbol)) or {}
+    except Exception:
+        spot={}
+    liq=_liqs(symbol)
+    label,reasons=_verdict(
+        {},
+        price5,
+        {},
+        oi_agg,
+        fut,
+        spot,
+        None,
+        liq,
+    )
+    # Keep Telegram visual and short. Generic pressure is still useful while
+    # the six named states are not confirmed.
+    return {
+        "label":label,
+        "reasons":reasons,
+        "price5_pct":_num(price5.get("change_pct")) if price5.get("ready") else None,
+        "oi5_pct":_num(oi_agg.get("change_pct")) if oi_agg.get("ready") else None,
+        "futures_imbalance_pct":_num(fut.get("imbalance_pct")) if fut.get("quality")=="READY" else None,
+        "spot_imbalance_pct":_num(spot.get("cvd_percent")) if spot.get("available") else None,
+    }
 
 
 def _detail_lines(ticker,price5_pct,local_oi,agg_oi,fimb,simb,funding,
