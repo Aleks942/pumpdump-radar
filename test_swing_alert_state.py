@@ -32,6 +32,29 @@ class SwingAlertStateTests(unittest.TestCase):
         self.assertTrue(s.alert_allowed("AAAUSDT","BULLISH",89,7200,now+60))
 
 
+    def test_compression_watch_dedup_is_separate_from_trade_alert(self):
+        now=1_700_000_000
+        self.assertTrue(
+            s.compression_alert_allowed(
+                "EVAAUSDT", 10.0, 10.5, 60, 21600, now
+            )
+        )
+        s.mark_compression_alert("EVAAUSDT", 10.0, 10.5, 60, now)
+        self.assertFalse(
+            s.compression_alert_allowed(
+                "EVAAUSDT", 10.0, 10.5, 60, 21600, now+60
+            )
+        )
+
+        # A WATCH must not consume or overwrite the real SWING alert state.
+        self.assertTrue(
+            s.alert_allowed("EVAAUSDT", "BULLISH", 80, 7200, now+60)
+        )
+        s.mark_alert("EVAAUSDT", "BULLISH", 80, now+60)
+        self.assertFalse(
+            s.alert_allowed("EVAAUSDT", "BULLISH", 80, 7200, now+120)
+        )
+
     def test_entry_state_change_can_alert_even_when_score_is_same(self):
         now=1_700_000_000
         s.mark_alert(
