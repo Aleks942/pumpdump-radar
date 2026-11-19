@@ -61,9 +61,14 @@ from okx_trade_stream_v3 import run_stream_forever
 from pattern_detector import detect_pattern
 from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
-from swing_market_scanner import scan as scan_swing_market
+from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
-from swing_alert_state import alert_allowed as persistent_swing_alert_allowed, mark_alert as persistent_mark_swing_alert
+from swing_alert_state import (
+    alert_allowed as persistent_swing_alert_allowed,
+    mark_alert as persistent_mark_swing_alert,
+    compression_alert_allowed as persistent_compression_alert_allowed,
+    mark_compression_alert as persistent_mark_compression_alert,
+)
 
 from liquidation_engine import (
     start_liquidation_streams,
@@ -117,6 +122,10 @@ MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
 PRIMARY_SCAN_MODE = "SWING"
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
+SWING_COMPRESSION_ALERT_COOLDOWN_SEC = int(
+    os.getenv("SWING_COMPRESSION_ALERT_COOLDOWN_SEC", 6 * 3600)
+)
+SWING_COMPRESSION_ALERT_TOP_N = int(os.getenv("SWING_COMPRESSION_ALERT_TOP_N", 6))
 SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
 SWING_LEGACY_TELEGRAM = False
 SWING_RESEARCH_ENABLED = False
@@ -430,6 +439,34 @@ def _mark_swing_alert(symbol, bias, score, entry_state="UNKNOWN", now=None):
         )
     except Exception as exc:
         print("[SWING_DEDUP_WRITE_ERROR]", type(exc).__name__, flush=True)
+
+
+def _swing_compression_alert_allowed(watch, now=None):
+    try:
+        return persistent_compression_alert_allowed(
+            watch.get("symbol"),
+            watch.get("range_low"),
+            watch.get("range_high"),
+            watch.get("strength", 0),
+            SWING_COMPRESSION_ALERT_COOLDOWN_SEC,
+            now=now,
+        )
+    except Exception as exc:
+        print("[SWING_COMPRESSION_DEDUP_READ_ERROR]", type(exc).__name__, flush=True)
+        return True
+
+
+def _mark_swing_compression_alert(watch, now=None):
+    try:
+        persistent_mark_compression_alert(
+            watch.get("symbol"),
+            watch.get("range_low"),
+            watch.get("range_high"),
+            watch.get("strength", 0),
+            now=now,
+        )
+    except Exception as exc:
+        print("[SWING_COMPRESSION_DEDUP_WRITE_ERROR]", type(exc).__name__, flush=True)
 
 
 def get_rotation_chunk(tickers):
@@ -1789,11 +1826,84 @@ while True:
         "eligible": 0,
         "sent": 0,
         "send_failed": 0,
+        "compression_found": 0,
+        "compression_duplicate": 0,
+        "compression_sent": 0,
+        "compression_send_failed": 0,
     }
     if PRIMARY_SCAN_MODE == "SWING":
         try:
             swing_candidates = scan_swing_market(tickers)
             swing_stats["prefilter"] = len(swing_candidates)
+
+            # Direction-neutral early warning. Uses the same already-refreshed
+            # 1H cache as the directional prefilter, so it adds no exchange
+            # requests and can never approve LONG/SHORT by itself.
+            compression_watches = scan_swing_compressions(
+                tickers,
+                top_n=SWING_COMPRESSION_ALERT_TOP_N,
+            )
+            swing_stats["compression_found"] = len(compression_watches)
+            for watch in compression_watches:
+                symbol = watch.get("symbol")
+                if not symbol:
+                    continue
+                if not _swing_compression_alert_allowed(watch):
+                    swing_stats["compression_duplicate"] += 1
+                    continue
+
+                context = watch.get("context")
+                context_text = (
+                    "сильного падения"
+                    if context == "POST_DROP"
+                    else "сильного роста"
+                )
+                low = float(watch.get("range_low") or 0)
+                high = float(watch.get("range_high") or 0)
+                width = float(watch.get("range_width_pct") or 0)
+                ratio = float(watch.get("width_ratio") or 0) * 100.0
+                impulse = float(watch.get("prior_move_pct") or 0)
+                hours = int(watch.get("hours") or 6)
+                strength = float(watch.get("strength") or 0)
+
+                lines = [
+                    f"🗜 <b>SWING WATCH — {symbol}</b>",
+                    f"1H: диапазон сжимается после {context_text}.",
+                    (
+                        f"Диапазон {hours}ч: "
+                        f"<b>{low:.8g} — {high:.8g}</b> ({width:.2f}%)"
+                    ),
+                    f"Сжатие: {ratio:.0f}% от предыдущего диапазона.",
+                    f"Предыдущее движение: {impulse:+.2f}%.",
+                    f"Сила сжатия: {strength:.0f}/100.",
+                    "⚪ <b>Направление пока НЕ подтверждено.</b>",
+                    (
+                        "Ждём: закрытие 1H за границей → удержание → "
+                        "подтверждение OI/CVD/объёмом."
+                    ),
+                ]
+                sent = send_telegram("\n".join(lines), symbol=symbol)
+                if sent is True:
+                    swing_stats["compression_sent"] += 1
+                    _mark_swing_compression_alert(watch)
+                    print(
+                        "[SWING_COMPRESSION_WATCH_SENT]",
+                        symbol,
+                        "context=", context,
+                        "range_pct=", round(width, 2),
+                        "prior_move_pct=", round(impulse, 2),
+                        "strength=", round(strength, 1),
+                        "trade_approved=false",
+                        flush=True,
+                    )
+                else:
+                    swing_stats["compression_send_failed"] += 1
+                    print(
+                        "[SWING_COMPRESSION_WATCH_NOT_SENT]",
+                        symbol,
+                        flush=True,
+                    )
+
             for candidate in swing_candidates[:SWING_DEEP_TOP_N]:
                 swing_stats["deep_checked"] += 1
                 symbol = candidate.get("symbol")
@@ -1927,6 +2037,10 @@ while True:
                 "alignment_reject=", swing_stats["alignment_reject"],
                 "score_reject=", swing_stats["score_reject"],
                 "send_failed=", swing_stats["send_failed"],
+                "compression_found=", swing_stats["compression_found"],
+                "compression_sent=", swing_stats["compression_sent"],
+                "compression_duplicate=", swing_stats["compression_duplicate"],
+                "compression_send_failed=", swing_stats["compression_send_failed"],
                 flush=True,
             )
 

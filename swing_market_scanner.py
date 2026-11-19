@@ -22,6 +22,13 @@ CACHE_MAX_AGE_SEC = int(os.getenv("SWING_PREFILTER_MAX_AGE_SEC", 2 * 3600))
 DEFAULT_REFRESH_PER_SCAN = int(os.getenv("SWING_PREFILTER_REFRESH_PER_SCAN", 24))
 DEFAULT_TOP_N = int(os.getenv("SWING_PREFILTER_TOP_N", 12))
 DEFAULT_MIN_ABS_SCORE = float(os.getenv("SWING_PREFILTER_MIN_ABS_SCORE", 22))
+COMPRESSION_HOURS = int(os.getenv("SWING_COMPRESSION_HOURS", 6))
+COMPRESSION_PRIOR_HOURS = int(os.getenv("SWING_COMPRESSION_PRIOR_HOURS", 12))
+COMPRESSION_MIN_IMPULSE_PCT = float(os.getenv("SWING_COMPRESSION_MIN_IMPULSE_PCT", 3.0))
+COMPRESSION_MAX_WIDTH_PCT = float(os.getenv("SWING_COMPRESSION_MAX_WIDTH_PCT", 5.0))
+COMPRESSION_MAX_WIDTH_RATIO = float(os.getenv("SWING_COMPRESSION_MAX_WIDTH_RATIO", 0.68))
+COMPRESSION_MAX_CANDLE_RATIO = float(os.getenv("SWING_COMPRESSION_MAX_CANDLE_RATIO", 0.72))
+COMPRESSION_TOP_N = int(os.getenv("SWING_COMPRESSION_TOP_N", 6))
 
 _lock = threading.RLock()
 _cache = {}
@@ -90,6 +97,81 @@ def _closed_1h(inst_id, request_get=None):
     return rows
 
 
+def _range_width_pct(rows):
+    if not rows:
+        return None, None, None
+    high = max(x["h"] for x in rows)
+    low = min(x["l"] for x in rows)
+    mid = (high + low) / 2.0
+    if mid <= 0:
+        return None, None, None
+    return 100.0 * (high - low) / mid, low, high
+
+
+def _avg_candle_range_pct(rows):
+    values = []
+    for row in rows:
+        close = row.get("c")
+        if close and close > 0:
+            values.append(100.0 * (row["h"] - row["l"]) / close)
+    return sum(values) / len(values) if values else None
+
+
+def _compression_snapshot(rows):
+    current_n = max(3, COMPRESSION_HOURS)
+    prior_n = max(6, COMPRESSION_PRIOR_HOURS)
+    if len(rows) < current_n + prior_n:
+        return {"active": False}
+
+    current = rows[-current_n:]
+    prior = rows[-(current_n + prior_n):-current_n]
+    if len(current) < current_n or len(prior) < prior_n:
+        return {"active": False}
+
+    current_width, range_low, range_high = _range_width_pct(current)
+    prior_width, _, _ = _range_width_pct(prior)
+    current_candle = _avg_candle_range_pct(current)
+    prior_candle = _avg_candle_range_pct(prior)
+    if any(v is None or v <= 0 for v in (
+        current_width, prior_width, current_candle, prior_candle
+    )):
+        return {"active": False}
+
+    prior_start = prior[0]["c"]
+    prior_end = prior[-1]["c"]
+    if prior_start <= 0:
+        return {"active": False}
+    impulse_pct = 100.0 * (prior_end / prior_start - 1.0)
+    width_ratio = current_width / prior_width
+    candle_ratio = current_candle / prior_candle
+
+    active = (
+        abs(impulse_pct) >= COMPRESSION_MIN_IMPULSE_PCT
+        and current_width <= COMPRESSION_MAX_WIDTH_PCT
+        and width_ratio <= COMPRESSION_MAX_WIDTH_RATIO
+        and candle_ratio <= COMPRESSION_MAX_CANDLE_RATIO
+    )
+    strength = max(
+        0.0,
+        min(100.0, 100.0 * (1.0 - 0.5 * (width_ratio + candle_ratio))),
+    )
+    context = "POST_DROP" if impulse_pct < 0 else "POST_RISE"
+    return {
+        "active": bool(active),
+        "context": context,
+        "direction_hint": None,
+        "prior_move_pct": impulse_pct,
+        "range_low": range_low,
+        "range_high": range_high,
+        "range_width_pct": current_width,
+        "prior_range_width_pct": prior_width,
+        "width_ratio": width_ratio,
+        "candle_ratio": candle_ratio,
+        "strength": strength,
+        "hours": current_n,
+    }
+
+
 def _score_hourly(rows):
     if len(rows) < 25:
         return None
@@ -140,6 +222,8 @@ def _score_hourly(rows):
         elif signed < 0:
             signed -= 8.0
 
+    compression = _compression_snapshot(rows)
+
     signed = max(-100.0, min(100.0, signed))
     if signed >= 0:
         direction = "LONG"
@@ -155,6 +239,7 @@ def _score_hourly(rows):
         "lh_ll": lh_ll,
         "volume_ratio": volume_ratio,
         "last": last,
+        "compression": compression,
     }
 
 
@@ -225,6 +310,52 @@ def scan(tickers, max_refresh=None, top_n=None, now=None, request_get=None):
         ]
 
     rows.sort(key=lambda x: abs(x.get("signed_score", 0)), reverse=True)
+    return rows[:top_n]
+
+
+def compression_watches(tickers=None, top_n=None, now=None):
+    """Return active direction-neutral 1H compression watches from the scan cache.
+
+    This function performs no network requests. It only reads symbols already
+    refreshed by scan(), so early-warning coverage does not add REST load.
+    """
+    now = time.time() if now is None else float(now)
+    top_n = COMPRESSION_TOP_N if top_n is None else int(top_n)
+    if top_n <= 0:
+        return []
+
+    active = None
+    if tickers is not None:
+        active = set(
+            symbol for symbol in (_symbol_from_ticker(t) for t in (tickers or []))
+            if symbol
+        )
+
+    with _lock:
+        rows = []
+        for symbol, cached in _cache.items():
+            if active is not None and symbol not in active:
+                continue
+            if not (0 <= now - cached.get("updated_at", 0) <= CACHE_MAX_AGE_SEC):
+                continue
+            compression = cached.get("compression") or {}
+            if compression.get("active") is not True:
+                continue
+            rows.append({
+                "symbol": symbol,
+                "instId": cached.get("instId"),
+                "price": cached.get("price"),
+                "updated_at": cached.get("updated_at"),
+                **compression,
+            })
+
+    rows.sort(
+        key=lambda x: (
+            float(x.get("strength", 0)),
+            abs(float(x.get("prior_move_pct", 0))),
+        ),
+        reverse=True,
+    )
     return rows[:top_n]
 
 
