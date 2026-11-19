@@ -33,6 +33,17 @@ def _connect():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS swing_compression_alert_state (
+            symbol TEXT PRIMARY KEY,
+            range_low REAL NOT NULL,
+            range_high REAL NOT NULL,
+            strength REAL NOT NULL,
+            sent_at REAL NOT NULL
+        )
+        """
+    )
     cols={row[1] for row in conn.execute("PRAGMA table_info(swing_alert_state)")}
     if "entry_state" not in cols:
         conn.execute(
@@ -79,7 +90,72 @@ def mark_alert(symbol, bias, score, now=None, entry_state="UNKNOWN"):
             )
 
 
+def compression_alert_allowed(
+    symbol, range_low, range_high, strength, cooldown_sec, now=None
+):
+    now = time.time() if now is None else float(now)
+    low = float(range_low)
+    high = float(range_high)
+    strength = float(strength)
+    if low <= 0 or high <= low:
+        return False
+
+    with _LOCK:
+        with _connect() as conn:
+            row = conn.execute(
+                """
+                SELECT range_low, range_high, strength, sent_at
+                FROM swing_compression_alert_state
+                WHERE symbol=?
+                """,
+                (str(symbol),),
+            ).fetchone()
+    if row is None:
+        return True
+
+    old_low, old_high, old_strength, sent_at = map(float, row)
+    if now - sent_at >= int(cooldown_sec):
+        return True
+
+    low_shift = abs(low / old_low - 1.0) * 100.0 if old_low > 0 else 100.0
+    high_shift = abs(high / old_high - 1.0) * 100.0 if old_high > 0 else 100.0
+    if max(low_shift, high_shift) >= 1.0:
+        return True
+    if strength - old_strength >= 15.0:
+        return True
+    return False
+
+
+def mark_compression_alert(
+    symbol, range_low, range_high, strength, now=None
+):
+    now = time.time() if now is None else float(now)
+    with _LOCK:
+        with _connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO swing_compression_alert_state(
+                    symbol, range_low, range_high, strength, sent_at
+                )
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    range_low=excluded.range_low,
+                    range_high=excluded.range_high,
+                    strength=excluded.strength,
+                    sent_at=excluded.sent_at
+                """,
+                (
+                    str(symbol),
+                    float(range_low),
+                    float(range_high),
+                    float(strength),
+                    now,
+                ),
+            )
+
+
 def clear_state():
     with _LOCK:
         with _connect() as conn:
             conn.execute("DELETE FROM swing_alert_state")
+            conn.execute("DELETE FROM swing_compression_alert_state")
