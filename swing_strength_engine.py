@@ -172,6 +172,44 @@ def _entry_setup(candles,bias):
             "reason":"ждать 15м откат к рабочей зоне; цену не догонять"}
 
 
+def _trade_plan(candles,bias,entry_price):
+    """Structure-based paper plan for a confirmed SWING entry."""
+    entry=_num(entry_price)
+    if entry is None or entry<=0 or len(candles)<16:
+        return {"ready":False,"reason":"недостаточно 15м данных для SL/TP"}
+    atr=_atr(candles,14)
+    if atr is None or atr<=0:
+        return {"ready":False,"reason":"15м ATR не готов"}
+    recent=candles[-8:]
+    buffer=0.20*atr
+
+    if bias=="BULLISH":
+        stop=min(x["l"] for x in recent)-buffer
+        risk=entry-stop
+        side="LONG"
+    elif bias=="BEARISH":
+        stop=max(x["h"] for x in recent)+buffer
+        risk=stop-entry
+        side="SHORT"
+    else:
+        return {"ready":False,"reason":"нет SWING-направления"}
+
+    if risk<=0:
+        return {"ready":False,"reason":"структурный стоп оказался по неверную сторону входа"}
+    stop_pct=100.0*risk/entry
+    if stop_pct<0.25 or stop_pct>6.0:
+        return {"ready":False,"reason":f"структурный стоп {stop_pct:.2f}% вне рабочего диапазона"}
+
+    sign=1.0 if side=="LONG" else -1.0
+    return {
+        "ready":True,"side":side,"entry":entry,"stop":stop,
+        "stop_pct":stop_pct,
+        "tp1":entry+sign*2.0*risk,
+        "tp2":entry+sign*3.0*risk,
+        "rr1":2.0,"rr2":3.0,
+    }
+
+
 def _breakout_state(candles,bias):
     """Require a closed 1H structural breakout before retest/entry."""
     side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
@@ -367,6 +405,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol1,short_term)
         entry_setup=_entry_setup(c15,scored.get("bias"))
         breakout=_breakout_state(c60,scored.get("bias"))
+        trade_plan=_trade_plan(c15,scored.get("bias"),price)
         # Strong directional claims require complete higher-timeframe and OI evidence.
         evidence_ready=all(x.get("ready") for x in (t1,t4,td,oi1,oi4))
         if not evidence_ready:
@@ -379,6 +418,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
             "trend15":t15,"trend1h":t1,"trend4h":t4,"trend1d":td,
             "oi1h":oi1,"oi4h":oi4,"weekly_position_pct":weekly,
             "volume1h":vol1,"breakout":breakout,"entry_setup":entry_setup,
+            "trade_plan":trade_plan,
             **scored,
         }
     except Exception as exc:
@@ -580,6 +620,16 @@ def format_compact_report(result,short_verdict=None,live_ready=True):
         lines.append("🟡 Этап: SWING WATCH · Вход: ЖДАТЬ BREAKOUT — "+str(entry_reason)+".")
     else:
         lines.append("⛔ Вход: НЕ ВХОДИТЬ — состояние входа не определено.")
+
+    plan=result.get("trade_plan") or {}
+    if entry_state=="READY_ENTRY" and plan.get("ready"):
+        lines.append(
+            "План: Entry {0:.8g} · SL {1:.8g} ({2:.2f}%) · "
+            "TP1 {3:.8g} (2R) · TP2 {4:.8g} (3R)".format(
+                plan["entry"],plan["stop"],plan["stop_pct"],
+                plan["tp1"],plan["tp2"],
+            )
+        )
 
     if bias=="BULLISH":
         lines.append("Отмена SWING: слом 1H вниз; подтверждение отмены — 4H вниз.")
