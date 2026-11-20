@@ -571,13 +571,13 @@ def format_compact_report(result,short_verdict=None,live_ready=True):
     if entry_state in ("BLOCKED","WARMING"):
         lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(entry_reason)+".")
     elif entry_state=="READY_ENTRY":
-        lines.append("🟢 Этап: ENTRY · Вход ГОТОВ — "+str(entry_reason)+".")
+        lines.append("🟢 Этап: ENTRY · Вход: ГОТОВ — "+str(entry_reason)+".")
     elif entry_state=="RETEST":
-        lines.append("🟠 Этап: RETEST · ЖДЁМ подтверждение — "+str(entry_reason)+".")
+        lines.append("🟠 Этап: RETEST · Вход: ЖДАТЬ подтверждение — "+str(entry_reason)+".")
     elif entry_state=="WAIT_RETEST":
-        lines.append("🟡 Этап: BREAKOUT · ЖДАТЬ RETEST — "+str(entry_reason)+".")
+        lines.append("🟡 Этап: BREAKOUT · Вход: ЖДАТЬ RETEST — "+str(entry_reason)+".")
     elif entry_state=="WAIT_BREAKOUT":
-        lines.append("🟡 Этап: SWING WATCH · ЖДАТЬ BREAKOUT — "+str(entry_reason)+".")
+        lines.append("🟡 Этап: SWING WATCH · Вход: ЖДАТЬ BREAKOUT — "+str(entry_reason)+".")
     else:
         lines.append("⛔ Вход: НЕ ВХОДИТЬ — состояние входа не определено.")
 
