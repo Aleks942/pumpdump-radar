@@ -224,5 +224,22 @@ class SwingStrengthTests(unittest.TestCase):
         self.assertEqual(out["phase"],"BREAKOUT_CONFIRMED")
 
 
+    def test_trade_plan_uses_structure_and_rr(self):
+        candles=[]
+        for i in range(20):
+            close=100+i*0.15
+            candles.append({"ts":i*900,"o":close-0.05,"h":close+0.30,
+                            "l":close-0.30,"c":close,"v":100})
+        entry=candles[-1]["c"]
+        plan=s._trade_plan(candles,"BULLISH",entry)
+        self.assertTrue(plan["ready"])
+        self.assertLess(plan["stop"],entry)
+        self.assertGreater(plan["tp1"],entry)
+        self.assertGreater(plan["tp2"],plan["tp1"])
+        risk=entry-plan["stop"]
+        self.assertAlmostEqual(plan["tp1"]-entry,2*risk,places=6)
+        self.assertAlmostEqual(plan["tp2"]-entry,3*risk,places=6)
+
+
 if __name__=="__main__":
     unittest.main()
