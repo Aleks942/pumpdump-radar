@@ -63,6 +63,7 @@ from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
+from swing_result_tracker import register_entry as register_swing_entry, update_results as update_swing_results
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
     mark_alert as persistent_mark_swing_alert,
@@ -1814,6 +1815,19 @@ while True:
     
         except (TypeError, ValueError):
             continue
+
+    try:
+        for result_row in update_swing_results(current_prices):
+            print(
+                "[SWING_RESULT]",
+                result_row.get("symbol"),
+                "side=", result_row.get("side"),
+                "checkpoint_h=", result_row.get("checkpoint_h"),
+                "return_pct=", round(float(result_row.get("return_pct") or 0), 3),
+                flush=True,
+            )
+    except Exception as swing_result_exc:
+        print("[SWING_RESULT_ERROR]", type(swing_result_exc).__name__, flush=True)
     
     swing_candidates = []
     swing_stats = {
@@ -2005,6 +2019,29 @@ while True:
                 if sent is True:
                     swing_stats["sent"] += 1
                     _mark_swing_alert(symbol, bias, score, entry_state)
+                    if entry_state == "READY_ENTRY":
+                        try:
+                            registered = register_swing_entry(
+                                symbol,
+                                str(entry.get("side") or ""),
+                                result.get("price"),
+                                score,
+                            )
+                            print(
+                                "[SWING_ENTRY_TRACK]",
+                                symbol,
+                                "registered=", registered is True,
+                                "side=", entry.get("side"),
+                                "price=", result.get("price"),
+                                flush=True,
+                            )
+                        except Exception as track_exc:
+                            print(
+                                "[SWING_ENTRY_TRACK_ERROR]",
+                                symbol,
+                                type(track_exc).__name__,
+                                flush=True,
+                            )
                     print(
                         "[SWING_ALERT_SENT]",
                         symbol,
