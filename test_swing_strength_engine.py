@@ -170,6 +170,7 @@ class SwingStrengthTests(unittest.TestCase):
            "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
            "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
            "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":1.0},
+           "breakout":{"phase":"BREAKOUT_CONFIRMED","reason":"1H пробой подтверждён"},
            "entry_setup":{"phase":"WAIT_RETEST","reason":"ждать откат"},
            "reasons":["1H: структура вверх"],"risks":[]}
         decision=s.entry_decision(
@@ -184,6 +185,7 @@ class SwingStrengthTests(unittest.TestCase):
            "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
            "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
            "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":1.0},
+           "breakout":{"phase":"BREAKOUT_CONFIRMED","reason":"1H пробой подтверждён"},
            "entry_setup":{"phase":"READY_ENTRY","reason":"15м ретест подтверждён"},
            "reasons":["1H: структура вверх"],"risks":[]}
         decision=s.entry_decision(
@@ -195,6 +197,31 @@ class SwingStrengthTests(unittest.TestCase):
         ))
         self.assertIn("Вход: ГОТОВ",text)
 
+
+    def test_ready_entry_is_blocked_until_hourly_breakout(self):
+        r={"score":82,"bias":"BULLISH",
+           "price":100.0,"ticker":{"high24h":103.0,"low24h":90.0},
+           "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "breakout":{"phase":"WAIT_BREAKOUT","reason":"ждать закрытие 1H выше 101"},
+           "entry_setup":{"phase":"READY_ENTRY","reason":"15м ретест подтверждён"},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        decision=s.entry_decision(r,"🟡 НАБОР НОВЫХ ЛОНГОВ",live_ready=True)
+        self.assertEqual(decision["state"],"WAIT_BREAKOUT")
+
+    def test_breakout_state_long_requires_closed_hour_above_prior_range(self):
+        candles=[]
+        for i in range(8):
+            close=100+i*0.2
+            candles.append({"ts":i*3600,"o":close-0.1,"h":close+0.3,
+                            "l":close-0.3,"c":close})
+        prior_high=max(x["h"] for x in candles[-7:-1])
+        candles[-1]["o"]=prior_high-0.2
+        candles[-1]["h"]=prior_high+0.5
+        candles[-1]["c"]=prior_high+0.4
+        out=s._breakout_state(candles,"BULLISH")
+        self.assertTrue(out["ready"])
+        self.assertEqual(out["phase"],"BREAKOUT_CONFIRMED")
 
 
 if __name__=="__main__":
