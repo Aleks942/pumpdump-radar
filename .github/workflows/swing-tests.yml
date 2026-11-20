@@ -6,12 +6,14 @@ on:
       - 'main.py'
       - 'swing_market_scanner.py'
       - 'swing_strength_engine.py'
+      - 'swing_result_tracker.py'
       - 'swing_backtest.py'
       - 'swing_alert_state.py'
       - 'test_swing_alert_state.py'
       - 'telegram_manual_research.py'
       - 'test_swing_market_scanner.py'
       - 'test_swing_strength_engine.py'
+      - 'test_swing_result_tracker.py'
       - 'test_swing_backtest.py'
       - 'test_telegram_manual_research.py'
       - 'test_swing_research_gate.py'
@@ -43,12 +45,13 @@ jobs:
       - name: Install runtime dependencies
         run: pip install requests websocket-client
       - name: Compile primary scanner modules
-        run: python -m py_compile main.py swing_market_scanner.py swing_strength_engine.py
+        run: python -m py_compile main.py swing_market_scanner.py swing_strength_engine.py swing_result_tracker.py
       - name: Run SWING regression tests
         run: |
           python -m unittest -v \
             test_swing_market_scanner.py \
             test_swing_strength_engine.py \
+            test_swing_result_tracker.py \
             test_swing_backtest.py \
             test_swing_alert_state.py \
             test_telegram_manual_research.py
