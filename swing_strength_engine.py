@@ -15,6 +15,8 @@ BYBIT_BASE="https://api.bybit.com"
 CACHE_TTL_SEC=300
 _lock=threading.RLock()
 _cache={}
+_breakout_memory={}
+BREAKOUT_MEMORY_SEC=6*3600
 
 
 def _num(v):
@@ -210,10 +212,19 @@ def _trade_plan(candles,bias,entry_price):
     }
 
 
-def _breakout_state(candles,bias):
-    """Require a closed 1H structural breakout before retest/entry."""
+def _breakout_state(candles,bias,symbol=None,now=None):
+    """Require a closed 1H breakout and remember it while the retest develops.
+
+    Without lifecycle memory a valid breakout could disappear on the next
+    hourly candle, sending the setup back to WAIT_BREAKOUT exactly while the
+    retest was forming.
+    """
+    now=time.time() if now is None else float(now)
     side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
+    key=str(symbol or "").upper()
     if side is None:
+        if key:
+            _breakout_memory.pop(key,None)
         return {"ready":False,"phase":"WAIT_BREAKOUT","side":None,
                 "reason":"SWING-направление ещё не подтверждено"}
     if len(candles)<8:
@@ -228,27 +239,56 @@ def _breakout_state(candles,bias):
     if side=="LONG":
         confirmed=last["c"]>high and last["c"]>last["o"]
         level=high
-        reason=(
-            f"1H закрылась выше сопротивления {level:.8g}"
-            if confirmed else
-            f"ждать закрытие 1H выше сопротивления {level:.8g}"
-        )
     else:
         confirmed=last["c"]<low and last["c"]<last["o"]
         level=low
-        reason=(
-            f"1H закрылась ниже поддержки {level:.8g}"
-            if confirmed else
-            f"ждать закрытие 1H ниже поддержки {level:.8g}"
-        )
 
+    if confirmed:
+        if key:
+            _breakout_memory[key]={
+                "bias":bias,"side":side,"level":level,
+                "confirmed_at":float(last["ts"]),"expires_at":now+BREAKOUT_MEMORY_SEC,
+            }
+        reason=(
+            f"1H закрылась выше сопротивления {level:.8g}"
+            if side=="LONG" else
+            f"1H закрылась ниже поддержки {level:.8g}"
+        )
+        return {
+            "ready":True,"phase":"BREAKOUT_CONFIRMED","side":side,
+            "level":level,"closed_at":last["ts"],"reason":reason,
+        }
+
+    memory=_breakout_memory.get(key) if key else None
+    if memory and memory.get("bias")==bias and now<=float(memory.get("expires_at",0)):
+        remembered_level=_num(memory.get("level"))
+        atr=_atr(candles,14)
+        if remembered_level is not None and atr is not None and atr>0:
+            invalidated=(
+                last["c"] < remembered_level-0.60*atr
+                if side=="LONG" else
+                last["c"] > remembered_level+0.60*atr
+            )
+            if not invalidated:
+                return {
+                    "ready":True,"phase":"BREAKOUT_CONFIRMED","side":side,
+                    "level":remembered_level,
+                    "closed_at":memory.get("confirmed_at"),
+                    "remembered":True,
+                    "reason":(
+                        f"1H пробой {remembered_level:.8g} уже подтверждён; ждём/проверяем ретест"
+                    ),
+                }
+        _breakout_memory.pop(key,None)
+
+    reason=(
+        f"ждать закрытие 1H выше сопротивления {level:.8g}"
+        if side=="LONG" else
+        f"ждать закрытие 1H ниже поддержки {level:.8g}"
+    )
     return {
-        "ready":confirmed,
-        "phase":"BREAKOUT_CONFIRMED" if confirmed else "WAIT_BREAKOUT",
-        "side":side,
-        "level":level,
-        "closed_at":last["ts"],
-        "reason":reason,
+        "ready":False,"phase":"WAIT_BREAKOUT","side":side,
+        "level":level,"closed_at":last["ts"],"reason":reason,
     }
 
 
@@ -404,7 +444,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         vol1=_volume_state(c60)
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol1,short_term)
         entry_setup=_entry_setup(c15,scored.get("bias"))
-        breakout=_breakout_state(c60,scored.get("bias"))
+        breakout=_breakout_state(c60,scored.get("bias"),key,now)
         trade_plan=_trade_plan(c15,scored.get("bias"),price)
         # Strong directional claims require complete higher-timeframe and OI evidence.
         evidence_ready=all(x.get("ready") for x in (t1,t4,td,oi1,oi4))
@@ -485,8 +525,9 @@ def format_report(result):
     return lines
 
 
-def entry_decision(result,short_verdict=None,live_ready=True):
+def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
     """Truthful entry state; never changes the medium-term SWING bias."""
+
     if not isinstance(result,dict):
         return {"state":"BLOCKED","side":None,"reason":"нет среднесрочных данных"}
 
@@ -503,6 +544,29 @@ def entry_decision(result,short_verdict=None,live_ready=True):
         return {"state":"BLOCKED","side":None,"reason":"нет подтверждённого SWING-направления"}
     if not live_ready:
         return {"state":"WARMING","side":side,"reason":"5м данные ещё накапливаются; вход не разрешён"}
+
+    live_context=live_context or {}
+    spot_now=_num(live_context.get("spot_imbalance_pct"))
+    fut_now=_num(live_context.get("futures_imbalance_pct"))
+    price5_now=_num(live_context.get("price5_pct"))
+
+    # Opposite live order flow cannot flip the medium-term bias, but it must
+    # veto the actual entry. This prevents BULLISH/READY_ENTRY while spot is
+    # aggressively selling (and the symmetric SHORT contradiction).
+    if side=="LONG":
+        if spot_now is not None and spot_now<=-30:
+            return {"state":"BLOCKED","side":side,
+                    "reason":f"спот агрессивно продаёт ({spot_now:+.1f}%); LONG ждать до ослабления продаж"}
+        if fut_now is not None and fut_now<=-15 and (price5_now is None or price5_now<0.40):
+            return {"state":"BLOCKED","side":side,
+                    "reason":f"фьючерсный поток против LONG ({fut_now:+.1f}%); цена не подтверждает поглощение"}
+    elif side=="SHORT":
+        if spot_now is not None and spot_now>=30:
+            return {"state":"BLOCKED","side":side,
+                    "reason":f"спот агрессивно покупает ({spot_now:+.1f}%); SHORT ждать до ослабления покупок"}
+        if fut_now is not None and fut_now>=15 and (price5_now is None or price5_now>-0.40):
+            return {"state":"BLOCKED","side":side,
+                    "reason":f"фьючерсный поток против SHORT ({fut_now:+.1f}%); цена не подтверждает поглощение"}
 
     drop_from_high=(100*(1-price/high)) if price and high and high>0 else None
     rebound_from_low=(100*(price/low-1)) if price and low and low>0 else None
@@ -555,7 +619,7 @@ def entry_decision(result,short_verdict=None,live_ready=True):
             "reason":"1H пробой подтверждён; "+setup_reason}
 
 
-def format_compact_report(result,short_verdict=None,live_ready=True):
+def format_compact_report(result,short_verdict=None,live_ready=True,live_context=None):
     """Compact professional trader view: decision first, evidence second."""
     if not isinstance(result,dict):
         return ["⚪ Среднесрочный анализ недоступен."]
@@ -579,7 +643,7 @@ def format_compact_report(result,short_verdict=None,live_ready=True):
         f"{oi4:+.2f}%" if oi4 is not None else "н/д",
     )
 
-    entry=entry_decision(result,short_verdict,live_ready=live_ready)
+    entry=entry_decision(result,short_verdict,live_ready=live_ready,live_context=live_context)
     entry_state=entry.get("state")
     entry_side=entry.get("side")
     entry_reason=entry.get("reason")

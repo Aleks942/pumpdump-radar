@@ -386,6 +386,8 @@ def visual_market_state(symbol,current_price=None,now=None):
         "oi5_pct":_num(oi_agg.get("change_pct")) if oi_ready else None,
         "futures_imbalance_pct":_num(fut.get("imbalance_pct")) if flow_ready else None,
         "spot_imbalance_pct":_num(spot.get("cvd_percent")) if spot.get("available") else None,
+        "spot_state":str(spot.get("state") or "") if spot.get("available") else "",
+        "spot_available":spot.get("available") is True,
     }
 
 

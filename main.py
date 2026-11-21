@@ -89,7 +89,6 @@ from market_memory import (
     save_market_signal,
     update_market_memory,
     save_oi_snapshot,
-    load_recent_oi_history,
    
 )
 
@@ -138,8 +137,6 @@ ANTI_LATE_RETRACE_SHARE = float(os.getenv("ANTI_LATE_RETRACE_SHARE", 25.0))
 ANTI_LATE_OPPOSITE_1M = float(os.getenv("ANTI_LATE_OPPOSITE_1M", 0.25))
 
 symbol_states = {}
-OI_HISTORY = {}
-OI_TIME_HISTORY = {}
 signal_memory = {}
 _SWING_ALERT_STATE = {}
 
@@ -265,7 +262,6 @@ ENTRY_CHECKPOINTS = {
     1800: "30m",
 }
 
-print("[BOOT] OI_HISTORY CREATED")
 rotation_index = 0
 
 TIME_WINDOWS = {
@@ -1457,17 +1453,6 @@ if RESEARCH_PIPELINE_ENABLED:
     market_memory_healthcheck()
     print("========== HEALTH DONE ==========", flush=True)
 
-    restored_oi_history = load_recent_oi_history(limit=60)
-    if restored_oi_history:
-        OI_HISTORY.clear()
-        OI_HISTORY.update(restored_oi_history)
-
-    print(
-        "[OI_HISTORY_READY]",
-        "symbols=", len(OI_HISTORY),
-        "points=", sum(len(values) for values in OI_HISTORY.values()),
-        flush=True,
-    )
     test_binance()
     test_bybit()
 
@@ -1995,6 +1980,7 @@ while True:
                     result,
                     short_verdict=state_label,
                     live_ready=live_ready,
+                    live_context=visual_state,
                 )
                 entry_state = str(entry.get("state") or "UNKNOWN")
 
@@ -2013,6 +1999,7 @@ while True:
                         result,
                         short_verdict=state_label,
                         live_ready=live_ready,
+                        live_context=visual_state,
                     ),
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
@@ -2295,11 +2282,4 @@ while True:
             flush=True
         )
 
-    print(
-        "[OI_MEMORY]",
-        "symbols=",
-        len(OI_HISTORY),
-        flush=True
-    )
-    
     time.sleep(SCAN_SLEEP)

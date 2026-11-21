@@ -241,5 +241,52 @@ class SwingStrengthTests(unittest.TestCase):
         self.assertAlmostEqual(plan["tp2"]-entry,3*risk,places=6)
 
 
+    def test_strong_opposite_spot_blocks_long_entry_without_flipping_bias(self):
+        r={"score":88,"bias":"BULLISH",
+           "price":100.0,"ticker":{"high24h":103.0,"low24h":90.0},
+           "trend15":{"regime":"UP"},"trend1h":{"regime":"UP"},
+           "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
+           "breakout":{"phase":"BREAKOUT_CONFIRMED","reason":"1H пробой подтверждён"},
+           "entry_setup":{"phase":"READY_ENTRY","reason":"15м ретест подтверждён"},
+           "reasons":["1H: структура вверх"],"risks":[]}
+        decision=s.entry_decision(
+            r,"⚪ НАПРАВЛЕНИЕ ПОКА НЕ ПОДТВЕРЖДЕНО",live_ready=True,
+            live_context={"spot_imbalance_pct":-54.0,
+                          "futures_imbalance_pct":4.0,
+                          "price5_pct":0.1},
+        )
+        self.assertEqual(r["bias"],"BULLISH")
+        self.assertEqual(decision["state"],"BLOCKED")
+        self.assertIn("спот агрессивно продаёт",decision["reason"])
+
+
+    def test_breakout_memory_survives_normal_retest_candle(self):
+        s._breakout_memory.clear()
+        candles=[]
+        for i in range(19):
+            close=100.0+0.02*(i%3)
+            candles.append({"ts":i*3600,"o":close-0.05,"h":close+0.30,
+                            "l":close-0.30,"c":close,"v":100})
+        prior_high=max(x["h"] for x in candles[-6:])
+        breakout={"ts":19*3600,"o":prior_high-0.10,
+                  "h":prior_high+0.50,"l":prior_high-0.25,
+                  "c":prior_high+0.35,"v":160}
+        candles.append(breakout)
+        first=s._breakout_state(
+            candles,"BULLISH",symbol="TESTUSDT",now=20*3600
+        )
+        self.assertTrue(first["ready"])
+        level=first["level"]
+
+        candles.append({"ts":20*3600,"o":level+0.20,"h":level+0.35,
+                        "l":level-0.08,"c":level+0.05,"v":90})
+        second=s._breakout_state(
+            candles,"BULLISH",symbol="TESTUSDT",now=21*3600
+        )
+        self.assertTrue(second["ready"])
+        self.assertEqual(second["phase"],"BREAKOUT_CONFIRMED")
+        self.assertTrue(second.get("remembered"))
+
+
 if __name__=="__main__":
     unittest.main()
