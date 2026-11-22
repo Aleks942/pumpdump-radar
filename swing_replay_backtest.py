@@ -14,14 +14,99 @@ import math
 import statistics
 import time
 
-from swing_backtest import fetch_klines, fetch_oi_1h, _resample, _slice_before, _oi_change_at
+import requests
+
+from swing_backtest import _resample, _slice_before, _oi_change_at
 from swing_strength_engine import (
     _score, _trend, _volume_state, _entry_setup, _trade_plan, _breakout_state,
 )
 
-DEFAULT_DAYS=90
+DEFAULT_DAYS=30
 DEFAULT_SYMBOLS=("BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT",
                  "ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT","APTUSDT")
+
+
+OKX_BASE="https://www.okx.com/api/v5"
+
+
+def _okx_get(path,params=None,request_get=None):
+    getter=request_get or requests.get
+    r=getter(OKX_BASE+path,params=params,timeout=15)
+    r.raise_for_status()
+    data=r.json()
+    if not isinstance(data,dict) or str(data.get("code"))!="0":
+        raise RuntimeError("OKX_API")
+    rows=data.get("data") or []
+    if not isinstance(rows,list):
+        raise RuntimeError("OKX_SCHEMA")
+    return rows
+
+
+def fetch_okx_klines(symbol,bar,start_ms,end_ms,request_get=None):
+    """Historical closed OKX SWAP candles, oldest -> newest."""
+    inst=symbol[:-4]+"-USDT-SWAP"
+    out={}
+    cursor=int(end_ms)
+    loops=0
+    while cursor>start_ms and loops<300:
+        loops+=1
+        rows=_okx_get("/market/history-candles",{
+            "instId":inst,"bar":bar,"after":str(cursor),"limit":"300"
+        },request_get)
+        if not rows:
+            break
+        oldest=None
+        for row in rows:
+            if not isinstance(row,list) or len(row)<9 or str(row[8])!="1":
+                continue
+            ts=int(float(row[0]))
+            if not (start_ms<=ts<=end_ms):
+                continue
+            o=float(row[1]); h=float(row[2]); l=float(row[3]); close=float(row[4]); v=float(row[5])
+            if min(o,h,l,close)<=0 or v<0 or not l<=min(o,close)<=max(o,close)<=h:
+                continue
+            out[ts]={"ts":ts/1000.0,"o":o,"h":h,"l":l,"c":close,"v":v}
+            oldest=ts if oldest is None else min(oldest,ts)
+        if oldest is None or oldest<=start_ms:
+            break
+        if oldest>=cursor:
+            break
+        cursor=oldest
+        time.sleep(0.06)
+    return [out[k] for k in sorted(out)]
+
+
+def fetch_okx_oi_1h(symbol,start_ms,end_ms,request_get=None):
+    """OKX contract OI history: [ts, oi, oiCcy, oiUsd], oldest -> newest."""
+    inst=symbol[:-4]+"-USDT-SWAP"
+    out={}
+    cursor=int(end_ms)
+    loops=0
+    while cursor>start_ms and loops<30:
+        loops+=1
+        rows=_okx_get("/rubik/stat/contracts/open-interest-history",{
+            "instId":inst,"period":"1H","end":str(cursor),"limit":"100"
+        },request_get)
+        if not rows:
+            break
+        oldest=None
+        for row in rows:
+            if not isinstance(row,list) or len(row)<4:
+                continue
+            ts=int(float(row[0]))
+            oi_ccy=_num(row[2])
+            if oi_ccy is None or oi_ccy<=0:
+                continue
+            if start_ms<=ts<=end_ms:
+                out[ts]=oi_ccy
+                oldest=ts if oldest is None else min(oldest,ts)
+        if oldest is None or oldest<=start_ms:
+            break
+        if oldest>=cursor:
+            break
+        cursor=oldest
+        time.sleep(0.22)
+    return [(k/1000.0,out[k]) for k in sorted(out)]
 
 
 def _num(v):
@@ -179,13 +264,16 @@ def summarize(trades):
 
 def backtest_symbol(symbol,days=DEFAULT_DAYS,now=None):
     now=time.time() if now is None else float(now)
-    start_ms=int((now-(days+40)*86400)*1000)
+    # OKX 1H OI exposes ~60 days (1440 points). Keep enough warm-up
+    # for 1D trend while reserving 30 days for evaluation.
+    warmup_days=30
+    start_ms=int((now-(days+warmup_days)*86400)*1000)
     end_ms=int(now*1000)
-    c15=fetch_klines(symbol,"15",start_ms,end_ms)
-    c1=fetch_klines(symbol,"60",start_ms,end_ms)
+    c15=fetch_okx_klines(symbol,"15m",start_ms,end_ms)
+    c1=fetch_okx_klines(symbol,"1H",start_ms,end_ms)
     c15=[x for x in c15 if x["ts"]+900<=now]
     c1=[x for x in c1 if x["ts"]+3600<=now]
-    oi=fetch_oi_1h(symbol,start_ms,end_ms)
+    oi=fetch_okx_oi_1h(symbol,start_ms,end_ms)
 
     cutoff=now-days*86400
     events=build_ready_entries(symbol,c15,c1,oi)
@@ -203,8 +291,8 @@ def main():
     p.add_argument("--days",type=int,default=DEFAULT_DAYS)
     p.add_argument("--trades",action="store_true")
     args=p.parse_args()
-    if not 30<=args.days<=365:
-        p.error("days must be 30..365")
+    if not 15<=args.days<=30:
+        p.error("days must be 15..30 for free OKX 1H OI history")
 
     reports=[]; combined=[]; now=time.time()
     for raw in args.symbols:
@@ -223,7 +311,7 @@ def main():
         "combined":summarize(combined),
         "limitations":[
             "Historical replay excludes live-only Spot CVD, futures taker-flow and liquidations.",
-            "Bybit historical OI is used for 1H/4H confirmation.",
+            "OKX USDT-SWAP candles and contract OI history are used for the replay.",
             "Entry is next 15m open after a closed READY_ENTRY candle.",
             "If stop and target touch the same 15m candle, stop is assumed first."
         ]
