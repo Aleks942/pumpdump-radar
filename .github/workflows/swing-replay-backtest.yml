@@ -20,10 +20,10 @@ jobs:
       - run: pip install requests
       - name: Replay unit tests
         run: python -m unittest -v test_swing_replay_backtest.py test_swing_backtest.py test_swing_strength_engine.py
-      - name: Historical 20-day smoke replay
+      - name: Historical 30-day replay
         run: |
           python swing_replay_backtest.py             BTCUSDT ETHUSDT SOLUSDT XRPUSDT DOGEUSDT             ADAUSDT LINKUSDT AVAXUSDT SUIUSDT APTUSDT             --days 30 > swing_replay_30d.json
       - uses: actions/upload-artifact@v4
         with:
-          name: swing-current-replay-20d
-          path: swing_replay_20d.json
+          name: swing-current-replay-30d
+          path: swing_replay_30d.json
