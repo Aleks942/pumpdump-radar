@@ -293,17 +293,21 @@ def select_nonoverlapping_active_entries(events,c15,max_hours=MAX_HOURS):
 def summarize(trades):
     if not trades:
         return {"n":0,"status":"INSUFFICIENT_DATA"}
-    rs=[float(x["r"]) for x in trades]
+    net=[float(x["r"]) for x in trades]
+    gross=[float(x["gross_r"]) for x in trades]
     return {
         "n":len(trades),
-        "wins":sum(x>0 for x in rs),
-        "losses":sum(x<0 for x in rs),
-        "win_rate_pct":round(100*sum(x>0 for x in rs)/len(rs),2),
-        "expectancy_r":round(statistics.fmean(rs),3),
-        "median_r":round(statistics.median(rs),3),
-        "tp1_or_better":sum(x.get("tp1_hit") for x in trades),
+        "wins_net":sum(x>0 for x in net),
+        "losses_net":sum(x<0 for x in net),
+        "win_rate_pct_net":round(100*sum(x>0 for x in net)/len(net),2),
+        "expectancy_r_net":round(statistics.fmean(net),3),
+        "expectancy_r_gross":round(statistics.fmean(gross),3),
+        "median_r_net":round(statistics.median(net),3),
+        "tp1_touched":sum(x.get("tp1_hit") for x in trades),
         "tp2":sum(x.get("tp2_hit") for x in trades),
         "stops":sum(x.get("stop_hit") for x in trades),
+        "time_exits":sum(x.get("reason")=="TIME" for x in trades),
+        "modeled_round_trip_cost_pct":MODELED_ROUND_TRIP_COST_PCT,
     }
 
 
@@ -323,11 +327,11 @@ def backtest_symbol(symbol,days=DEFAULT_DAYS,now=None):
     cutoff=now-days*86400
     events=build_ready_entries(symbol,c15,c1,oi)
     events=[x for x in events if x["entry_ts"]>=cutoff]
-    trades=[simulate_trade(e,c15,72) for e in events]
-    trades=[x for x in trades if x is not None]
+    trades=select_nonoverlapping_active_entries(events,c15,MAX_HOURS)
     return {"symbol":symbol,"days":days,"candles15":len(c15),
             "candles1h":len(c1),"oi_points":len(oi),
-            "ready_entries":len(events),"stats":summarize(trades),"trades":trades}
+            "ready_candidates":len(events),"sampled_trades":len(trades),
+            "stats":summarize(trades),"trades":trades}
 
 
 def main():
@@ -358,7 +362,7 @@ def main():
             "Historical replay excludes live-only Spot CVD, futures taker-flow and liquidations.",
             "OKX USDT-SWAP candles and contract OI history are used for the replay.",
             "Entry is next 15m open after a closed READY_ENTRY candle.",
-            "If stop and target touch the same 15m candle, stop is assumed first."
+            "If stop and target touch the same 15m candle, stop is assumed first.",\n            "TP1 is a milestone only; only STOP/TP2 are terminal before the 72h time exit.",\n            "Results model 0.25% round-trip cost/slippage and report net R."
         ]
     },ensure_ascii=False,indent=2))
 
