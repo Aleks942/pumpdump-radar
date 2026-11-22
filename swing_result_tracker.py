@@ -14,6 +14,7 @@ import time
 
 CHECKPOINTS_H = (1, 4, 12, 24, 72)
 ACTIVE_TTL_SEC = 72 * 3600
+VALIDATION_VERSION = "swing-final-2026-11-22"
 
 
 def _db_path():
@@ -45,6 +46,8 @@ def _conn():
     for name in ("stop","tp1","tp2"):
         if name not in cols:
             db.execute(f"ALTER TABLE swing_entries ADD COLUMN {name} REAL")
+    if "strategy_version" not in cols:
+        db.execute("ALTER TABLE swing_entries ADD COLUMN strategy_version TEXT")
 
     db.execute(
         """CREATE TABLE IF NOT EXISTS swing_results(
@@ -78,7 +81,7 @@ def _num(v):
         return None
 
 
-def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None):
+def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None, strategy_version=VALIDATION_VERSION):
     now = time.time() if now is None else float(now)
     price=_num(entry_price)
     try:
@@ -107,19 +110,19 @@ def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None):
         # A READY_ENTRY can persist for many scans. Count one active setup only.
         active_since=now-ACTIVE_TTL_SEC
         existing=db.execute(
-            "SELECT id FROM swing_entries WHERE symbol=? AND side=? AND entry_at>=? "
+            "SELECT id FROM swing_entries WHERE symbol=? AND side=? AND entry_at>=? AND strategy_version=? "
             "AND NOT EXISTS (SELECT 1 FROM swing_events e "
             "WHERE e.entry_id=swing_entries.id AND e.event_type IN ('STOP','TP2')) "
             "ORDER BY entry_at DESC LIMIT 1",
-            (symbol,side,active_since),
+            (symbol,side,active_since,strategy_version),
         ).fetchone()
         if existing:
             return False
 
         db.execute(
-            "INSERT INTO swing_entries(symbol,side,entry_price,entry_at,score,stop,tp1,tp2) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (symbol,side,price,now,score,stop,tp1,tp2),
+            "INSERT INTO swing_entries(symbol,side,entry_price,entry_at,score,stop,tp1,tp2,strategy_version) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (symbol,side,price,now,score,stop,tp1,tp2,strategy_version),
         )
         db.commit()
         return True
