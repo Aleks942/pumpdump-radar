@@ -362,7 +362,9 @@ def main():
             "Historical replay excludes live-only Spot CVD, futures taker-flow and liquidations.",
             "OKX USDT-SWAP candles and contract OI history are used for the replay.",
             "Entry is next 15m open after a closed READY_ENTRY candle.",
-            "If stop and target touch the same 15m candle, stop is assumed first.",\n            "TP1 is a milestone only; only STOP/TP2 are terminal before the 72h time exit.",\n            "Results model 0.25% round-trip cost/slippage and report net R."
+            "If stop and target touch the same 15m candle, stop is assumed first.",
+            "TP1 is a milestone only; only STOP/TP2 are terminal before the 72h time exit.",
+            "Results model 0.25% round-trip cost/slippage and report net R."
         ]
     },ensure_ascii=False,indent=2))
 
