@@ -39,6 +39,17 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(event["entry_ts"],81*900)
         self.assertEqual(event["entry"],rows[81]["o"])
 
+    def test_unfinished_hour_is_not_visible_to_15m_decision(self):
+        rows=[
+            {"ts":0.0,"o":100,"h":101,"l":99,"c":100.5,"v":1},
+            {"ts":3600.0,"o":100.5,"h":150,"l":50,"c":140,"v":1},
+        ]
+        visible=r._closed_raw_before(rows,3600+900,3600,80)
+        self.assertEqual(len(visible),1)
+        self.assertEqual(visible[0]["ts"],0.0)
+        visible_at_close=r._closed_raw_before(rows,7200,3600,80)
+        self.assertEqual(len(visible_at_close),2)
+
     def test_same_candle_stop_wins_over_targets(self):
         event={"symbol":"TESTUSDT","entry_ts":0.0,"direction":"LONG",
                "score":80,"entry":100.0,"stop":98.0,"tp1":104.0,"tp2":106.0,
