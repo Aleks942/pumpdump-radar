@@ -212,6 +212,52 @@ def _trade_plan(candles,bias,entry_price):
     }
 
 
+def _recent_breakout_from_candles(candles,bias,now):
+    """Reconstruct a still-valid breakout from closed 1H candles.
+
+    This makes the lifecycle restart-safe: Railway process memory can vanish,
+    but the market structure in recent closed candles remains the source of truth.
+    """
+    side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
+    if side is None or len(candles)<8:
+        return None
+    atr=_atr(candles,14)
+    if atr is None or atr<=0:
+        return None
+
+    for i in range(len(candles)-1,5,-1):
+        row=candles[i]
+        closed_at=float(row["ts"])+3600.0
+        age=now-closed_at
+        if age<0:
+            continue
+        if age>BREAKOUT_MEMORY_SEC:
+            break
+        prior=candles[i-6:i]
+        high=max(x["h"] for x in prior)
+        low=min(x["l"] for x in prior)
+        if side=="LONG":
+            confirmed=row["c"]>high and row["c"]>row["o"]
+            level=high
+            invalidated=any(
+                x["c"] < level-0.60*atr for x in candles[i+1:]
+            )
+        else:
+            confirmed=row["c"]<low and row["c"]<row["o"]
+            level=low
+            invalidated=any(
+                x["c"] > level+0.60*atr for x in candles[i+1:]
+            )
+        if confirmed and not invalidated:
+            return {
+                "bias":bias,"side":side,"level":level,
+                "confirmed_at":float(row["ts"]),
+                "expires_at":closed_at+BREAKOUT_MEMORY_SEC,
+                "reconstructed":True,
+            }
+    return None
+
+
 def _breakout_state(candles,bias,symbol=None,now=None):
     """Require a closed 1H breakout and remember it while the retest develops.
 
@@ -260,6 +306,10 @@ def _breakout_state(candles,bias,symbol=None,now=None):
         }
 
     memory=_breakout_memory.get(key) if key else None
+    if not memory:
+        memory=_recent_breakout_from_candles(candles,bias,now)
+        if memory and key:
+            _breakout_memory[key]=dict(memory)
     if memory and memory.get("bias")==bias and now<=float(memory.get("expires_at",0)):
         remembered_level=_num(memory.get("level"))
         atr=_atr(candles,14)
@@ -428,7 +478,18 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         with _lock:
             cached=_cache.get(key)
             if cached and 0<=now-cached["at"]<=CACHE_TTL_SEC:
-                return dict(cached["value"])
+                value=dict(cached["value"])
+                fresh=_num(current_price)
+                plan_c15=value.get("_plan_c15") or []
+                if fresh is not None and fresh>0:
+                    value["price"]=fresh
+                    ticker_copy=dict(value.get("ticker") or {})
+                    ticker_copy["last"]=fresh
+                    value["ticker"]=ticker_copy
+                    value["trade_plan"]=_trade_plan(
+                        plan_c15,value.get("bias"),fresh
+                    )
+                return value
 
     try:
         ticker=_ticker(key,request_get)
@@ -459,6 +520,7 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
             "oi1h":oi1,"oi4h":oi4,"weekly_position_pct":weekly,
             "volume1h":vol1,"breakout":breakout,"entry_setup":entry_setup,
             "trade_plan":trade_plan,
+            "_plan_c15":c15[-20:],
             **scored,
         }
     except Exception as exc:
