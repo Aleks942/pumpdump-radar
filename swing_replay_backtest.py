@@ -117,8 +117,16 @@ def _num(v):
         return None
 
 
+def _closed_raw_before(rows,ts,sec,limit=None):
+    """Raw exchange bars are usable only after their full interval closes."""
+    data=[x for x in rows if float(x["ts"])+sec<=ts]
+    return data[-limit:] if limit else data
+
+
 def _score_at(c1,c4,cd,oi_rows,ts):
-    h1=_slice_before(c1,ts,80)
+    # Raw 1H rows carry their OPEN timestamp, unlike resampled bars that
+    # have end_ts. Never expose the current unfinished hour to a 15m decision.
+    h1=_closed_raw_before(c1,ts,3600,80)
     h4=_slice_before(c4,ts,80)
     d1=_slice_before(cd,ts,40)
     if len(h1)<25 or len(h4)<25 or len(d1)<25:
