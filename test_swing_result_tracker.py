@@ -75,6 +75,23 @@ class SwingResultTrackerTests(unittest.TestCase):
         self.assertEqual(events[0]["event_type"],"STOP")
         self.assertEqual(events[0]["r_multiple"],-1.0)
 
+    def test_old_strategy_version_does_not_block_final_cohort(self):
+        now=1_700_000_000
+        plan={"ready":True,"stop":98,"tp1":104,"tp2":106}
+        self.assertTrue(
+            s.register_entry(
+                "AAAUSDT","LONG",100,82,now,trade_plan=plan,
+                strategy_version="legacy"
+            )
+        )
+        self.assertTrue(
+            s.register_entry(
+                "AAAUSDT","LONG",100.2,83,now+60,trade_plan={
+                    "ready":True,"stop":98.2,"tp1":104.2,"tp2":106.2
+                }
+            )
+        )
+
     def test_invalid_trade_plan_is_rejected(self):
         now=1_700_000_000
         bad={"ready":True,"stop":101,"tp1":104,"tp2":106}
