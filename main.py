@@ -1908,7 +1908,26 @@ while True:
                 symbol = candidate.get("symbol")
                 if not symbol:
                     continue
-                result = analyze_swing_strength(symbol)
+                live_price = None
+                inst_id = candidate.get("instId")
+                if inst_id:
+                    for row in tickers:
+                        if row.get("instId") == inst_id:
+                            try:
+                                live_price = float(row.get("last"))
+                            except (TypeError, ValueError):
+                                live_price = None
+                            break
+                if not live_price or live_price <= 0:
+                    try:
+                        live_price = float(candidate.get("price"))
+                    except (TypeError, ValueError):
+                        live_price = None
+
+                result = analyze_swing_strength(
+                    symbol,
+                    current_price=live_price,
+                )
                 if not result.get("ready"):
                     swing_stats["not_ready"] += 1
                     if SWING_VERBOSE_LOGS:
