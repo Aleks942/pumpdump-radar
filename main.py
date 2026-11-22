@@ -1803,14 +1803,25 @@ while True:
 
     try:
         for result_row in update_swing_results(current_prices):
-            print(
-                "[SWING_RESULT]",
-                result_row.get("symbol"),
-                "side=", result_row.get("side"),
-                "checkpoint_h=", result_row.get("checkpoint_h"),
-                "return_pct=", round(float(result_row.get("return_pct") or 0), 3),
-                flush=True,
-            )
+            if result_row.get("kind") == "EVENT":
+                print(
+                    "[SWING_PLAN_EVENT]",
+                    result_row.get("symbol"),
+                    "side=", result_row.get("side"),
+                    "event=", result_row.get("event_type"),
+                    "R=", result_row.get("r_multiple"),
+                    "price=", result_row.get("price"),
+                    flush=True,
+                )
+            else:
+                print(
+                    "[SWING_RESULT]",
+                    result_row.get("symbol"),
+                    "side=", result_row.get("side"),
+                    "checkpoint_h=", result_row.get("checkpoint_h"),
+                    "return_pct=", round(float(result_row.get("return_pct") or 0), 3),
+                    flush=True,
+                )
     except Exception as swing_result_exc:
         print("[SWING_RESULT_ERROR]", type(swing_result_exc).__name__, flush=True)
     
@@ -2032,6 +2043,7 @@ while True:
                                 str(entry.get("side") or ""),
                                 result.get("price"),
                                 score,
+                                trade_plan=result.get("trade_plan"),
                             )
                             print(
                                 "[SWING_ENTRY_TRACK]",
