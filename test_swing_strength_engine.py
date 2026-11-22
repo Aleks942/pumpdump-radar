@@ -288,5 +288,60 @@ class SwingStrengthTests(unittest.TestCase):
         self.assertTrue(second.get("remembered"))
 
 
+    def test_breakout_reconstructs_after_process_memory_loss(self):
+        s._breakout_memory.clear()
+        candles=[]
+        for i in range(19):
+            close=100.0+0.02*(i%3)
+            candles.append({"ts":i*3600,"o":close-0.05,"h":close+0.30,
+                            "l":close-0.30,"c":close,"v":100})
+        prior_high=max(x["h"] for x in candles[-6:])
+        candles.append({"ts":19*3600,"o":prior_high-0.10,
+                        "h":prior_high+0.50,"l":prior_high-0.25,
+                        "c":prior_high+0.35,"v":160})
+        first=s._breakout_state(
+            candles,"BULLISH",symbol="RESTARTUSDT",now=20*3600
+        )
+        self.assertTrue(first["ready"])
+        level=first["level"]
+
+        candles.append({"ts":20*3600,"o":level+0.20,"h":level+0.35,
+                        "l":level-0.08,"c":level+0.05,"v":90})
+        s._breakout_memory.clear()  # simulate Railway restart
+        second=s._breakout_state(
+            candles,"BULLISH",symbol="RESTARTUSDT",now=21*3600+30
+        )
+        self.assertTrue(second["ready"])
+        self.assertEqual(second["phase"],"BREAKOUT_CONFIRMED")
+        self.assertTrue(second.get("remembered"))
+
+
+    def test_cached_analysis_reprices_trade_plan_with_current_quote(self):
+        s._cache.clear()
+        candles=[]
+        for i in range(20):
+            close=100+i*0.15
+            candles.append({"ts":i*900,"o":close-0.05,"h":close+0.30,
+                            "l":close-0.30,"c":close,"v":100})
+        original_price=102.85
+        original_plan=s._trade_plan(candles,"BULLISH",original_price)
+        cached={
+            "ready":True,"symbol":"CACHEUSDT","price":original_price,
+            "ticker":{"last":original_price},"bias":"BULLISH","score":82,
+            "trade_plan":original_plan,"_plan_c15":candles,
+        }
+        s._cache["CACHEUSDT"]={"at":1000.0,"value":cached}
+        out=s.analyze(
+            "CACHEUSDT",current_price=103.20,now=1100.0,use_cache=True
+        )
+        self.assertEqual(out["price"],103.20)
+        self.assertEqual(out["ticker"]["last"],103.20)
+        self.assertTrue(out["trade_plan"]["ready"])
+        self.assertEqual(out["trade_plan"]["entry"],103.20)
+        self.assertNotEqual(
+            out["trade_plan"]["tp1"],original_plan["tp1"]
+        )
+
+
 if __name__=="__main__":
     unittest.main()
