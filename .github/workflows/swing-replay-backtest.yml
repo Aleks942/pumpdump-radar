@@ -1,0 +1,29 @@
+name: Current SWING historical replay
+
+on:
+  push:
+    paths:
+      - 'swing_replay_backtest.py'
+      - 'test_swing_replay_backtest.py'
+      - '.github/workflows/swing-replay-backtest.yml'
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install requests
+      - name: Replay unit tests
+        run: python -m unittest -v test_swing_replay_backtest.py test_swing_backtest.py test_swing_strength_engine.py
+      - name: Historical 90-day replay
+        run: |
+          python swing_replay_backtest.py             BTCUSDT ETHUSDT SOLUSDT XRPUSDT DOGEUSDT             ADAUSDT LINKUSDT AVAXUSDT SUIUSDT APTUSDT             --days 90 > swing_replay_90d.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swing-current-replay-90d
+          path: swing_replay_90d.json
