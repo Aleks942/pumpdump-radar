@@ -57,7 +57,7 @@ class ReplayTests(unittest.TestCase):
         rows=[{"ts":0.0,"o":100,"h":107,"l":97,"c":105,"v":1}]
         out=r.simulate_trade(event,rows,max_hours=1)
         self.assertEqual(out["reason"],"STOP")
-        self.assertEqual(out["r"],-1.0)
+        self.assertAlmostEqual(out["r"],-1.125,places=6)
 
     def test_tp2_records_three_r(self):
         event={"symbol":"TESTUSDT","entry_ts":0.0,"direction":"SHORT",
@@ -69,16 +69,41 @@ class ReplayTests(unittest.TestCase):
         ]
         out=r.simulate_trade(event,rows,max_hours=1)
         self.assertEqual(out["reason"],"TP2")
-        self.assertEqual(out["r"],3.0)
+        self.assertAlmostEqual(out["r"],2.875,places=6)
         self.assertTrue(out["tp1_hit"])
         self.assertTrue(out["tp2_hit"])
 
+    def test_tp1_is_milestone_not_terminal_exit(self):
+        event={"symbol":"TESTUSDT","entry_ts":0.0,"direction":"LONG",
+               "score":80,"entry":100.0,"stop":98.0,"tp1":104.0,"tp2":106.0,
+               "stop_pct":2.0}
+        rows=[]
+        for i in range(4):
+            rows.append({"ts":float(i*900),"o":100,"h":104.5 if i==0 else 103,
+                         "l":99,"c":101,"v":1})
+        out=r.simulate_trade(event,rows,max_hours=1)
+        self.assertEqual(out["reason"],"TIME")
+        self.assertTrue(out["tp1_hit"])
+        self.assertFalse(out["tp2_hit"])
+        self.assertLess(out["gross_r"],2.0)
+
+    def test_active_entry_dedup_waits_for_terminal_or_horizon(self):
+        base={"symbol":"TESTUSDT","direction":"LONG","score":80,"entry":100.0,
+              "stop":98.0,"tp1":104.0,"tp2":106.0,"stop_pct":2.0}
+        events=[dict(base,entry_ts=0.0),dict(base,entry_ts=1800.0)]
+        rows=[]
+        for i in range(288):
+            rows.append({"ts":float(i*900),"o":100,"h":101,"l":99,"c":100,"v":1})
+        trades=r.select_nonoverlapping_active_entries(events,rows,max_hours=72)
+        self.assertEqual(len(trades),1)
+
     def test_summary_expectancy_in_r(self):
-        trades=[{"r":3,"tp1_hit":True,"tp2_hit":True,"stop_hit":False},
-                {"r":-1,"tp1_hit":False,"tp2_hit":False,"stop_hit":True}]
+        trades=[{"r":2.8,"gross_r":3.0,"tp1_hit":True,"tp2_hit":True,"stop_hit":False,"reason":"TP2"},
+                {"r":-1.2,"gross_r":-1.0,"tp1_hit":False,"tp2_hit":False,"stop_hit":True,"reason":"STOP"}]
         s=r.summarize(trades)
         self.assertEqual(s["n"],2)
-        self.assertEqual(s["expectancy_r"],1.0)
+        self.assertEqual(s["expectancy_r_net"],0.8)
+        self.assertEqual(s["expectancy_r_gross"],1.0)
 
 
 if __name__=="__main__":
