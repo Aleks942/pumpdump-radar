@@ -2,7 +2,7 @@
 
 Uses only historically reproducible data:
 - 15m/1H/4H/1D price/volume structure
-- Bybit 1H open interest
+- OKX 1H open interest
 - current breakout/retest/trade-plan logic
 
 Live-only Spot CVD / futures taker flow / liquidations are intentionally excluded.
@@ -22,6 +22,8 @@ from swing_strength_engine import (
 )
 
 DEFAULT_DAYS=30
+MODELED_ROUND_TRIP_COST_PCT=0.25
+MAX_HOURS=72
 DEFAULT_SYMBOLS=("BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT",
                  "ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT","APTUSDT")
 
@@ -158,7 +160,6 @@ def build_ready_entries(symbol,c15,c1,oi_rows):
     c4=_resample(c1,4)
     cd=_resample(c1,24)
     out=[]
-    last_entry_ts={"LONG":None,"SHORT":None}
 
     import swing_strength_engine as engine
     engine._breakout_memory.pop(symbol,None)
@@ -194,10 +195,6 @@ def build_ready_entries(symbol,c15,c1,oi_rows):
         if plan.get("ready") is not True:
             continue
 
-        prior=last_entry_ts.get(side)
-        if prior is not None and decision_ts-prior<6*3600:
-            continue
-        last_entry_ts[side]=decision_ts
         out.append({
             "symbol":symbol,"decision_ts":decision_ts,"entry_ts":nxt["ts"],
             "direction":side,"score":int(scored["score"]),
