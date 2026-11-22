@@ -204,7 +204,8 @@ def build_ready_entries(symbol,c15,c1,oi_rows):
     return out
 
 
-def simulate_trade(event,c15,max_hours=72):
+def simulate_trade(event,c15,max_hours=MAX_HOURS,
+                   cost_pct=MODELED_ROUND_TRIP_COST_PCT):
     start=float(event["entry_ts"])
     end=start+max_hours*3600
     path=[x for x in c15 if start<=x["ts"]<end]
@@ -214,41 +215,80 @@ def simulate_trade(event,c15,max_hours=72):
     side=event["direction"]
     stop=float(event["stop"]); tp1=float(event["tp1"]); tp2=float(event["tp2"])
     entry=float(event["entry"])
+    stop_pct=float(event.get("stop_pct") or 0)
+    if stop_pct<=0:
+        return None
     tp1_at=None; tp2_at=None; stop_at=None
+    terminal=None
 
-    for c in path:
+    for candle in path:
         if side=="LONG":
-            stop_hit=c["l"]<=stop; tp1_hit=c["h"]>=tp1; tp2_hit=c["h"]>=tp2
+            stop_hit=candle["l"]<=stop
+            tp1_hit=candle["h"]>=tp1
+            tp2_hit=candle["h"]>=tp2
         else:
-            stop_hit=c["h"]>=stop; tp1_hit=c["l"]<=tp1; tp2_hit=c["l"]<=tp2
+            stop_hit=candle["h"]>=stop
+            tp1_hit=candle["l"]<=tp1
+            tp2_hit=candle["l"]<=tp2
         if stop_hit:
-            stop_at=c["ts"]+900
+            stop_at=candle["ts"]+900
+            terminal=("STOP",-1.0,stop_at)
             break
         if tp1_at is None and tp1_hit:
-            tp1_at=c["ts"]+900
+            tp1_at=candle["ts"]+900
         if tp2_at is None and tp2_hit:
-            tp2_at=c["ts"]+900
+            tp2_at=candle["ts"]+900
+            terminal=("TP2",3.0,tp2_at)
             break
 
-    if stop_at is not None:
-        r=-1.0; reason="STOP"; exit_ts=stop_at
-    elif tp2_at is not None:
-        r=3.0; reason="TP2"; exit_ts=tp2_at
-    elif tp1_at is not None:
-        r=2.0; reason="TP1_ONLY"; exit_ts=tp1_at
+    full_horizon_end=start+max_hours*3600
+    if terminal is not None:
+        reason,gross_r,exit_ts=terminal
     else:
-        final_px=path[-1]["c"]
+        expected_last=start+(max_hours*3600)-900
+        if path[-1]["ts"]<expected_last:
+            return None
+        final_px=float(path[-1]["c"])
         risk=abs(entry-stop)
         if risk<=0:
             return None
         signed=(final_px-entry) if side=="LONG" else (entry-final_px)
-        r=signed/risk
-        reason="TIME"; exit_ts=path[-1]["ts"]+900
+        gross_r=signed/risk
+        reason="TIME"
+        exit_ts=full_horizon_end
 
-    return {**event,"reason":reason,"r":round(r,4),"exit_ts":exit_ts,
-            "tp1_hit":tp1_at is not None,"tp2_hit":tp2_at is not None,
-            "stop_hit":stop_at is not None}
+    cost_r=float(cost_pct)/stop_pct
+    net_r=gross_r-cost_r
+    return {
+        **event,
+        "reason":reason,
+        "gross_r":round(gross_r,4),
+        "cost_r":round(cost_r,4),
+        "r":round(net_r,4),
+        "exit_ts":exit_ts,
+        "tp1_hit":tp1_at is not None,
+        "tp2_hit":tp2_at is not None,
+        "stop_hit":stop_at is not None,
+    }
 
+
+def select_nonoverlapping_active_entries(events,c15,max_hours=MAX_HOURS):
+    """Mimic live tracker: one active sample per symbol and side."""
+    active_until={"LONG":float("-inf"),"SHORT":float("-inf")}
+    trades=[]
+    for event in sorted(events,key=lambda x:x["entry_ts"]):
+        side=event["direction"]
+        if float(event["entry_ts"])<active_until[side]:
+            continue
+        trade=simulate_trade(event,c15,max_hours=max_hours)
+        if trade is None:
+            continue
+        trades.append(trade)
+        if trade["reason"] in ("STOP","TP2"):
+            active_until[side]=float(trade["exit_ts"])
+        else:
+            active_until[side]=float(event["entry_ts"])+max_hours*3600
+    return trades
 
 def summarize(trades):
     if not trades:
