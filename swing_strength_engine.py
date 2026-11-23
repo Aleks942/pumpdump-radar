@@ -299,6 +299,7 @@ def _oi_change(symbol,interval,lookback_points,request_get=None,now=None):
             "ready":True,"quality":"READY","current":current,
             "change_pct":100*(current/previous-1),
             "period_sec":pts[-1][0]-pts[-1-lookback_points][0],
+            "samples": tuple(pts),
         }
     except Exception as exc:
         return {"ready":False,"quality":"UNAVAILABLE","error":type(exc).__name__}
@@ -449,6 +450,8 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
             "volume1h":vol1,"breakout":breakout,"entry_setup":entry_setup,
             "trade_plan":trade_plan,
             "_plan_c15":c15[-20:],
+            "_research_m15":c15[-25:],
+            "_research_h1":c60[-22:],
             **scored,
         }
     except Exception as exc:

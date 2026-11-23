@@ -63,6 +63,7 @@ from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
+from swing_absorption import link_short_entry, record_observation
 from swing_result_tracker import (
     current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
 )
@@ -1913,6 +1914,10 @@ while True:
                     continue
                 _SWING_LAST_DEEP_CHECK[symbol] = time.monotonic()
                 result = analyze_swing_strength(symbol, current_price=current_prices[symbol])
+                try:
+                    record_observation(symbol, result)
+                except Exception as exc:
+                    print("[SWING_ABSORPTION_JOURNAL_ERROR]", symbol, type(exc).__name__, flush=True)
                 if not result.get("ready"):
                     swing_stats["not_ready"] += 1
                     if SWING_VERBOSE_LOGS:
@@ -2011,6 +2016,12 @@ while True:
                     except Exception as exc:
                         print("[SWING_ENTRY_TRACK_ERROR]", symbol, type(exc).__name__, flush=True)
                         continue
+
+                if setup_at is not None and entry["side"] == "SHORT":
+                    try:
+                        link_short_entry(symbol, setup_at)
+                    except Exception as exc:
+                        print("[SWING_ABSORPTION_LINK_ERROR]", symbol, type(exc).__name__, flush=True)
 
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
