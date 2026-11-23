@@ -59,6 +59,15 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(out["reason"],"STOP")
         self.assertAlmostEqual(out["r"],-1.125,places=6)
 
+    def test_gap_before_stop_invalidates_path_but_gap_at_open_fills_worse(self):
+        event = {"symbol": "TESTUSDT", "entry_ts": 0, "direction": "LONG",
+                 "entry": 100, "stop": 98, "tp1": 104, "tp2": 106, "stop_pct": 2}
+        first = {"ts": 0, "o": 100, "h": 101, "l": 99, "c": 100}
+        gap = {"ts": 1800, "o": 96, "h": 98, "l": 95, "c": 97}
+        self.assertIsNone(r.simulate_trade(event, [first, gap], max_hours=1))
+        gap["ts"] = 900
+        self.assertEqual(r.simulate_trade(event, [first, gap], max_hours=1)["gross_r"], -2)
+
     def test_tp2_records_three_r(self):
         event={"symbol":"TESTUSDT","entry_ts":0.0,"direction":"SHORT",
                "score":20,"entry":100.0,"stop":102.0,"tp1":96.0,"tp2":94.0,

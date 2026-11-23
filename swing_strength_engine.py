@@ -15,7 +15,6 @@ BYBIT_BASE="https://api.bybit.com"
 CACHE_TTL_SEC=300
 _lock=threading.RLock()
 _cache={}
-_breakout_memory={}
 BREAKOUT_MEMORY_SEC=6*3600
 
 
@@ -63,7 +62,7 @@ def _closed_klines(symbol,interval,limit=80,request_get=None,now=None):
             continue
         if ts>100_000_000_000:
             ts/=1000.0
-        if ts+sec>now+3:
+        if ts+sec>now:
             continue
         if not l<=min(o,c)<=max(o,c)<=h:
             continue
@@ -111,6 +110,7 @@ def _trend(candles):
         "ready":True,"regime":regime,"last":last,"ema20":ema20,
         "ema_slope_pct":slope,"hh_hl":hh_hl,"lh_ll":lh_ll,
         "change_3bars_pct":change3,
+        "change_1bar_pct":100*(last/closes[-2]-1),
     }
 
 
@@ -134,7 +134,7 @@ def _atr(candles,n=14):
     return sum(trs)/len(trs) if trs else None
 
 
-def _entry_setup(candles,bias):
+def _entry_setup(candles,bias,breakout):
     """Closed-15m retest/reclaim trigger. It never creates SWING direction."""
     if len(candles)<25 or bias not in ("BULLISH","BEARISH"):
         return {"ready":False,"phase":"WAIT_RETEST","reason":"15м истории недостаточно"}
@@ -145,33 +145,46 @@ def _entry_setup(candles,bias):
     if ema20 is None or atr is None or atr<=0:
         return {"ready":False,"phase":"WAIT_RETEST","reason":"15м EMA/ATR ещё не готовы"}
 
-    last=candles[-1]
-    prev=candles[-2]
-    recent=candles[-5:-1]
-    band=0.60*atr
+    confirmed_at = _num(breakout.get("closed_at"))
+    level = _num(breakout.get("level"))
+    if breakout.get("phase") != "BREAKOUT_CONFIRMED" or confirmed_at is None or level is None:
+        return {"ready": False, "phase": "WAIT_RETEST", "reason": "ждать закрытый 1H пробой"}
 
-    if bias=="BULLISH":
-        touched=any(x["l"]<=ema20+band and x["h"]>=ema20-band for x in recent)
-        reclaimed=last["c"]>ema20 and last["c"]>prev["h"] and last["c"]>last["o"]
-        if touched and reclaimed:
-            return {"ready":True,"phase":"READY_ENTRY",
-                    "reason":"15м ретест завершён возвратом покупателей выше локального максимума"}
-        if touched:
-            return {"ready":False,"phase":"RETEST_FORMING",
-                    "reason":"15м ретест есть, но возврат покупателей ещё не подтверждён"}
-        return {"ready":False,"phase":"WAIT_RETEST",
-                "reason":"ждать 15м откат к рабочей зоне; цену не догонять"}
+    # The touch and the subsequent reclaim must both happen after the hour closes.
+    last, prev = candles[-1], candles[-2]
+    window = candles[-5:]
+    if any(right["ts"] - left["ts"] != 900 for left, right in zip(window, window[1:])):
+        return {"ready": False, "phase": "WAIT_RETEST", "reason": "пропуск в истории 15м"}
+    recent = [row for row in candles[-5:-1] if row["ts"] >= confirmed_at]
+    band = 0.60 * atr
+    touched = any(row["l"] <= level + band and row["h"] >= level - band for row in recent)
+    long = bias == "BULLISH"
+    held = all(row["c"] >= level - band if long else row["c"] <= level + band
+               for row in (*recent, last))
+    reclaimed = (
+        last["c"] > max(level, ema20, prev["h"], last["o"]) if long else
+        last["c"] < min(level, ema20, prev["l"], last["o"])
+    )
+    if touched and held and reclaimed:
+        return {"ready": True, "phase": "READY_ENTRY",
+                "entry_price_limit": last["c"] + atr if long else last["c"] - atr,
+                "reason": "15м закрылась в сторону пробоя после ретеста уровня 1H"}
+    if touched and held:
+        return {"ready": False, "phase": "RETEST_FORMING",
+                "reason": "уровень пробоя протестирован; ждём подтверждение на 15м"}
+    return {"ready": False, "phase": "WAIT_RETEST",
+            "reason": "ждать удержание уровня пробоя 1H; цену не догонять"}
 
-    touched=any(x["h"]>=ema20-band and x["l"]<=ema20+band for x in recent)
-    reclaimed=last["c"]<ema20 and last["c"]<prev["l"] and last["c"]<last["o"]
-    if touched and reclaimed:
-        return {"ready":True,"phase":"READY_ENTRY",
-                "reason":"15м ретест завершён возвратом продавцов ниже локального минимума"}
-    if touched:
-        return {"ready":False,"phase":"RETEST_FORMING",
-                "reason":"15м ретест есть, но возврат продавцов ещё не подтверждён"}
-    return {"ready":False,"phase":"WAIT_RETEST",
-            "reason":"ждать 15м откат к рабочей зоне; цену не догонять"}
+
+def entry_price_allowed(price, side, breakout, setup):
+    price = _num(price)
+    if price is None or price <= 0:
+        return False
+    level = _num(breakout.get("level"))
+    limit = _num(setup.get("entry_price_limit"))
+    if side == "LONG":
+        return (level is None or price > level) and (limit is None or price <= limit)
+    return (level is None or price < level) and (limit is None or price >= limit)
 
 
 def _trade_plan(candles,bias,entry_price):
@@ -212,134 +225,45 @@ def _trade_plan(candles,bias,entry_price):
     }
 
 
-def _recent_breakout_from_candles(candles,bias,now):
-    """Reconstruct a still-valid breakout from closed 1H candles.
-
-    This makes the lifecycle restart-safe: Railway process memory can vanish,
-    but the market structure in recent closed candles remains the source of truth.
-    """
-    side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
-    if side is None or len(candles)<8:
-        return None
-    atr=_atr(candles,14)
-    if atr is None or atr<=0:
-        return None
-
-    for i in range(len(candles)-1,5,-1):
-        row=candles[i]
-        closed_at=float(row["ts"])+3600.0
-        age=now-closed_at
-        if age<0:
-            continue
-        if age>BREAKOUT_MEMORY_SEC:
-            break
-        prior=candles[i-6:i]
-        high=max(x["h"] for x in prior)
-        low=min(x["l"] for x in prior)
-        if side=="LONG":
-            confirmed=row["c"]>high and row["c"]>row["o"]
-            level=high
-            invalidated=any(
-                x["c"] < level-0.60*atr for x in candles[i+1:]
-            )
-        else:
-            confirmed=row["c"]<low and row["c"]<row["o"]
-            level=low
-            invalidated=any(
-                x["c"] > level+0.60*atr for x in candles[i+1:]
-            )
-        if confirmed and not invalidated:
-            return {
-                "bias":bias,"side":side,"level":level,
-                "confirmed_at":float(row["ts"]),
-                "expires_at":closed_at+BREAKOUT_MEMORY_SEC,
-                "reconstructed":True,
-            }
-    return None
-
-
-def _breakout_state(candles,bias,symbol=None,now=None):
-    """Require a closed 1H breakout and remember it while the retest develops.
-
-    Without lifecycle memory a valid breakout could disappear on the next
-    hourly candle, sending the setup back to WAIT_BREAKOUT exactly while the
-    retest was forming.
-    """
-    now=time.time() if now is None else float(now)
-    side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
-    key=str(symbol or "").upper()
+def _breakout_state(candles, bias, now=None):
+    """Reconstruct a breakout from closed hours, identically in live and replay."""
+    now = time.time() if now is None else float(now)
+    side = {"BULLISH": "LONG", "BEARISH": "SHORT"}.get(bias)
     if side is None:
-        if key:
-            _breakout_memory.pop(key,None)
-        return {"ready":False,"phase":"WAIT_BREAKOUT","side":None,
-                "reason":"SWING-направление ещё не подтверждено"}
-    if len(candles)<8:
-        return {"ready":False,"phase":"WAIT_BREAKOUT","side":side,
-                "reason":"недостаточно закрытых 1H свечей для проверки пробоя"}
+        return {"ready": False, "phase": "WAIT_BREAKOUT", "side": None,
+                "reason": "SWING-направление ещё не подтверждено"}
+    candles = [row for row in candles if row["ts"] + 3600 <= now]
+    if len(candles) < 8 or now - candles[-1]["ts"] >= 7200:
+        return {"ready": False, "phase": "WAIT_BREAKOUT", "side": side,
+                "reason": "недостаточно свежих закрытых 1H свечей"}
+    long = side == "LONG"
+    level_key, boundary = ("h", max) if long else ("l", min)
+    for index in range(len(candles) - 1, 5, -1):
+        row = candles[index]
+        closed_at = row["ts"] + 3600
+        if now - closed_at >= BREAKOUT_MEMORY_SEC:
+            break
+        prior = candles[index-6:index]
+        following = candles[index+1:]
+        window = [*prior, row, *following]
+        if any(right["ts"] - left["ts"] != 3600 for left, right in zip(window, window[1:])):
+            break
+        level = boundary(candle[level_key] for candle in prior)
+        confirmed = row["c"] > max(level, row["o"]) if long else row["c"] < min(level, row["o"])
+        if not confirmed:
+            continue
+        atr = _atr(candles[:index+1], 14) or 0.0
+        held = all(candle["c"] >= level - 0.60 * atr if long else
+                   candle["c"] <= level + 0.60 * atr for candle in following)
+        if held:
+            return {"ready": True, "phase": "BREAKOUT_CONFIRMED", "side": side,
+                    "level": level, "closed_at": closed_at, "remembered": bool(following),
+                    "reason": f"1H пробой {level:.8g} подтверждён закрытием"}
 
-    last=candles[-1]
-    prior=candles[-7:-1]
-    high=max(x["h"] for x in prior)
-    low=min(x["l"] for x in prior)
-
-    if side=="LONG":
-        confirmed=last["c"]>high and last["c"]>last["o"]
-        level=high
-    else:
-        confirmed=last["c"]<low and last["c"]<last["o"]
-        level=low
-
-    if confirmed:
-        if key:
-            _breakout_memory[key]={
-                "bias":bias,"side":side,"level":level,
-                "confirmed_at":float(last["ts"]),"expires_at":now+BREAKOUT_MEMORY_SEC,
-            }
-        reason=(
-            f"1H закрылась выше сопротивления {level:.8g}"
-            if side=="LONG" else
-            f"1H закрылась ниже поддержки {level:.8g}"
-        )
-        return {
-            "ready":True,"phase":"BREAKOUT_CONFIRMED","side":side,
-            "level":level,"closed_at":last["ts"],"reason":reason,
-        }
-
-    memory=_breakout_memory.get(key) if key else None
-    if not memory:
-        memory=_recent_breakout_from_candles(candles,bias,now)
-        if memory and key:
-            _breakout_memory[key]=dict(memory)
-    if memory and memory.get("bias")==bias and now<=float(memory.get("expires_at",0)):
-        remembered_level=_num(memory.get("level"))
-        atr=_atr(candles,14)
-        if remembered_level is not None and atr is not None and atr>0:
-            invalidated=(
-                last["c"] < remembered_level-0.60*atr
-                if side=="LONG" else
-                last["c"] > remembered_level+0.60*atr
-            )
-            if not invalidated:
-                return {
-                    "ready":True,"phase":"BREAKOUT_CONFIRMED","side":side,
-                    "level":remembered_level,
-                    "closed_at":memory.get("confirmed_at"),
-                    "remembered":True,
-                    "reason":(
-                        f"1H пробой {remembered_level:.8g} уже подтверждён; ждём/проверяем ретест"
-                    ),
-                }
-        _breakout_memory.pop(key,None)
-
-    reason=(
-        f"ждать закрытие 1H выше сопротивления {level:.8g}"
-        if side=="LONG" else
-        f"ждать закрытие 1H ниже поддержки {level:.8g}"
-    )
-    return {
-        "ready":False,"phase":"WAIT_BREAKOUT","side":side,
-        "level":level,"closed_at":last["ts"],"reason":reason,
-    }
+    level = boundary(candle[level_key] for candle in candles[-6:])
+    direction = "выше сопротивления" if long else "ниже поддержки"
+    return {"ready": False, "phase": "WAIT_BREAKOUT", "side": side, "level": level,
+            "reason": f"ждать закрытие 1H {direction} {level:.8g}"}
 
 
 def _oi_change(symbol,interval,lookback_points,request_get=None,now=None):
@@ -364,6 +288,8 @@ def _oi_change(symbol,interval,lookback_points,request_get=None,now=None):
         pts.sort()
         if len(pts)<lookback_points+1:
             return {"ready":False,"quality":"WARMING"}
+        if now - pts[-1][0] > 4500:
+            return {"ready": False, "quality": "STALE_OI_HISTORY"}
         period=pts[-1][0]-pts[-1-lookback_points][0]
         if not (lookback_points*3600-900<=period<=lookback_points*3600+900):
             return {"ready":False,"quality":"GAPPED_OI_HISTORY"}
@@ -422,7 +348,7 @@ def _score(t1,t4,td,oi1,oi4,weekly_pos,vol1,short_term=None):
     # HH/HL and LH/LL are already required by _trend() for UP/DOWN.
     # Scoring them again would double-count the same structural evidence.
 
-    p1=_num(t1.get("change_3bars_pct"))
+    p1=_num(t1.get("change_1bar_pct"))
     oi1c=_num(oi1.get("change_pct")) if oi1.get("ready") else None
     oi4c=_num(oi4.get("change_pct")) if oi4.get("ready") else None
     if p1 is not None and oi1c is not None:
@@ -477,7 +403,8 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
     if use_cache and request_get is None:
         with _lock:
             cached=_cache.get(key)
-            if cached and 0<=now-cached["at"]<=CACHE_TTL_SEC:
+            if (cached and 0 <= now - cached["at"] <= CACHE_TTL_SEC
+                    and now // 900 == cached["at"] // 900):
                 value=dict(cached["value"])
                 fresh=_num(current_price)
                 plan_c15=value.get("_plan_c15") or []
@@ -493,7 +420,8 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
 
     try:
         ticker=_ticker(key,request_get)
-        price=current_price if current_price is not None and current_price>0 else ticker.get("last")
+        fresh = _num(current_price)
+        price = fresh if fresh is not None and fresh > 0 else ticker.get("last")
         c15=_closed_klines(key,"15",80,request_get,now)
         c60=_closed_klines(key,"60",80,request_get,now)
         c240=_closed_klines(key,"240",80,request_get,now)
@@ -504,8 +432,8 @@ def analyze(symbol,current_price=None,short_term=None,request_get=None,now=None,
         weekly=_weekly_position(cd,price)
         vol1=_volume_state(c60)
         scored=_score(t1,t4,td,oi1,oi4,weekly,vol1,short_term)
-        entry_setup=_entry_setup(c15,scored.get("bias"))
-        breakout=_breakout_state(c60,scored.get("bias"),key,now)
+        breakout=_breakout_state(c60,scored.get("bias"),now)
+        entry_setup=_entry_setup(c15,scored.get("bias"),breakout)
         trade_plan=_trade_plan(c15,scored.get("bias"),price)
         # Strong directional claims require complete higher-timeframe and OI evidence.
         evidence_ready=all(x.get("ready") for x in (t1,t4,td,oi1,oi4))
@@ -604,8 +532,25 @@ def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
     side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
     if side is None:
         return {"state":"BLOCKED","side":None,"reason":"нет подтверждённого SWING-направления"}
+
+    breakout=result.get("breakout") or {}
+    breakout_phase=str(breakout.get("phase") or "WAIT_BREAKOUT")
+    breakout_reason=str(breakout.get("reason") or "1H пробой ещё не подтверждён")
+    if breakout_phase!="BREAKOUT_CONFIRMED":
+        return {"state":"WAIT_BREAKOUT","side":side,"reason":breakout_reason}
+
+    setup=result.get("entry_setup") or {}
+    phase=str(setup.get("phase") or "WAIT_RETEST")
+    setup_reason=str(setup.get("reason") or "15м ретест ещё не подтверждён")
+
+    if phase == "WAIT_RETEST":
+        return {"state": "WAIT_RETEST", "side": side,
+                "reason": "1H пробой подтверждён; " + setup_reason}
+    if phase == "RETEST_FORMING":
+        return {"state": "RETEST", "side": side, "reason": setup_reason}
     if not live_ready:
-        return {"state":"WARMING","side":side,"reason":"5м данные ещё накапливаются; вход не разрешён"}
+        return {"state": "WARMING", "side": side,
+                "reason": "5м данные ещё накапливаются; вход не разрешён"}
 
     live_context=live_context or {}
     spot_now=_num(live_context.get("spot_imbalance_pct"))
@@ -657,24 +602,18 @@ def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
         if rebound_from_low is not None and rebound_from_low>=8.0 and t15!="DOWN":
             return {"state":"BLOCKED","side":"SHORT","reason":f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"}
 
-    breakout=result.get("breakout") or {}
-    breakout_phase=str(breakout.get("phase") or "WAIT_BREAKOUT")
-    breakout_reason=str(breakout.get("reason") or "1H пробой ещё не подтверждён")
-    if breakout_phase!="BREAKOUT_CONFIRMED":
-        return {"state":"WAIT_BREAKOUT","side":side,"reason":breakout_reason}
-
-    setup=result.get("entry_setup") or {}
-    phase=str(setup.get("phase") or "WAIT_RETEST")
-    setup_reason=str(setup.get("reason") or "15м ретест ещё не подтверждён")
-
-    if phase=="RETEST_FORMING":
-        return {"state":"RETEST","side":side,"reason":setup_reason}
-
     if phase=="READY_ENTRY":
         expected_15m="UP" if side=="LONG" else "DOWN"
         if t15!=expected_15m:
             return {"state":"RETEST","side":side,
                     "reason":"ретест есть, но 15м структура ещё не подтверждает SWING"}
+        plan = result.get("trade_plan") or {}
+        if plan.get("ready") is not True:
+            return {"state": "RETEST", "side": side,
+                    "reason": plan.get("reason") or "структурный план SL/TP не готов"}
+        if not entry_price_allowed(price, side, breakout, setup):
+            return {"state": "RETEST", "side": side,
+                    "reason": "цена вышла из зоны входа после ретеста"}
         return {"state":"READY_ENTRY","side":side,"reason":setup_reason}
 
     return {"state":"WAIT_RETEST","side":side,
@@ -715,8 +654,16 @@ def format_compact_report(result,short_verdict=None,live_ready=True,live_context
     elif entry_state in ("BLOCKED","WARMING") and entry_side=="SHORT":
         headline="🟡 SWING SHORT, НО ВХОД НА ПАУЗЕ"
 
+    conviction = 100 - score if bias == "BEARISH" else score
+    direction = {"BULLISH": "LONG", "BEARISH": "SHORT"}.get(bias, "SWING")
+    volume = _num((result.get("volume1h") or {}).get("ratio"))
+    funding = _num((result.get("ticker") or {}).get("funding_pct"))
+    if volume is not None:
+        oi_text += f" · Объём {volume:.2f}×"
+    if funding is not None:
+        oi_text += f" · Funding {funding:+.4f}%"
     lines=[
-        f"{headline} · {score}/100",
+        f"{direction} · {conviction}/100 · {headline}",
         "Горизонт: 1ч–3д · контекст до 7д",
         f"Структура: {structure}",
         oi_text,
@@ -730,9 +677,12 @@ def format_compact_report(result,short_verdict=None,live_ready=True,live_context
         support=reasons
         opposition=risks
     if support:
-        lines.append("Сильная сторона: "+support[0])
-    if opposition:
-        lines.append("Главный риск: "+opposition[0])
+        evidence = next((item for item in support if "OI" in item or "объём" in item), support[0])
+        lines.append("Сильная сторона: " + evidence)
+    exhaustion = next((item for item in reasons + risks
+                       if "вынос/закрытие" in item or "истощён" in item), None)
+    if exhaustion or opposition:
+        lines.append("Главный риск: " + (exhaustion or opposition[0]))
 
     if entry_state in ("BLOCKED","WARMING"):
         lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(entry_reason)+".")

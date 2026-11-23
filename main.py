@@ -63,7 +63,9 @@ from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
-from swing_result_tracker import register_entry as register_swing_entry, update_results as update_swing_results
+from swing_result_tracker import (
+    current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
+)
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
     mark_alert as persistent_mark_swing_alert,
@@ -138,7 +140,7 @@ ANTI_LATE_OPPOSITE_1M = float(os.getenv("ANTI_LATE_OPPOSITE_1M", 0.25))
 
 symbol_states = {}
 signal_memory = {}
-_SWING_ALERT_STATE = {}
+_SWING_LAST_DEEP_CHECK = {}
 
 # Bounded, information-only price-threshold notifications. They do not
 # influence trade approval, signal_memory or entry trackers.
@@ -1777,32 +1779,15 @@ while True:
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
     
-    current_prices = {}
-    
-    for t in current_chunk:
-    
-        symbol = (
-            t.get("symbol")
-            or str(t.get("instId") or "")
-            .replace("-USDT-SWAP", "USDT")
-            .replace("-", "")
-        )
-    
-        try:
-            price = float(
-                t.get("lastPrice")
-                or t.get("last")
-                or 0
-            )
-    
-            if symbol and price > 0:
-                current_prices[symbol] = price
-    
-        except (TypeError, ValueError):
-            continue
+    # SWING candles, OI, entry prices and markouts all use Bybit contracts.
+    bybit_rows = fetch_bybit_movers() if PRIMARY_SCAN_MODE == "SWING" else None
+    current_prices = {row["symbol"]: row.get("lastPrice") for row in bybit_rows or ()
+                      if row.get("symbol")}
 
+    okx_prices = {row["instId"].removesuffix("-USDT-SWAP") + "USDT": row.get("last")
+                  for row in tickers if row.get("instId", "").endswith("-USDT-SWAP")}
     try:
-        for result_row in update_swing_results(current_prices):
+        for result_row in update_swing_results(current_prices, legacy_prices=okx_prices):
             if result_row.get("kind") == "EVENT":
                 print(
                     "[SWING_PLAN_EVENT]",
@@ -1914,31 +1899,20 @@ while True:
                         flush=True,
                     )
 
-            for candidate in swing_candidates[:SWING_DEEP_TOP_N]:
+            # Give every shortlisted symbol a recent check before repeating
+            # the top scores on the next pass.
+            ranked_candidates = sorted(
+                swing_candidates, key=lambda row: _SWING_LAST_DEEP_CHECK.get(row["symbol"], 0),
+            )
+            for candidate in ranked_candidates[:SWING_DEEP_TOP_N]:
                 swing_stats["deep_checked"] += 1
                 symbol = candidate.get("symbol")
                 if not symbol:
                     continue
-                live_price = None
-                inst_id = candidate.get("instId")
-                if inst_id:
-                    for row in tickers:
-                        if row.get("instId") == inst_id:
-                            try:
-                                live_price = float(row.get("last"))
-                            except (TypeError, ValueError):
-                                live_price = None
-                            break
-                if not live_price or live_price <= 0:
-                    try:
-                        live_price = float(candidate.get("price"))
-                    except (TypeError, ValueError):
-                        live_price = None
-
-                result = analyze_swing_strength(
-                    symbol,
-                    current_price=live_price,
-                )
+                if symbol not in current_prices:
+                    continue
+                _SWING_LAST_DEEP_CHECK[symbol] = time.monotonic()
+                result = analyze_swing_strength(symbol, current_price=current_prices[symbol])
                 if not result.get("ready"):
                     swing_stats["not_ready"] += 1
                     if SWING_VERBOSE_LOGS:
@@ -2014,14 +1988,29 @@ while True:
                 )
                 entry_state = str(entry.get("state") or "UNKNOWN")
 
-                if not _swing_alert_allowed(symbol, bias, score, entry_state):
+                setup_at = result["breakout"]["closed_at"] if entry_state == "READY_ENTRY" else None
+                alert_state = entry_state if setup_at is None else f"READY_ENTRY:{setup_at}"
+                if not _swing_alert_allowed(symbol, bias, score, alert_state):
                     swing_stats["duplicate"] += 1
                     if SWING_VERBOSE_LOGS:
-                        print(
-                            "[SWING_SKIP_DUPLICATE]",
-                            symbol, score, entry_state, flush=True
-                        )
+                        print("[SWING_SKIP_DUPLICATE]", symbol, score, entry_state, flush=True)
                     continue
+
+                if setup_at is not None:
+                    try:
+                        registered = register_swing_entry(
+                            symbol, entry["side"], result["price"], score,
+                            trade_plan=result["trade_plan"], setup_at=setup_at,
+                        )
+                        if not registered:
+                            plan = current_setup_plan(symbol, entry["side"], setup_at)
+                            if plan is None:
+                                continue
+                            result = dict(result, trade_plan=plan)
+                        print("[SWING_ENTRY_TRACK]", symbol, "registered=", registered, flush=True)
+                    except Exception as exc:
+                        print("[SWING_ENTRY_TRACK_ERROR]", symbol, type(exc).__name__, flush=True)
+                        continue
 
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
@@ -2035,31 +2024,7 @@ while True:
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
                     swing_stats["sent"] += 1
-                    _mark_swing_alert(symbol, bias, score, entry_state)
-                    if entry_state == "READY_ENTRY":
-                        try:
-                            registered = register_swing_entry(
-                                symbol,
-                                str(entry.get("side") or ""),
-                                result.get("price"),
-                                score,
-                                trade_plan=result.get("trade_plan"),
-                            )
-                            print(
-                                "[SWING_ENTRY_TRACK]",
-                                symbol,
-                                "registered=", registered is True,
-                                "side=", entry.get("side"),
-                                "price=", result.get("price"),
-                                flush=True,
-                            )
-                        except Exception as track_exc:
-                            print(
-                                "[SWING_ENTRY_TRACK_ERROR]",
-                                symbol,
-                                type(track_exc).__name__,
-                                flush=True,
-                            )
+                    _mark_swing_alert(symbol, bias, score, alert_state)
                     print(
                         "[SWING_ALERT_SENT]",
                         symbol,
