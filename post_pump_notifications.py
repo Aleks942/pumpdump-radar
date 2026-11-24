@@ -156,7 +156,8 @@ def _research_lines(event):
 def message(event):
     kind = event['kind']
     at = datetime.fromtimestamp(event['at'], ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M:%S')
-    lines = [PRIORITY_LABELS[kind], TITLES[kind], '<b>' + escape(event['symbol']) + '</b>',
+    lines = [f"<b>POST-PUMP SHORT — {escape(event['symbol'])}</b>",
+             PRIORITY_LABELS[kind], TITLES[kind],
              'Наблюдение: ' + at + ' (Польша)',
              f"Рост от открытия 24ч до максимума: +{event['rise_pct']:.2f}%",
              f"Откат от максимума: {event['retrace_pct']:.2f}%"]
@@ -227,6 +228,20 @@ def _valid_plan(e):
         return False
 
 
+def prepare(db_path=None):
+    """Set the initial notification cursor before the first live scan writes events."""
+    from post_pump_short_strategy import setup as setup_strategy
+
+    path = db_path or DB_PATH
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with closing(sqlite3.connect(path, timeout=5)) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='post_pump_notify_meta'").fetchone():
+            return
+        setup_strategy(db)
+        _setup(db, time.time())
+
+
 def deliver(sender, tickers, now=None, db_path=None):
     """Consume latest valid stages; ACK only True. At most three sends per scan."""
     now = time.time() if now is None else float(now)
@@ -269,7 +284,7 @@ def deliver(sender, tickers, now=None, db_path=None):
                      and 0 <= now-e['at'] <= ttl)
             if row['kind'] in ('ENTRY_ZONE','READY_RESEARCH'):
                 px = prices.get(row['symbol'])
-                phase_ok=(state['phase']==row['kind'])
+                phase_ok=(state is not None and state['phase']==row['kind'])
                 zone_ok=False
                 if px is not None:
                     try:

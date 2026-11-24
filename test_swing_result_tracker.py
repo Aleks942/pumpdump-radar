@@ -24,7 +24,7 @@ class SwingResultTrackerTests(unittest.TestCase):
         out = s.update_results({"AAAUSDT": 105}, now + 4 * 3600 + 1)
         markouts=[x for x in out if x.get("kind")=="MARKOUT"]
         hours = [x["checkpoint_h"] for x in markouts]
-        self.assertEqual(hours, [1, 4])
+        self.assertEqual(hours, [4])
         self.assertAlmostEqual(markouts[-1]["return_pct"], 5.0, places=6)
 
     def test_short_markout_is_direction_adjusted(self):
@@ -74,6 +74,21 @@ class SwingResultTrackerTests(unittest.TestCase):
         self.assertEqual(len(events),1)
         self.assertEqual(events[0]["event_type"],"STOP")
         self.assertEqual(events[0]["r_multiple"],-1.0)
+
+    def test_terminal_result_cannot_be_rewritten_by_later_price(self):
+        now = 1_700_000_000
+        plan = {"ready": True, "stop": 98, "tp1": 104, "tp2": 106}
+        self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now, plan, setup_at=now))
+        self.assertEqual(s.update_results({"AAAUSDT": 97}, now + 60)[0]["event_type"], "STOP")
+        self.assertEqual(s.update_results({"AAAUSDT": 107}, now + 120), [])
+        self.assertFalse(s.register_entry("AAAUSDT", "LONG", 100, 82, now+120, plan, setup_at=now))
+
+    def test_price_at_horizon_is_time_exit_and_not_a_late_target(self):
+        now = 1_700_000_000
+        plan = {"ready": True, "stop": 98, "tp1": 104, "tp2": 106}
+        self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now, plan))
+        out = s.update_results({"AAAUSDT": 107}, now + 72 * 3600)
+        self.assertEqual([x["event_type"] for x in out if x["kind"] == "EVENT"], ["TIME"])
 
     def test_old_strategy_version_does_not_block_final_cohort(self):
         now=1_700_000_000

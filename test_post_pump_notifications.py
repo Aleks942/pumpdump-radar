@@ -40,6 +40,18 @@ class NotificationsTests(unittest.TestCase):
         return notify.deliver(self.sender,[{'instId':'TEST-USDT-SWAP','last':str(price)}],
                               now=at,db_path=self.path)
 
+    def test_new_database_preserves_first_discovery_after_prepare(self):
+        fresh = str(Path(self.tmp.name) / "fresh.db")
+        notify.prepare(fresh)
+        self.path = fresh
+        with sqlite3.connect(self.path) as db:
+            db.execute("""INSERT INTO post_pump_short_strategy
+                (symbol,episode_at,last_seen_at,phase,phase_at,peak,rise_max,band,reference_open)
+                VALUES ('TESTUSDT',?,?, 'WATCH',?,150,50,'50_TO_99',100)""", (NOW, NOW, NOW))
+        self.event("DISCOVERED")
+        self.assertEqual(self.run_delivery(NOW + 2), 1)
+        self.assertIn("POST-PUMP SHORT", self.sender.call_args.args[0])
+
     def test_research_metrics_are_labeled_as_partial_context(self):
         event={'kind':'WEAKENING','symbol':'TESTUSDT','at':NOW,
                'rise_pct':35.0,'retrace_pct':8.0,
@@ -50,6 +62,7 @@ class NotificationsTests(unittest.TestCase):
                        'long_usdt':12000,'short_usdt':3000},
                    'funding_context':{'available':True,'funding_pct':0.015}})}
         msg=notify.message(event)
+        self.assertTrue(msg.startswith('<b>POST-PUMP SHORT — TESTUSDT</b>'))
         self.assertIn('Открытый интерес (OI) / капитал',msg)
         self.assertIn('не полный CVD',msg)
         self.assertIn('Ликвидации (частично)',msg)

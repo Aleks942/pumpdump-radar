@@ -55,6 +55,16 @@ class SwingAlertStateTests(unittest.TestCase):
             s.alert_allowed("EVAAUSDT", "BULLISH", 80, 7200, now+120)
         )
 
+    def test_delivered_entry_survives_intervening_phase_change(self):
+        now = 1_700_000_000
+        symbol, bias, setup = "AAAUSDT", "BULLISH", "READY_ENTRY:1699999200"
+        s.mark_alert(symbol, bias, 80, now, entry_state=setup)
+        s.mark_alert(symbol, bias, 80, now + 60, entry_state="RETEST")
+        self.assertFalse(s.alert_allowed(symbol, bias, 90, 7200, now + 120, entry_state=setup))
+        self.assertTrue(s.alert_allowed(
+            symbol, bias, 90, 7200, now + 120, entry_state="READY_ENTRY:1700002800"
+        ))
+
     def test_entry_state_change_can_alert_even_when_score_is_same(self):
         now=1_700_000_000
         s.mark_alert(

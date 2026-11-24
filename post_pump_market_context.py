@@ -33,9 +33,13 @@ def _worker():
 
 
 def watch(symbols):
+    from aggregated_oi import watch_symbol as watch_aggregated_oi
+
     global _targets, _seen, _thread
     targets = tuple(dict.fromkeys(s for s in symbols
                     if isinstance(s, str) and s.endswith('USDT')))[:3]
+    for symbol in targets:
+        watch_aggregated_oi(symbol)
     with _lock:
         _targets = targets
         _seen = time.monotonic()

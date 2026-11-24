@@ -32,7 +32,9 @@ from public_exchange_context import schedule as schedule_public_exchange_context
 from move_verifier import schedule as schedule_move_verification
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_30_alerts import observe as observe_30_pumps, acknowledge as ack_30_pump, message as pump_30_message
-from post_pump_notifications import deliver as deliver_post_pump_notifications
+from post_pump_notifications import (
+    deliver as deliver_post_pump_notifications, prepare as prepare_post_pump_notifications,
+)
 from pump_cycle_research import (observe as observe_pump_cycle,
                                  observe_outcomes as observe_cycle_outcomes,
                                  report_outcomes as report_cycle_outcomes)
@@ -63,7 +65,10 @@ from oi_collector import get_oi_5m
 from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
-from swing_result_tracker import register_entry as register_swing_entry, update_results as update_swing_results
+from swing_absorption import link_short_entry, record_observation
+from swing_result_tracker import (
+    current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
+)
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
     mark_alert as persistent_mark_swing_alert,
@@ -116,9 +121,7 @@ ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
-# Production is intentionally SWING-only.
-# Legacy/research modules stay in the repository for offline studies and
-# backtests, but environment variables cannot re-attach them to live decisions.
+# SWING is the primary scanner. POST-PUMP SHORT has its own paper pipeline.
 PRIMARY_SCAN_MODE = "SWING"
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
@@ -130,6 +133,7 @@ SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
 SWING_LEGACY_TELEGRAM = False
 SWING_RESEARCH_ENABLED = False
 RESEARCH_PIPELINE_ENABLED = False
+POST_PUMP_SHORT_ENABLED = os.getenv("POST_PUMP_SHORT_ENABLED", "1") == "1"
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -138,7 +142,7 @@ ANTI_LATE_OPPOSITE_1M = float(os.getenv("ANTI_LATE_OPPOSITE_1M", 0.25))
 
 symbol_states = {}
 signal_memory = {}
-_SWING_ALERT_STATE = {}
+_SWING_LAST_DEEP_CHECK = {}
 
 # Bounded, information-only price-threshold notifications. They do not
 # influence trade approval, signal_memory or entry trackers.
@@ -1442,6 +1446,18 @@ def should_send_signal(signal):
 
     return False
 
+def run_post_pump_short_scan(tickers):
+    telegram_enabled = os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
+    try:
+        if telegram_enabled:
+            prepare_post_pump_notifications()
+        observe_complete_post_pump_short(tickers)
+        if telegram_enabled:
+            deliver_post_pump_notifications(send_telegram, tickers)
+    except Exception as exc:
+        print("[POST_PUMP_SHORT_SCAN_ERROR]", type(exc).__name__, str(exc)[:200], flush=True)
+
+
 print("🚀 PumpDump Radar V2 started")
 
 if RESEARCH_PIPELINE_ENABLED:
@@ -1466,15 +1482,6 @@ manual_research_bot = start_manual_research(BOT_TOKEN, CHAT_ID, send_telegram)
 start_liquidation_streams()
 
 if RESEARCH_PIPELINE_ENABLED:
-    initial_tickers = get_market_tickers()
-    swap_symbols = [t.get("instId") for t in initial_tickers if t.get("instId")]
-    threading.Thread(
-        target=run_stream_forever,
-        args=(swap_symbols,),
-        daemon=True,
-    ).start()
-    print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
-
     threading.Thread(
         target=run_entry_tracker,
         name="entry-tracker",
@@ -1488,6 +1495,9 @@ print(
     flush=True,
 )
 _last_edge_report_mono = 0.0
+_post_pump_flow_thread = None
+_post_pump_scan_thread = None
+print("[POST_PUMP_SHORT]", "enabled=", POST_PUMP_SHORT_ENABLED, flush=True)
 
 while True:
     if RESEARCH_PIPELINE_ENABLED and time.monotonic() - _last_edge_report_mono >= 3600:
@@ -1714,18 +1724,6 @@ while True:
         except Exception as cycle_exc:
             print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
-        # Complete independent POST-PUMP SHORT strategy. Discovers +30% pumps
-        # directly from the same OKX ticker list, including late pullbacks
-        # excluded by earlier Pump Watch. Max three candidates checked per scan,
-        # 5m/15m/H1 closed candles, verified 5m Spot + cached OI/futures.
-        # PAPER ONLY: never opens positions or overrides trading gates.
-        try:
-            observe_complete_post_pump_short(tickers)
-        except Exception as complete_short_exc:
-            print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
-                  type(complete_short_exc).__name__,
-                  str(complete_short_exc)[:300], flush=True)
-
         # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
         # Research-only; reuses existing ticker/OI/flow caches and never places orders.
         try:
@@ -1744,15 +1742,6 @@ while True:
             print("[POST_DUMP_ACCUM_LOOP_ERROR]",
                   type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
                   flush=True)
-
-        # User-enabled complete lifecycle. Preserves every strategy evidence gate;
-        # messages explicitly label READY as a paper plan, never a live order.
-        if (os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
-                and (PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM)):
-            try:
-                deliver_post_pump_notifications(send_telegram, tickers)
-            except Exception as notify_error:
-                print("[POST_PUMP_NOTIFY_ERROR]", type(notify_error).__name__, flush=True)
 
         # Retain the prior Pump Cycle research cohorts as a separate experiment.
         try:
@@ -1774,35 +1763,38 @@ while True:
             print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
                   type(forward_exc).__name__, flush=True)
 
+    if tickers and (POST_PUMP_SHORT_ENABLED or RESEARCH_PIPELINE_ENABLED):
+        if _post_pump_flow_thread is None or not _post_pump_flow_thread.is_alive():
+            swap_symbols = [
+                row["instId"] for row in tickers if row.get("instId", "").endswith("-USDT-SWAP")
+            ]
+            if swap_symbols:
+                _post_pump_flow_thread = threading.Thread(
+                    target=run_stream_forever, args=(swap_symbols,),
+                    name="okx-swap-flow", daemon=True,
+                )
+                _post_pump_flow_thread.start()
+        if POST_PUMP_SHORT_ENABLED and (
+            _post_pump_scan_thread is None or not _post_pump_scan_thread.is_alive()
+        ):
+            _post_pump_scan_thread = threading.Thread(
+                target=run_post_pump_short_scan, args=(tickers,),
+                name="post-pump-short-scan", daemon=True,
+            )
+            _post_pump_scan_thread.start()
+
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
     
-    current_prices = {}
-    
-    for t in current_chunk:
-    
-        symbol = (
-            t.get("symbol")
-            or str(t.get("instId") or "")
-            .replace("-USDT-SWAP", "USDT")
-            .replace("-", "")
-        )
-    
-        try:
-            price = float(
-                t.get("lastPrice")
-                or t.get("last")
-                or 0
-            )
-    
-            if symbol and price > 0:
-                current_prices[symbol] = price
-    
-        except (TypeError, ValueError):
-            continue
+    # SWING candles, OI, entry prices and markouts all use Bybit contracts.
+    bybit_rows = fetch_bybit_movers() if PRIMARY_SCAN_MODE == "SWING" else None
+    current_prices = {row["symbol"]: row.get("lastPrice") for row in bybit_rows or ()
+                      if row.get("symbol")}
 
+    okx_prices = {row["instId"].removesuffix("-USDT-SWAP") + "USDT": row.get("last")
+                  for row in tickers if row.get("instId", "").endswith("-USDT-SWAP")}
     try:
-        for result_row in update_swing_results(current_prices):
+        for result_row in update_swing_results(current_prices, legacy_prices=okx_prices):
             if result_row.get("kind") == "EVENT":
                 print(
                     "[SWING_PLAN_EVENT]",
@@ -1834,6 +1826,8 @@ while True:
         "score_reject": 0,
         "duplicate": 0,
         "eligible": 0,
+        "live_blocked": 0,
+        "live_warming": 0,
         "sent": 0,
         "send_failed": 0,
         "compression_found": 0,
@@ -1914,31 +1908,24 @@ while True:
                         flush=True,
                     )
 
-            for candidate in swing_candidates[:SWING_DEEP_TOP_N]:
+            # Give every shortlisted symbol a recent check before repeating
+            # the top scores on the next pass.
+            ranked_candidates = sorted(
+                swing_candidates, key=lambda row: _SWING_LAST_DEEP_CHECK.get(row["symbol"], 0),
+            )
+            for candidate in ranked_candidates[:SWING_DEEP_TOP_N]:
                 swing_stats["deep_checked"] += 1
                 symbol = candidate.get("symbol")
                 if not symbol:
                     continue
-                live_price = None
-                inst_id = candidate.get("instId")
-                if inst_id:
-                    for row in tickers:
-                        if row.get("instId") == inst_id:
-                            try:
-                                live_price = float(row.get("last"))
-                            except (TypeError, ValueError):
-                                live_price = None
-                            break
-                if not live_price or live_price <= 0:
-                    try:
-                        live_price = float(candidate.get("price"))
-                    except (TypeError, ValueError):
-                        live_price = None
-
-                result = analyze_swing_strength(
-                    symbol,
-                    current_price=live_price,
-                )
+                if symbol not in current_prices:
+                    continue
+                _SWING_LAST_DEEP_CHECK[symbol] = time.monotonic()
+                result = analyze_swing_strength(symbol, current_price=current_prices[symbol])
+                try:
+                    record_observation(symbol, result)
+                except Exception as exc:
+                    print("[SWING_ABSORPTION_JOURNAL_ERROR]", symbol, type(exc).__name__, flush=True)
                 if not result.get("ready"):
                     swing_stats["not_ready"] += 1
                     if SWING_VERBOSE_LOGS:
@@ -2012,16 +1999,42 @@ while True:
                     live_ready=live_ready,
                     live_context=visual_state,
                 )
-                entry_state = str(entry.get("state") or "UNKNOWN")
+                entry_state = entry["state"]
+                swing_stats["live_blocked"] += entry["live_state"] == "BLOCKED"
+                swing_stats["live_warming"] += entry["live_state"] == "WARMING"
 
-                if not _swing_alert_allowed(symbol, bias, score, entry_state):
+                setup_at = result["breakout"]["closed_at"] if entry_state == "READY_ENTRY" else None
+                alert_state = (
+                    f"SETUP:{entry['stage']}:{entry['live_state']}" if setup_at is None
+                    else f"READY_ENTRY:{setup_at}"
+                )
+                if not _swing_alert_allowed(symbol, bias, score, alert_state):
                     swing_stats["duplicate"] += 1
                     if SWING_VERBOSE_LOGS:
-                        print(
-                            "[SWING_SKIP_DUPLICATE]",
-                            symbol, score, entry_state, flush=True
-                        )
+                        print("[SWING_SKIP_DUPLICATE]", symbol, score, entry_state, flush=True)
                     continue
+
+                if setup_at is not None:
+                    try:
+                        registered = register_swing_entry(
+                            symbol, entry["side"], result["price"], score,
+                            trade_plan=result["trade_plan"], setup_at=setup_at,
+                        )
+                        if not registered:
+                            plan = current_setup_plan(symbol, entry["side"], setup_at)
+                            if plan is None:
+                                continue
+                            result = dict(result, trade_plan=plan)
+                        print("[SWING_ENTRY_TRACK]", symbol, "registered=", registered, flush=True)
+                    except Exception as exc:
+                        print("[SWING_ENTRY_TRACK_ERROR]", symbol, type(exc).__name__, flush=True)
+                        continue
+
+                if setup_at is not None and entry["side"] == "SHORT":
+                    try:
+                        link_short_entry(symbol, setup_at)
+                    except Exception as exc:
+                        print("[SWING_ABSORPTION_LINK_ERROR]", symbol, type(exc).__name__, flush=True)
 
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
@@ -2030,42 +2043,33 @@ while True:
                         short_verdict=state_label,
                         live_ready=live_ready,
                         live_context=visual_state,
+                        decision=entry,
                     ),
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
                     swing_stats["sent"] += 1
-                    _mark_swing_alert(symbol, bias, score, entry_state)
-                    if entry_state == "READY_ENTRY":
-                        try:
-                            registered = register_swing_entry(
-                                symbol,
-                                str(entry.get("side") or ""),
-                                result.get("price"),
-                                score,
-                                trade_plan=result.get("trade_plan"),
-                            )
-                            print(
-                                "[SWING_ENTRY_TRACK]",
-                                symbol,
-                                "registered=", registered is True,
-                                "side=", entry.get("side"),
-                                "price=", result.get("price"),
-                                flush=True,
-                            )
-                        except Exception as track_exc:
-                            print(
-                                "[SWING_ENTRY_TRACK_ERROR]",
-                                symbol,
-                                type(track_exc).__name__,
-                                flush=True,
-                            )
+                    _mark_swing_alert(symbol, bias, score, alert_state)
+                    if setup_at is not None and result.get("_research_m15"):
+                        trigger = result["_research_m15"][-1]
+                        trigger_close_at = trigger["ts"] + 900
+                        paper_entry_price = result["trade_plan"]["entry"]
+                        print(
+                            "[SWING_PAPER_ENTRY]", symbol, "side=", entry["side"],
+                            "trigger_close_at=", trigger_close_at,
+                            "alert_delay_sec=", round(time.time() - trigger_close_at, 1),
+                            "trigger_close_price=", trigger["c"],
+                            "paper_entry_price=", paper_entry_price,
+                            flush=True,
+                        )
                     print(
                         "[SWING_ALERT_SENT]",
                         symbol,
                         "bias=", bias,
                         "score=", score,
                         "entry_state=", entry_state,
+                        "stage=", entry["stage"],
+                        "live_state=", entry["live_state"],
                         "prefilter_score=",
                         round(float(candidate.get("signed_score", 0)), 1),
                         flush=True,
@@ -2086,6 +2090,8 @@ while True:
                 "prefilter=", swing_stats["prefilter"],
                 "deep_checked=", swing_stats["deep_checked"],
                 "eligible=", swing_stats["eligible"],
+                "live_blocked=", swing_stats["live_blocked"],
+                "live_warming=", swing_stats["live_warming"],
                 "sent=", swing_stats["sent"],
                 "duplicate=", swing_stats["duplicate"],
                 "not_ready=", swing_stats["not_ready"],

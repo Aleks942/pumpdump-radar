@@ -44,6 +44,11 @@ def _connect():
         )
         """
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS swing_delivered_entries ("
+        "symbol TEXT NOT NULL, bias TEXT NOT NULL, entry_state TEXT NOT NULL, "
+        "sent_at REAL NOT NULL, PRIMARY KEY(symbol, bias, entry_state))"
+    )
     cols={row[1] for row in conn.execute("PRAGMA table_info(swing_alert_state)")}
     if "entry_state" not in cols:
         conn.execute(
@@ -56,6 +61,13 @@ def alert_allowed(symbol, bias, score, cooldown_sec, now=None, entry_state="UNKN
     now = time.time() if now is None else float(now)
     with _LOCK:
         with _connect() as conn:
+            if str(entry_state).startswith("READY_ENTRY:"):
+                delivered = conn.execute(
+                    "SELECT 1 FROM swing_delivered_entries WHERE symbol=? AND bias=? AND entry_state=?",
+                    (str(symbol), str(bias), str(entry_state)),
+                ).fetchone()
+                if delivered:
+                    return False
             row = conn.execute(
                 "SELECT bias, score, sent_at, entry_state FROM swing_alert_state WHERE symbol=?",
                 (str(symbol),),
@@ -67,6 +79,8 @@ def alert_allowed(symbol, bias, score, cooldown_sec, now=None, entry_state="UNKN
         return True
     if str(old_entry_state) != str(entry_state):
         return True
+    if str(entry_state).startswith("READY_ENTRY:"):
+        return False
     if abs(float(score) - float(old_score)) >= 8:
         return True
     return now - float(sent_at) >= int(cooldown_sec)
@@ -76,6 +90,12 @@ def mark_alert(symbol, bias, score, now=None, entry_state="UNKNOWN"):
     now = time.time() if now is None else float(now)
     with _LOCK:
         with _connect() as conn:
+            if str(entry_state).startswith("READY_ENTRY:"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO swing_delivered_entries VALUES(?,?,?,?)",
+                    (str(symbol), str(bias), str(entry_state), now),
+                )
+                conn.execute("DELETE FROM swing_delivered_entries WHERE sent_at < ?", (now - 86400,))
             conn.execute(
                 """
                 INSERT INTO swing_alert_state(symbol, bias, score, sent_at, entry_state)
@@ -158,4 +178,5 @@ def clear_state():
     with _LOCK:
         with _connect() as conn:
             conn.execute("DELETE FROM swing_alert_state")
+            conn.execute("DELETE FROM swing_delivered_entries")
             conn.execute("DELETE FROM swing_compression_alert_state")

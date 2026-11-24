@@ -6,7 +6,7 @@ import swing_strength_engine as s
 class SwingStrengthTests(unittest.TestCase):
     def test_bullish_medium_term_score(self):
         up={"ready":True,"regime":"UP","hh_hl":True,"lh_ll":False,
-            "change_3bars_pct":2.0}
+            "change_1bar_pct":2.0}
         oi1={"ready":True,"change_pct":1.0}
         oi4={"ready":True,"change_pct":2.0}
         vol={"ready":True,"ratio":1.6}
@@ -18,7 +18,7 @@ class SwingStrengthTests(unittest.TestCase):
 
     def test_bearish_medium_term_score(self):
         down={"ready":True,"regime":"DOWN","hh_hl":False,"lh_ll":True,
-              "change_3bars_pct":-2.0}
+              "change_1bar_pct":-2.0}
         oi1={"ready":True,"change_pct":1.0}
         oi4={"ready":True,"change_pct":2.0}
         vol={"ready":True,"ratio":1.6}
@@ -29,7 +29,7 @@ class SwingStrengthTests(unittest.TestCase):
 
     def test_five_minute_flow_does_not_define_direction_by_itself(self):
         mixed={"ready":True,"regime":"MIXED","hh_hl":False,"lh_ll":False,
-               "change_3bars_pct":0.0}
+               "change_1bar_pct":0.0}
         nooi={"ready":False}
         vol={"ready":True,"ratio":1.0}
         r=s._score(mixed,mixed,mixed,nooi,nooi,50,vol,
@@ -39,9 +39,9 @@ class SwingStrengthTests(unittest.TestCase):
 
     def test_five_minute_flow_never_changes_medium_term_score(self):
         up={"ready":True,"regime":"UP","hh_hl":False,"lh_ll":False,
-            "change_3bars_pct":0.4}
+            "change_1bar_pct":0.4}
         mixed={"ready":True,"regime":"MIXED","hh_hl":False,"lh_ll":False,
-               "change_3bars_pct":0.0}
+               "change_1bar_pct":0.0}
         oi={"ready":True,"change_pct":0.0}
         vol={"ready":True,"ratio":1.0}
         base=s._score(up,mixed,mixed,oi,oi,50,vol,
@@ -95,9 +95,9 @@ class SwingStrengthTests(unittest.TestCase):
 
     def test_daily_opposition_is_weight_not_second_veto(self):
         up={"ready":True,"regime":"UP","hh_hl":True,"lh_ll":False,
-            "change_3bars_pct":2.0}
+            "change_1bar_pct":2.0}
         down={"ready":True,"regime":"DOWN","hh_hl":False,"lh_ll":True,
-              "change_3bars_pct":-1.0}
+              "change_1bar_pct":-1.0}
         oi1={"ready":True,"change_pct":1.0}
         oi4={"ready":True,"change_pct":2.0}
         vol={"ready":True,"ratio":1.6}
@@ -126,6 +126,8 @@ class SwingStrengthTests(unittest.TestCase):
            "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
            "oi1h":{"change_pct":4.6},"oi4h":{"change_pct":-4.7},
            "reasons":["1H: структура вверх"],"risks":[]}
+        r["breakout"] = {"phase": "BREAKOUT_CONFIRMED"}
+        r["entry_setup"] = {"phase": "READY_ENTRY"}
         text="\n".join(s.format_compact_report(
             r,"🟡 МЕДВЕЖЬЕ ДАВЛЕНИЕ — НУЖНО ПОДТВЕРЖДЕНИЕ ЦЕНОЙ"
         ))
@@ -154,6 +156,8 @@ class SwingStrengthTests(unittest.TestCase):
            "trend4h":{"regime":"UP"},"trend1d":{"regime":"MIXED"},
            "oi1h":{"change_pct":1.0},"oi4h":{"change_pct":1.0},
            "reasons":["1H: структура вверх"],"risks":[]}
+        r["breakout"] = {"phase": "BREAKOUT_CONFIRMED"}
+        r["entry_setup"] = {"phase": "READY_ENTRY"}
         decision=s.entry_decision(
             r,"⚪ 5М ДАННЫЕ НАКАПЛИВАЮТСЯ",live_ready=False
         )
@@ -178,6 +182,28 @@ class SwingStrengthTests(unittest.TestCase):
         )
         self.assertEqual(decision["state"],"WAIT_RETEST")
 
+    def test_waiting_retest_reports_veto_and_recovery_at_same_score(self):
+        result = {
+            "score": 82, "bias": "BULLISH", "price": 100,
+            "breakout": {"phase": "BREAKOUT_CONFIRMED"},
+            "entry_setup": {"phase": "WAIT_RETEST"},
+        }
+        checks = (
+            ({}, "WAIT_RETEST", "CLEAR"),
+            ({"live_context": {"spot_imbalance_pct": -35}}, "BLOCKED", "BLOCKED"),
+            ({"live_ready": False}, "WARMING", "WARMING"),
+            ({}, "WAIT_RETEST", "CLEAR"),
+        )
+        for inputs, state, live_state in checks:
+            with self.subTest(state=state):
+                decision = s.entry_decision(result, **inputs)
+                self.assertEqual((decision["state"], decision["stage"], decision["live_state"]),
+                                 (state, "WAIT_RETEST", live_state))
+                report = "\n".join(s.format_compact_report(result, decision=decision))
+                self.assertIn("Этап: BREAKOUT", report)
+                self.assertNotIn("Вход: ГОТОВ", report)
+        self.assertEqual(result["score"], 82)
+
     def test_confirmed_retest_can_become_ready_entry(self):
         r={"score":82,"bias":"BULLISH",
            "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",
@@ -188,6 +214,9 @@ class SwingStrengthTests(unittest.TestCase):
            "breakout":{"phase":"BREAKOUT_CONFIRMED","reason":"1H пробой подтверждён"},
            "entry_setup":{"phase":"READY_ENTRY","reason":"15м ретест подтверждён"},
            "reasons":["1H: структура вверх"],"risks":[]}
+        self.assertEqual(s.entry_decision(r)["state"], "RETEST")
+        r["trade_plan"] = {"ready": True, "entry": 100, "stop": 98, "stop_pct": 2,
+                           "tp1": 104, "tp2": 106}
         decision=s.entry_decision(
             r,"🟡 НАБОР НОВЫХ ЛОНГОВ",live_ready=True
         )
@@ -219,7 +248,7 @@ class SwingStrengthTests(unittest.TestCase):
         candles[-1]["o"]=prior_high-0.2
         candles[-1]["h"]=prior_high+0.5
         candles[-1]["c"]=prior_high+0.4
-        out=s._breakout_state(candles,"BULLISH")
+        out=s._breakout_state(candles,"BULLISH",now=8*3600)
         self.assertTrue(out["ready"])
         self.assertEqual(out["phase"],"BREAKOUT_CONFIRMED")
 
@@ -261,7 +290,6 @@ class SwingStrengthTests(unittest.TestCase):
 
 
     def test_breakout_memory_survives_normal_retest_candle(self):
-        s._breakout_memory.clear()
         candles=[]
         for i in range(19):
             close=100.0+0.02*(i%3)
@@ -273,7 +301,7 @@ class SwingStrengthTests(unittest.TestCase):
                   "c":prior_high+0.35,"v":160}
         candles.append(breakout)
         first=s._breakout_state(
-            candles,"BULLISH",symbol="TESTUSDT",now=20*3600
+            candles,"BULLISH",now=20*3600
         )
         self.assertTrue(first["ready"])
         level=first["level"]
@@ -281,15 +309,14 @@ class SwingStrengthTests(unittest.TestCase):
         candles.append({"ts":20*3600,"o":level+0.20,"h":level+0.35,
                         "l":level-0.08,"c":level+0.05,"v":90})
         second=s._breakout_state(
-            candles,"BULLISH",symbol="TESTUSDT",now=21*3600
+            candles,"BULLISH",now=21*3600
         )
         self.assertTrue(second["ready"])
         self.assertEqual(second["phase"],"BREAKOUT_CONFIRMED")
         self.assertTrue(second.get("remembered"))
 
 
-    def test_breakout_reconstructs_after_process_memory_loss(self):
-        s._breakout_memory.clear()
+    def test_reconstructed_breakout_preserves_close_timestamp(self):
         candles=[]
         for i in range(19):
             close=100.0+0.02*(i%3)
@@ -300,21 +327,41 @@ class SwingStrengthTests(unittest.TestCase):
                         "h":prior_high+0.50,"l":prior_high-0.25,
                         "c":prior_high+0.35,"v":160})
         first=s._breakout_state(
-            candles,"BULLISH",symbol="RESTARTUSDT",now=20*3600
+            candles,"BULLISH",now=20*3600
         )
         self.assertTrue(first["ready"])
         level=first["level"]
 
         candles.append({"ts":20*3600,"o":level+0.20,"h":level+0.35,
                         "l":level-0.08,"c":level+0.05,"v":90})
-        s._breakout_memory.clear()  # simulate Railway restart
         second=s._breakout_state(
-            candles,"BULLISH",symbol="RESTARTUSDT",now=21*3600+30
+            candles,"BULLISH",now=21*3600+30
         )
         self.assertTrue(second["ready"])
         self.assertEqual(second["phase"],"BREAKOUT_CONFIRMED")
         self.assertTrue(second.get("remembered"))
 
+
+    def test_retest_uses_hourly_level_and_occurs_after_breakout(self):
+        candles = [{"ts": i * 900, "o": 101, "h": 101.1, "l": 100.9, "c": 101}
+                   for i in range(25)]
+        candles[-2].update(l=99.95, c=100.1)
+        candles[-1].update(o=100.1, h=101.7, l=100.0, c=101.6)
+        breakout = {"phase": "BREAKOUT_CONFIRMED", "closed_at": 24 * 900, "level": 100}
+        self.assertEqual(s._entry_setup(candles, "BULLISH", breakout)["phase"], "WAIT_RETEST")
+        breakout["closed_at"] = 23 * 900
+        self.assertEqual(s._entry_setup(candles, "BULLISH", breakout)["phase"], "READY_ENTRY")
+        breakout["level"] = 95
+        self.assertEqual(s._entry_setup(candles, "BULLISH", breakout)["phase"], "WAIT_RETEST")
+
+    def test_old_hourly_breakout_does_not_refresh_itself(self):
+        candles = [{"ts": i * 3600, "o": 100, "h": 101, "l": 99, "c": 100}
+                   for i in range(20)]
+        candles[13].update(h=103, c=102)
+        for candle in candles[14:]:
+            candle.update(o=101, c=101)
+        self.assertTrue(s._breakout_state(candles[:-1], "BULLISH", now=19*3600)["ready"])
+        self.assertFalse(s._breakout_state(candles, "BULLISH", now=20*3600)["ready"])
 
     def test_cached_analysis_reprices_trade_plan_with_current_quote(self):
         s._cache.clear()

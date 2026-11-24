@@ -165,6 +165,8 @@ def _oi_change_at(oi_rows,ts,hours):
     if len(pts)<hours+1:
         return {"ready":False}
     current=pts[-1]
+    if ts - current[0] > 4500:
+        return {"ready": False}
     previous=pts[-1-hours]
     period=current[0]-previous[0]
     if not (hours*3600-900<=period<=hours*3600+900):
