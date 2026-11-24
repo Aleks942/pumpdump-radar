@@ -182,6 +182,28 @@ class SwingStrengthTests(unittest.TestCase):
         )
         self.assertEqual(decision["state"],"WAIT_RETEST")
 
+    def test_waiting_retest_reports_veto_and_recovery_at_same_score(self):
+        result = {
+            "score": 82, "bias": "BULLISH", "price": 100,
+            "breakout": {"phase": "BREAKOUT_CONFIRMED"},
+            "entry_setup": {"phase": "WAIT_RETEST"},
+        }
+        checks = (
+            ({}, "WAIT_RETEST", "CLEAR"),
+            ({"live_context": {"spot_imbalance_pct": -35}}, "BLOCKED", "BLOCKED"),
+            ({"live_ready": False}, "WARMING", "WARMING"),
+            ({}, "WAIT_RETEST", "CLEAR"),
+        )
+        for inputs, state, live_state in checks:
+            with self.subTest(state=state):
+                decision = s.entry_decision(result, **inputs)
+                self.assertEqual((decision["state"], decision["stage"], decision["live_state"]),
+                                 (state, "WAIT_RETEST", live_state))
+                report = "\n".join(s.format_compact_report(result, decision=decision))
+                self.assertIn("Этап: BREAKOUT", report)
+                self.assertNotIn("Вход: ГОТОВ", report)
+        self.assertEqual(result["score"], 82)
+
     def test_confirmed_retest_can_become_ready_entry(self):
         r={"score":82,"bias":"BULLISH",
            "label":"🟢 БЫЧЬЯ СРЕДНЕСРОЧНАЯ СТРУКТУРА",

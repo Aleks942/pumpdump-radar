@@ -1820,6 +1820,8 @@ while True:
         "score_reject": 0,
         "duplicate": 0,
         "eligible": 0,
+        "live_blocked": 0,
+        "live_warming": 0,
         "sent": 0,
         "send_failed": 0,
         "compression_found": 0,
@@ -1991,10 +1993,15 @@ while True:
                     live_ready=live_ready,
                     live_context=visual_state,
                 )
-                entry_state = str(entry.get("state") or "UNKNOWN")
+                entry_state = entry["state"]
+                swing_stats["live_blocked"] += entry["live_state"] == "BLOCKED"
+                swing_stats["live_warming"] += entry["live_state"] == "WARMING"
 
                 setup_at = result["breakout"]["closed_at"] if entry_state == "READY_ENTRY" else None
-                alert_state = entry_state if setup_at is None else f"READY_ENTRY:{setup_at}"
+                alert_state = (
+                    f"SETUP:{entry['stage']}:{entry['live_state']}" if setup_at is None
+                    else f"READY_ENTRY:{setup_at}"
+                )
                 if not _swing_alert_allowed(symbol, bias, score, alert_state):
                     swing_stats["duplicate"] += 1
                     if SWING_VERBOSE_LOGS:
@@ -2030,18 +2037,33 @@ while True:
                         short_verdict=state_label,
                         live_ready=live_ready,
                         live_context=visual_state,
+                        decision=entry,
                     ),
                 ]
                 sent = send_telegram("\n".join(lines), symbol=symbol)
                 if sent is True:
                     swing_stats["sent"] += 1
                     _mark_swing_alert(symbol, bias, score, alert_state)
+                    if setup_at is not None and result.get("_research_m15"):
+                        trigger = result["_research_m15"][-1]
+                        trigger_close_at = trigger["ts"] + 900
+                        paper_entry_price = result["trade_plan"]["entry"]
+                        print(
+                            "[SWING_PAPER_ENTRY]", symbol, "side=", entry["side"],
+                            "trigger_close_at=", trigger_close_at,
+                            "alert_delay_sec=", round(time.time() - trigger_close_at, 1),
+                            "trigger_close_price=", trigger["c"],
+                            "paper_entry_price=", paper_entry_price,
+                            flush=True,
+                        )
                     print(
                         "[SWING_ALERT_SENT]",
                         symbol,
                         "bias=", bias,
                         "score=", score,
                         "entry_state=", entry_state,
+                        "stage=", entry["stage"],
+                        "live_state=", entry["live_state"],
                         "prefilter_score=",
                         round(float(candidate.get("signed_score", 0)), 1),
                         flush=True,
@@ -2062,6 +2084,8 @@ while True:
                 "prefilter=", swing_stats["prefilter"],
                 "deep_checked=", swing_stats["deep_checked"],
                 "eligible=", swing_stats["eligible"],
+                "live_blocked=", swing_stats["live_blocked"],
+                "live_warming=", swing_stats["live_warming"],
                 "sent=", swing_stats["sent"],
                 "duplicate=", swing_stats["duplicate"],
                 "not_ready=", swing_stats["not_ready"],

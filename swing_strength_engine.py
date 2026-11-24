@@ -518,24 +518,9 @@ def format_report(result):
     return lines
 
 
-def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
-    """Truthful entry state; never changes the medium-term SWING bias."""
-
-    if not isinstance(result,dict):
-        return {"state":"BLOCKED","side":None,"reason":"нет среднесрочных данных"}
-
-    bias=str(result.get("bias") or "UNKNOWN")
-    price=_num(result.get("price"))
-    ticker=result.get("ticker") or {}
-    high=_num(ticker.get("high24h"))
-    low=_num(ticker.get("low24h"))
-    t15=(result.get("trend15") or {}).get("regime")
-    state=str(short_verdict or "")
-
-    side="LONG" if bias=="BULLISH" else "SHORT" if bias=="BEARISH" else None
-    if side is None:
-        return {"state":"BLOCKED","side":None,"reason":"нет подтверждённого SWING-направления"}
-
+def _entry_stage(result, side):
+    price = _num(result.get("price"))
+    t15 = (result.get("trend15") or {}).get("regime")
     breakout=result.get("breakout") or {}
     breakout_phase=str(breakout.get("phase") or "WAIT_BREAKOUT")
     breakout_reason=str(breakout.get("reason") or "1H пробой ещё не подтверждён")
@@ -551,6 +536,32 @@ def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
                 "reason": "1H пробой подтверждён; " + setup_reason}
     if phase == "RETEST_FORMING":
         return {"state": "RETEST", "side": side, "reason": setup_reason}
+    if phase=="READY_ENTRY":
+        expected_15m="UP" if side=="LONG" else "DOWN"
+        if t15!=expected_15m:
+            return {"state":"RETEST","side":side,
+                    "reason":"ретест есть, но 15м структура ещё не подтверждает SWING"}
+        plan = result.get("trade_plan") or {}
+        if plan.get("ready") is not True:
+            return {"state": "RETEST", "side": side,
+                    "reason": plan.get("reason") or "структурный план SL/TP не готов"}
+        if not entry_price_allowed(price, side, breakout, setup):
+            return {"state": "RETEST", "side": side,
+                    "reason": "цена вышла из зоны входа после ретеста"}
+        return {"state":"READY_ENTRY","side":side,"reason":setup_reason}
+
+    return {"state":"WAIT_RETEST","side":side,
+            "reason":"1H пробой подтверждён; "+setup_reason}
+
+
+def _live_entry_check(result, side, short_verdict, live_ready, live_context):
+    bias = result["bias"]
+    price = _num(result.get("price"))
+    ticker = result.get("ticker") or {}
+    high = _num(ticker.get("high24h"))
+    low = _num(ticker.get("low24h"))
+    t15 = (result.get("trend15") or {}).get("regime")
+    state = str(short_verdict or "")
     if not live_ready:
         return {"state": "WARMING", "side": side,
                 "reason": "5м данные ещё накапливаются; вход не разрешён"}
@@ -605,25 +616,32 @@ def entry_decision(result,short_verdict=None,live_ready=True,live_context=None):
         if rebound_from_low is not None and rebound_from_low>=8.0 and t15!="DOWN":
             return {"state":"BLOCKED","side":"SHORT","reason":f"цена уже отскочила {rebound_from_low:.1f}% от 24ч минимума, 15м не подтверждает падение"}
 
-    if phase=="READY_ENTRY":
-        expected_15m="UP" if side=="LONG" else "DOWN"
-        if t15!=expected_15m:
-            return {"state":"RETEST","side":side,
-                    "reason":"ретест есть, но 15м структура ещё не подтверждает SWING"}
-        plan = result.get("trade_plan") or {}
-        if plan.get("ready") is not True:
-            return {"state": "RETEST", "side": side,
-                    "reason": plan.get("reason") or "структурный план SL/TP не готов"}
-        if not entry_price_allowed(price, side, breakout, setup):
-            return {"state": "RETEST", "side": side,
-                    "reason": "цена вышла из зоны входа после ретеста"}
-        return {"state":"READY_ENTRY","side":side,"reason":setup_reason}
-
-    return {"state":"WAIT_RETEST","side":side,
-            "reason":"1H пробой подтверждён; "+setup_reason}
+    return None
 
 
-def format_compact_report(result,short_verdict=None,live_ready=True,live_context=None):
+def entry_decision(result, short_verdict=None, live_ready=True, live_context=None):
+    """Track the setup stage and the live veto even while an entry is pending."""
+    if not isinstance(result, dict):
+        return {"state": "BLOCKED", "side": None, "stage": None, "live_state": None,
+                "reason": "нет среднесрочных данных"}
+
+    side = {"BULLISH": "LONG", "BEARISH": "SHORT"}.get(result.get("bias"))
+    if side is None:
+        return {"state": "BLOCKED", "side": None, "stage": None, "live_state": None,
+                "reason": "нет подтверждённого SWING-направления"}
+
+    stage = _entry_stage(result, side)
+    veto = _live_entry_check(result, side, short_verdict, live_ready, live_context)
+    return {
+        **(veto or stage),
+        "stage": stage["state"],
+        "stage_reason": stage["reason"],
+        "live_state": veto["state"] if veto else "CLEAR",
+    }
+
+
+
+def format_compact_report(result,short_verdict=None,live_ready=True,live_context=None,decision=None):
     """Compact professional trader view: decision first, evidence second."""
     if not isinstance(result,dict):
         return ["⚪ Среднесрочный анализ недоступен."]
@@ -647,7 +665,9 @@ def format_compact_report(result,short_verdict=None,live_ready=True,live_context
         f"{oi4:+.2f}%" if oi4 is not None else "н/д",
     )
 
-    entry=entry_decision(result,short_verdict,live_ready=live_ready,live_context=live_context)
+    entry = decision if decision is not None else entry_decision(
+        result, short_verdict, live_ready=live_ready, live_context=live_context,
+    )
     entry_state=entry.get("state")
     entry_side=entry.get("side")
     entry_reason=entry.get("reason")
@@ -688,7 +708,11 @@ def format_compact_report(result,short_verdict=None,live_ready=True,live_context
         lines.append("Главный риск: " + (exhaustion or opposition[0]))
 
     if entry_state in ("BLOCKED","WARMING"):
-        lines.append("⛔ Вход: НЕ ВХОДИТЬ — "+str(entry_reason)+".")
+        stage_labels = {"WAIT_BREAKOUT": "SWING WATCH", "WAIT_RETEST": "BREAKOUT",
+                        "RETEST": "RETEST", "READY_ENTRY": "RETEST подтверждён"}
+        stage = stage_labels.get(entry["stage"])
+        context = f" · Этап: {stage}" if stage else ""
+        lines.append("⛔ Вход: НЕ ВХОДИТЬ — " + str(entry_reason) + "." + context)
     elif entry_state=="READY_ENTRY":
         lines.append("🟢 Этап: ENTRY · Вход: ГОТОВ — "+str(entry_reason)+".")
     elif entry_state=="RETEST":
