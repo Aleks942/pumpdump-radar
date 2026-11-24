@@ -22,6 +22,7 @@ TITLES = {
     'QUALITY_REVERSAL': '🟠 КАЧЕСТВЕННЫЙ РАЗВОРОТ — ГОТОВИМСЯ К ШОРТУ',
     'PRE_SHORT': '🟠 РАННИЙ СИГНАЛ НА ШОРТ — 4 ИЗ 5',
     'SHORT_CONFIRMED': 'ШОРТ ПОДТВЕРЖДЁН — ЖДЁМ ПОВТОРНУЮ ПРОВЕРКУ УРОВНЯ',
+    'REVERSAL_CONFIRMED': '📉 РАЗВОРОТ ВНИЗ ПОДТВЕРЖДЁН',
     'RETEST': '🔎 ПОВТОРНАЯ ПРОВЕРКА УРОВНЯ — СМОТРИМ ПРОДАВЦОВ',
     'ENTRY_ZONE': 'ЗОНА ВХОДА В ШОРТ',
     'READY_RESEARCH': '🧪 ТЕСТОВЫЙ ПЛАН НА ШОРТ',
@@ -35,6 +36,7 @@ PRIORITY_LABELS = {
     'QUALITY_REVERSAL': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
     'PRE_SHORT': '🟡 ГОТОВЬСЯ — СЦЕНАРИЙ ФОРМИРУЕТСЯ',
     'SHORT_CONFIRMED': '🟡 ШОРТ ПОДТВЕРЖДЁН — ВХОДА ЕЩЁ НЕТ',
+    'REVERSAL_CONFIRMED': '🔵 ПОДТВЕРЖДЕНИЕ СТРУКТУРЫ',
     'RETEST': '🟡 РЕТЕСТ — ЖДЁМ ЗОНУ ВХОДА',
     'ENTRY_ZONE': '🟢 РАБОЧАЯ ЗОНА — ШОРТ',
     'READY_RESEARCH': '🟡 ТЕСТОВЫЙ ПЛАН — НЕ АВТОВХОД',
@@ -164,6 +166,13 @@ def message(event):
     if kind == 'CANCELLED':
         lines.append(CANCEL_REASONS[event['reason']])
         lines.append('Предыдущий сценарий больше не актуален. Это не исполнение сделки.')
+    elif kind == 'REVERSAL_CONFIRMED':
+        lines += [
+            'Пробой вниз и неудачный ретест снизу подтверждены.',
+            'Закрытые 1H свечи удержали цену ниже уровня, структура 1H нисходящая.',
+            'Фьючерсная дельта, OI и перехват инициативы продавцами подтверждены.',
+            'Зона входа и тестовый план, если они появятся, придут отдельным сообщением.',
+        ]
     elif kind == 'QUALITY_REVERSAL':
         try:
             d=json.loads(event.get('evidence_json') or '{}')
@@ -275,13 +284,24 @@ def deliver(sender, tickers, now=None, db_path=None):
         for row in pending:
             e = json.loads(row['payload'])
             latest = db.execute('''SELECT id FROM post_pump_short_strategy_audit
-                WHERE symbol=? AND episode_at=? ORDER BY id DESC LIMIT 1''',
+                WHERE symbol=? AND episode_at=? AND phase!='REVERSAL_CONFIRMED' ORDER BY id DESC LIMIT 1''',
                 (row['symbol'],row['episode_at'])).fetchone()
             state = db.execute('SELECT * FROM post_pump_short_strategy WHERE symbol=?', (row['symbol'],)).fetchone()
             ttl = 180 if row['kind'] == 'ENTRY_ZONE' else 120 if row['kind'] == 'READY_RESEARCH' else 600
             valid = (latest is not None and latest['id'] == row['audit_id']
                      and state is not None and state['episode_at'] == row['episode_at']
                      and 0 <= now-e['at'] <= ttl)
+            if row['kind'] == 'REVERSAL_CONFIRMED':
+                snapshot = json.loads(e.get('evidence_json') or '{}').get('reversal_confirmation') or {}
+                level = _num(snapshot.get('break_level'))
+                current = prices.get(row['symbol'])
+                valid = (
+                    state is not None and state['episode_at'] == row['episode_at']
+                    and (state['phase'] in ('RETEST', 'ENTRY_ZONE', 'READY_RESEARCH')
+                         or (state['phase'] == 'CANCELLED' and state['watch_reason'] == 'PAPER_PLAN_EXPIRED'))
+                    and level is not None and state['break_level'] == level
+                    and current is not None and current < level and 0 <= now-e['at'] <= ttl
+                )
             if row['kind'] in ('ENTRY_ZONE','READY_RESEARCH'):
                 px = prices.get(row['symbol'])
                 phase_ok=(state is not None and state['phase']==row['kind'])
