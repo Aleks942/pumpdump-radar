@@ -52,6 +52,16 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(self.run_delivery(NOW + 2), 1)
         self.assertIn("POST-PUMP SHORT", self.sender.call_args.args[0])
 
+    def test_confirmed_reversal_is_delivered_for_expired_paper_plan(self):
+        self.event("REVERSAL_CONFIRMED", evidence_json=json.dumps({
+            "reversal_confirmation": {"break_level": 101},
+        }))
+        with sqlite3.connect(self.path) as db:
+            db.execute("UPDATE post_pump_short_strategy SET phase='CANCELLED', "
+                       "watch_reason='PAPER_PLAN_EXPIRED', break_level=101")
+        self.assertEqual(self.run_delivery(NOW + 2, price=100), 1)
+        self.assertIn("РАЗВОРОТ ВНИЗ ПОДТВЕРЖДЁН", self.sender.call_args.args[0])
+
     def test_research_metrics_are_labeled_as_partial_context(self):
         event={'kind':'WEAKENING','symbol':'TESTUSDT','at':NOW,
                'rise_pct':35.0,'retrace_pct':8.0,

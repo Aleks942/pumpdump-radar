@@ -27,6 +27,7 @@ from post_pump_short_paper import (
 )
 from post_pump_context_v2 import enrich as enrich_research_evidence
 from post_pump_context_v2 import maybe_report_cohorts
+from swing_strength_engine import _trend as swing_trend
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from post_pump_early_weakening import is_early_weakening
 from post_pump_spot_stream import (
@@ -52,6 +53,7 @@ PRIORITY_RETRACE_PCT=3.0
 CONTEXT_INTERVAL_SEC=120
 HOT_CONTEXT_INTERVAL_SEC=60
 MAX_EPISODE_SEC=72*3600
+REVERSAL_WATCH_AFTER_PLAN_SEC = 6 * 3600
 ENTRY_ZONE_BELOW_ATR=0.70
 ENTRY_ZONE_ABOVE_ATR=0.15
 PRACTICAL_ENTRY_BELOW_ATR=0.55
@@ -583,7 +585,7 @@ def _plan(price,structure,level,retrace,spread,equity):
                 fee_model_pct=ROUND_TRIP_COST_PCT)
 
 
-def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=None):
+def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=None,*,observation=False):
     evidence=dict(evidence or {})
     structure=structure or {}
     peak_at=num(state.get("peak_at")) or num(state.get("episode_at"))
@@ -609,13 +611,20 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
         }
     payload=json.dumps(evidence,default=str,sort_keys=True)
     structur=json.dumps(structure,default=str,sort_keys=True)
-    new=phase!=state["phase"]
-    if not new:
-        return False
     old=state["phase"]
-    state["phase"]=phase
-    state["phase_at"]=now
-    state["watch_reason"]=reason
+    if observation:
+        exists = db.execute(
+            "SELECT 1 FROM post_pump_short_strategy_audit WHERE symbol=? AND episode_at=? AND phase=?",
+            (state["symbol"], state["episode_at"], phase),
+        ).fetchone()
+        if exists:
+            return False
+    else:
+        if phase == old:
+            return False
+        state["phase"]=phase
+        state["phase_at"]=now
+        state["watch_reason"]=reason
     db.execute("""INSERT OR IGNORE INTO post_pump_short_strategy_audit(
         symbol,episode_at,at,phase,reason,rise_pct,retrace_pct,
         evidence_json,structure_json,reference_price,entry,stop,tp1,tp2,
@@ -790,6 +799,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     if now-st["last_context_at"]<_context_interval(st["phase"]):
         return status,None
     st["last_context_at"]=now
+    c = {}
     try:
         c=context(sym)
         struct=analyze_structure(c.get("5m"),c.get("15m"),c.get("1H"),now)
@@ -877,6 +887,13 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         and (ev.get("order_flow") or {}).get("status")=="CONFIRMED"
         and (ev.get("order_flow") or {}).get("ready") is True
     )
+    if st["phase"] == "CANCELLED":
+        if new_peak or (st.get("break_level") is not None and profile["last"] >= st["break_level"] * 1.012):
+            st["break_level"] = None
+            st["break_candle_ts"] = None
+        elif strict_short:
+            _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
+        return status,struct
     base4=_pre_short_base4(ev,struct)
     quality=_quality_reversal(ev,struct,spot)
     spot_not_ready=spot.get("ready") is not True
@@ -988,7 +1005,44 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
                           f"retrace={st['last_retrace_pct']:.2f}% "
                           f"qty={plan['quantity']} risk={100*RISK_FRACTION:.2f}% "
                           "NO_LIVE_ORDER=true DECISION_SUPPORT=true",flush=True)
+    if strict_short:
+        _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
     return status,struct
+
+
+def _observe_confirmed_reversal(db, state, now, structure, hourly, evidence):
+    """Record a structural reversal alongside the existing entry lifecycle."""
+    if (state["phase"] not in ("RETEST", "ENTRY_ZONE", "READY_RESEARCH")
+            and not (state["phase"] == "CANCELLED" and state.get("watch_reason") == "PAPER_PLAN_EXPIRED")):
+        return False
+    if not structure.get("trend_shift") or (evidence.get("final_short_confirmation") or {}).get("ready") is not True:
+        return False
+    level = num(state.get("break_level"))
+    breakout = num(state.get("break_candle_ts"))
+    price = num(state.get("last_price"))
+    if level is None or breakout is None or price is None or price >= level:
+        return False
+    retest = db.execute(
+        "SELECT at FROM post_pump_short_strategy_audit "
+        "WHERE symbol=? AND episode_at=? AND phase='RETEST' AND at>=? ORDER BY at DESC LIMIT 1",
+        (state["symbol"], state["episode_at"], breakout + 300),
+    ).fetchone()
+    if retest is None:
+        return False
+    candles = parse_closed_candles(hourly, 3600, now)
+    closed_after_retest = [row for row in candles if row["ts"] + 3600 > retest["at"]]
+    if (len(closed_after_retest) < 2 or any(row["c"] >= level for row in closed_after_retest)
+            or swing_trend(candles[-80:]).get("regime") != "DOWN"):
+        return False
+    snapshot = dict(evidence, reversal_confirmation={
+        "break_level": level, "retest_at": retest["at"],
+        "last_hour_closed_at": candles[-1]["ts"] + 3600,
+        "hourly_closes_below": len(closed_after_retest),
+    })
+    return _record_phase(
+        db, state, now, "REVERSAL_CONFIRMED", "RETEST_AND_1H_DOWNTREND_WITH_SELLER_TAKEOVER",
+        snapshot, structure, observation=True,
+    )
 
 
 def _fetch_paper_1m(symbol):
@@ -1023,6 +1077,18 @@ def _cancel_published_plans(db, quotes, now):
             db.execute("""UPDATE post_pump_short_strategy SET phase=?,phase_at=?,
                 watch_reason=?,last_price=?,last_retrace_pct=? WHERE symbol=?""",
                 (st['phase'],st['phase_at'],reason,st['last_price'],st['last_retrace_pct'],st['symbol']))
+
+
+def _retained_reversal_watch(db, row, now):
+    if (row is None or row["phase"] != "CANCELLED" or row["watch_reason"] != "PAPER_PLAN_EXPIRED"
+            or row["break_candle_ts"] is None or now - row["phase_at"] >= REVERSAL_WATCH_AFTER_PLAN_SEC):
+        return False
+    return db.execute(
+        "SELECT 1 FROM post_pump_short_strategy_audit WHERE symbol=? AND episode_at=? "
+        "AND phase='RETEST' AND at>=? AND NOT EXISTS ("
+        "SELECT 1 FROM post_pump_short_strategy_audit WHERE symbol=? AND episode_at=? AND phase='REVERSAL_CONFIRMED')",
+        (row["symbol"], row["episode_at"], row["break_candle_ts"] + 300, row["symbol"], row["episode_at"]),
+    ).fetchone() is not None
 
 
 def observe(tickers,now=None,db_path=None,fetch_context=None,
@@ -1085,7 +1151,9 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             for symbol,item in eligible.items():
                 old=db.execute("""SELECT * FROM post_pump_short_strategy
                                   WHERE symbol=?""",(symbol,)).fetchone()
-                if (old is None or old["phase"] in ("CANCELLED","EXPIRED")
+                retained = (_retained_reversal_watch(db, old, now)
+                            and item["high"] <= old["peak"] * 1.001)
+                if (old is None or (old["phase"] in ("CANCELLED","EXPIRED") and not retained)
                         or now-old["last_seen_at"]>STALE_SYMBOL_SEC
                         or now-old["episode_at"]>MAX_EPISODE_SEC):
                     if old is not None:
@@ -1165,9 +1233,11 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
             # Evaluate existing + fresh assets even after the 24h window rolls;
             # at most one 72h research episode, never immortal on stale momentum.
             candidates=list(db.execute("""SELECT * FROM post_pump_short_strategy
-                WHERE episode_at>=? AND phase NOT IN ('CANCELLED','EXPIRED')
-                LIMIT 120""",(now-MAX_EPISODE_SEC,)).fetchall())
-            candidates=[z for z in candidates if z["symbol"] in live_profiles]
+                WHERE episode_at>=? AND (phase NOT IN ('CANCELLED','EXPIRED')
+                    OR (phase='CANCELLED' AND watch_reason='PAPER_PLAN_EXPIRED' AND phase_at>?))
+                LIMIT 120""",(now-MAX_EPISODE_SEC, now-REVERSAL_WATCH_AFTER_PLAN_SEC)).fetchall())
+            candidates=[z for z in candidates if z["symbol"] in live_profiles
+                        and (z["phase"] != "CANCELLED" or _retained_reversal_watch(db, z, now))]
             candidates.sort(
                 key=lambda z:_candidate_sort_key(z,eligible,live_profiles)
             )
@@ -1232,7 +1302,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 # The autonomous local verifier reads only in-process caches
                 # and is refreshed while the setup is structurally relevant.
                 # Cooldown inside dispatch bounds repeated work.
-                if st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED","RETEST"):
+                if (st["phase"] in ("TREND_SHIFT","SHORT_CONFIRMED","RETEST","ENTRY_ZONE","READY_RESEARCH")
+                        or _retained_reversal_watch(db, st, now)):
                     pending_flow.append((symbol,profile["last"],st["episode_at"]))
                 db.execute("""UPDATE post_pump_short_strategy SET
                     last_seen_at=?,phase=?,phase_at=?,peak=?,rise_max=?,band=?,
