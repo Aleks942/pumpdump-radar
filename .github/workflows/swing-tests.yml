@@ -57,6 +57,8 @@ jobs:
             test_swing_strength_engine.py \
             test_swing_result_tracker.py \
             test_swing_absorption.py \
+            test_swing_research_gate.py \
+            test_post_pump_notifications.py \
             test_swing_backtest.py \
             test_swing_alert_state.py \
             test_telegram_manual_research.py

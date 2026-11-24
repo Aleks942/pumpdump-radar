@@ -32,7 +32,9 @@ from public_exchange_context import schedule as schedule_public_exchange_context
 from move_verifier import schedule as schedule_move_verification
 from pump_peak_watch import observe as observe_pump_peak, acknowledge as ack_pump_peak, message as pump_peak_message
 from pump_30_alerts import observe as observe_30_pumps, acknowledge as ack_30_pump, message as pump_30_message
-from post_pump_notifications import deliver as deliver_post_pump_notifications
+from post_pump_notifications import (
+    deliver as deliver_post_pump_notifications, prepare as prepare_post_pump_notifications,
+)
 from pump_cycle_research import (observe as observe_pump_cycle,
                                  observe_outcomes as observe_cycle_outcomes,
                                  report_outcomes as report_cycle_outcomes)
@@ -119,9 +121,7 @@ ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", 3600))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 347))
 SCAN_SLEEP = int(os.getenv("SCAN_SLEEP", 60))
 MAX_SYMBOLS = int(os.getenv("MAX_SYMBOLS", 1000))
-# Production is intentionally SWING-only.
-# Legacy/research modules stay in the repository for offline studies and
-# backtests, but environment variables cannot re-attach them to live decisions.
+# SWING is the primary scanner. POST-PUMP SHORT has its own paper pipeline.
 PRIMARY_SCAN_MODE = "SWING"
 SWING_DEEP_TOP_N = int(os.getenv("SWING_DEEP_TOP_N", 8))
 SWING_ALERT_COOLDOWN_SEC = int(os.getenv("SWING_ALERT_COOLDOWN_SEC", 2 * 3600))
@@ -133,6 +133,7 @@ SWING_VERBOSE_LOGS = os.getenv("SWING_VERBOSE_LOGS", "0") == "1"
 SWING_LEGACY_TELEGRAM = False
 SWING_RESEARCH_ENABLED = False
 RESEARCH_PIPELINE_ENABLED = False
+POST_PUMP_SHORT_ENABLED = os.getenv("POST_PUMP_SHORT_ENABLED", "1") == "1"
 
 ANTI_LATE_MAX_5M = float(os.getenv("ANTI_LATE_MAX_5M", 5.5))
 ANTI_LATE_EXHAUSTION_MIN_MOVE = float(os.getenv("ANTI_LATE_EXHAUSTION_MIN_MOVE", 2.5))
@@ -1445,6 +1446,18 @@ def should_send_signal(signal):
 
     return False
 
+def run_post_pump_short_scan(tickers):
+    telegram_enabled = os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
+    try:
+        if telegram_enabled:
+            prepare_post_pump_notifications()
+        observe_complete_post_pump_short(tickers)
+        if telegram_enabled:
+            deliver_post_pump_notifications(send_telegram, tickers)
+    except Exception as exc:
+        print("[POST_PUMP_SHORT_SCAN_ERROR]", type(exc).__name__, str(exc)[:200], flush=True)
+
+
 print("🚀 PumpDump Radar V2 started")
 
 if RESEARCH_PIPELINE_ENABLED:
@@ -1469,15 +1482,6 @@ manual_research_bot = start_manual_research(BOT_TOKEN, CHAT_ID, send_telegram)
 start_liquidation_streams()
 
 if RESEARCH_PIPELINE_ENABLED:
-    initial_tickers = get_market_tickers()
-    swap_symbols = [t.get("instId") for t in initial_tickers if t.get("instId")]
-    threading.Thread(
-        target=run_stream_forever,
-        args=(swap_symbols,),
-        daemon=True,
-    ).start()
-    print("[V3_WS_THREAD_STARTED]", "symbols=", len(swap_symbols))
-
     threading.Thread(
         target=run_entry_tracker,
         name="entry-tracker",
@@ -1491,6 +1495,9 @@ print(
     flush=True,
 )
 _last_edge_report_mono = 0.0
+_post_pump_flow_thread = None
+_post_pump_scan_thread = None
+print("[POST_PUMP_SHORT]", "enabled=", POST_PUMP_SHORT_ENABLED, flush=True)
 
 while True:
     if RESEARCH_PIPELINE_ENABLED and time.monotonic() - _last_edge_report_mono >= 3600:
@@ -1717,18 +1724,6 @@ while True:
         except Exception as cycle_exc:
             print("[PUMP_CYCLE_ERROR]", type(cycle_exc).__name__, flush=True)
 
-        # Complete independent POST-PUMP SHORT strategy. Discovers +30% pumps
-        # directly from the same OKX ticker list, including late pullbacks
-        # excluded by earlier Pump Watch. Max three candidates checked per scan,
-        # 5m/15m/H1 closed candles, verified 5m Spot + cached OI/futures.
-        # PAPER ONLY: never opens positions or overrides trading gates.
-        try:
-            observe_complete_post_pump_short(tickers)
-        except Exception as complete_short_exc:
-            print("[COMPLETE_POST_PUMP_SHORT_LOOP_ERROR]",
-                  type(complete_short_exc).__name__,
-                  str(complete_short_exc)[:300], flush=True)
-
         # Independent mirror strategy: completed dump -> possible squeeze / LONG reversal.
         # Research-only; reuses existing ticker/OI/flow caches and never places orders.
         try:
@@ -1747,15 +1742,6 @@ while True:
             print("[POST_DUMP_ACCUM_LOOP_ERROR]",
                   type(post_dump_accum_exc).__name__, str(post_dump_accum_exc)[:300],
                   flush=True)
-
-        # User-enabled complete lifecycle. Preserves every strategy evidence gate;
-        # messages explicitly label READY as a paper plan, never a live order.
-        if (os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
-                and (PRIMARY_SCAN_MODE == "LEGACY" or SWING_LEGACY_TELEGRAM)):
-            try:
-                deliver_post_pump_notifications(send_telegram, tickers)
-            except Exception as notify_error:
-                print("[POST_PUMP_NOTIFY_ERROR]", type(notify_error).__name__, flush=True)
 
         # Retain the prior Pump Cycle research cohorts as a separate experiment.
         try:
@@ -1776,6 +1762,26 @@ while True:
         except Exception as forward_exc:
             print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
                   type(forward_exc).__name__, flush=True)
+
+    if tickers and (POST_PUMP_SHORT_ENABLED or RESEARCH_PIPELINE_ENABLED):
+        if _post_pump_flow_thread is None or not _post_pump_flow_thread.is_alive():
+            swap_symbols = [
+                row["instId"] for row in tickers if row.get("instId", "").endswith("-USDT-SWAP")
+            ]
+            if swap_symbols:
+                _post_pump_flow_thread = threading.Thread(
+                    target=run_stream_forever, args=(swap_symbols,),
+                    name="okx-swap-flow", daemon=True,
+                )
+                _post_pump_flow_thread.start()
+        if POST_PUMP_SHORT_ENABLED and (
+            _post_pump_scan_thread is None or not _post_pump_scan_thread.is_alive()
+        ):
+            _post_pump_scan_thread = threading.Thread(
+                target=run_post_pump_short_scan, args=(tickers,),
+                name="post-pump-short-scan", daemon=True,
+            )
+            _post_pump_scan_thread.start()
 
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
