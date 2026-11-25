@@ -132,6 +132,21 @@ class NotificationsTests(unittest.TestCase):
                    evidence_json=json.dumps({'entry_zone':{'zone_low':99.5,'zone_high':100.5}}))
         self.assertIn('🟢 РАБОЧАЯ ЗОНА — ШОРТ',notify.message(event))
 
+    def test_bybit_outside_zone_is_reported_and_recorded(self):
+        self.event("ENTRY_ZONE")
+        result = notify.deliver(
+            self.sender, [{"instId": "TEST-USDT-SWAP", "last": "100"}],
+            now=NOW + 2, db_path=self.path, bybit_prices={"TESTUSDT": "102"},
+            bybit_observed_at=NOW + 1,
+        )
+        self.assertEqual(result, 1)
+        message = self.sender.call_args.args[0]
+        self.assertIn("BYBIT — ЗОНА ВХОДА НЕ ПОДТВЕРЖДЕНА", message)
+        self.assertIn("Bybit 102", message)
+        with sqlite3.connect(self.path) as db:
+            raw = db.execute("SELECT payload FROM post_pump_notify_outbox WHERE status='SENT'").fetchone()[0]
+        self.assertFalse(json.loads(raw)["bybit_in_zone"])
+
     def test_full_lifecycle_and_restart_dedup(self):
         for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT',
                                   'SHORT_CONFIRMED','RETEST','ENTRY_ZONE')):

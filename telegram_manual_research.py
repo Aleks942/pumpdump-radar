@@ -326,27 +326,27 @@ def _verdict(ticker,price5,oi_local,oi_agg,fut,spot,funding,liq):
     return label,", ".join(reasons) if reasons else "данных недостаточно"
 
 
-def visual_market_state(symbol,current_price=None,now=None):
-    """Return a compact 5m market-state label for SWING Telegram.
+def warm_swing_market_state(symbol, current_price, now=None):
+    """Sample shortlist price and start existing 5m feeds without REST calls."""
+    for watch in (watch_symbol, watch_bybit_flow_symbol):
+        try:
+            watch(symbol)
+        except Exception:
+            pass
+    return _price5(symbol, current_price, now)
 
-    Starts/warmups only the data feeds needed by the shortlisted symbol.
-    It is context only and never changes the medium-term SWING direction.
-    """
-    now=time.time() if now is None else float(now)
-    try:
-        watch_symbol(symbol)
-    except Exception:
-        pass
-    try:
-        watch_bybit_flow_symbol(symbol)
-    except Exception:
-        pass
+
+def visual_market_state(symbol,current_price=None,now=None,*,price_observed_at=None):
+    """Return SWING timing data and per-feed readiness."""
+    now = time.time() if now is None else float(now)
+    quote_at = now if price_observed_at is None else price_observed_at
+    if not 0 <= now - quote_at <= 60:
+        current_price = None
+    price5 = warm_swing_market_state(symbol, current_price, quote_at)
     try:
         watch_bybit_symbol(symbol)
     except Exception:
         pass
-
-    price5=_price5(symbol,current_price,now) if current_price is not None else {}
     oi_agg=_agg_oi5(symbol)
     fut=_flow5(symbol)
     try:
@@ -380,6 +380,9 @@ def visual_market_state(symbol,current_price=None,now=None):
 
     return {
         "ready":live_ready,
+        "missing_5m": tuple(name for name, ready in (
+            ("price", price_ready), ("oi", oi_ready), ("futures", flow_ready),
+        ) if not ready),
         "label":label,
         "reasons":reasons,
         "price5_pct":_num(price5.get("change_pct")) if price_ready else None,

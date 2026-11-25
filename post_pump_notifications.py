@@ -158,8 +158,11 @@ def _research_lines(event):
 def message(event):
     kind = event['kind']
     at = datetime.fromtimestamp(event['at'], ZoneInfo('Europe/Warsaw')).strftime('%d.%m %H:%M:%S')
+    priority = PRIORITY_LABELS[kind]
+    if kind == "ENTRY_ZONE" and event.get("bybit_checked") and event.get("bybit_in_zone") is not True:
+        priority = "🟠 BYBIT — ЗОНА ВХОДА НЕ ПОДТВЕРЖДЕНА"
     lines = [f"<b>POST-PUMP SHORT — {escape(event['symbol'])}</b>",
-             PRIORITY_LABELS[kind], TITLES[kind],
+             priority, TITLES[kind],
              'Наблюдение: ' + at + ' (Польша)',
              f"Рост от открытия 24ч до максимума: +{event['rise_pct']:.2f}%",
              f"Откат от максимума: {event['retrace_pct']:.2f}%"]
@@ -208,7 +211,7 @@ def message(event):
         zone=(f'{low:.8g} — {high:.8g}'
               if low is not None and high is not None
               else f"{event['entry']:.8g}")
-        lines += ['✅ Пробой подтверждён, закрытый 5м ретест отклонён продавцами.',
+        lines += ['Проверка структуры и потока продавцов пройдена.',
                   '✅ Фьючерсы + OI + структура + поток продавцов подтверждают давление вниз.',
                   'ℹ️ Спот учитывается как справочный контекст, но не как фильтр входа.',
                   f"🎯 Зона входа ШОРТ: {zone}",
@@ -216,6 +219,15 @@ def message(event):
                   f"🛑 Стоп / отмена: {event['stop']:.8g}",
                   f"Цель 1: {event['tp1']:.8g} | цель 2: {event['tp2']:.8g}",
                   'Бот ордер не выставляет. Это зона входа по модели, не гарантия падения.']
+        quote = _num(event.get("bybit_price"))
+        if quote is not None:
+            if event.get("bybit_in_zone") is True:
+                lines.append(f"Bybit {quote:.8g} · цена в расчётной зоне.")
+            else:
+                lines.append(f"Bybit {quote:.8g} · цена вне зоны. Подтверждение входа на Bybit отсутствует.")
+        elif event.get("bybit_checked"):
+            lines.append("Bybit · свежей цены нет. Статус зоны на Bybit неизвестен.")
+
     else:
         lines.append('Наблюдение, вход в ШОРТ ещё не подтверждён.')
     if kind != 'CANCELLED':
@@ -251,9 +263,10 @@ def prepare(db_path=None):
         _setup(db, time.time())
 
 
-def deliver(sender, tickers, now=None, db_path=None):
+def deliver(sender, tickers, now=None, db_path=None, *, bybit_prices=None, bybit_observed_at=None):
     """Consume latest valid stages; ACK only True. At most three sends per scan."""
     now = time.time() if now is None else float(now)
+    delivery_started = time.monotonic()
     path = db_path or DB_PATH
     prices = {}
     for t in tickers or ():
@@ -321,6 +334,15 @@ def deliver(sender, tickers, now=None, db_path=None):
                         zone_ok=abs(px/e['entry']-1)<=.003
                 valid=(valid and phase_ok and px is not None and zone_ok
                        and e['tp1']<px<e['stop'])
+            if valid and row["kind"] in ("ENTRY_ZONE", "READY_RESEARCH") and bybit_prices is not None:
+                quote_age = (now + time.monotonic() - delivery_started - bybit_observed_at
+                             if bybit_observed_at is not None else float("inf"))
+                quote = _num(bybit_prices.get(row["symbol"])) if 0 <= quote_age <= 60 else None
+                in_zone = bool(quote is not None and e["tp1"] < quote < e["stop"] and (
+                    low <= quote <= high if low is not None and high is not None
+                    else abs(quote/e["entry"]-1) <= .003
+                ))
+                e.update(bybit_checked=True, bybit_price=quote, bybit_in_zone=in_zone)
             if row['kind'] == 'CANCELLED':
                 # Never notify cancellation of a scenario the user has not seen.
                 prior = db.execute('''SELECT 1 FROM post_pump_notify_outbox
@@ -349,10 +371,29 @@ def deliver(sender, tickers, now=None, db_path=None):
             except Exception:
                 result = None
             status = 'SENT' if result is True else 'PENDING' if result is False else 'UNKNOWN'
-            db.execute('''UPDATE post_pump_notify_outbox SET status=?,retry_at=?,sent_at=?
-                WHERE audit_id=?''', (status,now+60,now if result is True else None,row['audit_id']))
+            accepted_at = now + (time.monotonic() - delivery_started) if result is True else None
+            if accepted_at is not None:
+                try:
+                    structure = json.loads(e.get("structure_json") or "{}")
+                    evidence = json.loads(e.get("evidence_json") or "{}")
+                except (ValueError, TypeError):
+                    structure, evidence = {}, {}
+                last5 = structure.get("last5") or {} if isinstance(structure, dict) else {}
+                candle_start = _num(last5.get("ts"))
+                if candle_start is not None:
+                    e["delivery_delay_sec"] = round(accepted_at - (candle_start + 300), 2)
+                lifecycle = evidence.get("lifecycle") or {} if isinstance(evidence, dict) else {}
+                peak = _num(lifecycle.get("peak"))
+                last_okx = prices.get(row["symbol"])
+                if peak and last_okx:
+                    e["retrace_at_quote_pct"] = round(100 * (1 - last_okx / peak), 3)
+            db.execute(
+                "UPDATE post_pump_notify_outbox SET status=?,retry_at=?,sent_at=?,payload=? WHERE audit_id=?",
+                (status, now+60, accepted_at, json.dumps(e), row["audit_id"]),
+            )
             db.commit()
             sent += 1
             print('[POST_PUMP_NOTIFY]',row['symbol'],'stage=',row['kind'],
-                  'status=',status,'audit_id=',row['audit_id'],flush=True)
+                  'status=',status,'audit_id=',row['audit_id'],
+                  'bybit_in_zone=',e.get('bybit_in_zone'),'delay_sec=',e.get('delivery_delay_sec'),flush=True)
         return sent

@@ -18,6 +18,29 @@ class SwingResultTrackerTests(unittest.TestCase):
         except FileNotFoundError:
             pass
 
+    def test_candle_tracking_records_stop_hidden_between_scans(self):
+        now = 1_700_000_040
+        plan = {"ready": True, "stop": 98, "tp1": 104, "tp2": 106}
+        self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now,
+                                         trade_plan=plan, track_candles=True))
+        self.assertEqual(s.update_results({"AAAUSDT": 107}, now + 60), [])
+        candles = [{"ts": now, "o": 100, "h": 101, "l": 97, "c": 100}]
+        events = s.update_candle_results(lambda *args: candles, now + 60)
+        self.assertEqual([row["event_type"] for row in events], ["STOP"])
+        self.assertEqual(s.update_candle_results(lambda *args: candles, now + 120), [])
+
+    def test_candle_tracking_waits_for_gaps_and_preserves_ambiguity(self):
+        now = 1_700_000_040
+        plan = {"ready": True, "stop": 98, "tp1": 104, "tp2": 106}
+        self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now,
+                                         trade_plan=plan, track_candles=True))
+        later = {"ts": now + 60, "o": 100, "h": 107, "l": 97, "c": 100}
+        self.assertEqual(s.update_candle_results(lambda *args: [later], now + 120), [])
+        first = {"ts": now, "o": 100, "h": 101, "l": 99, "c": 100}
+        events = s.update_candle_results(lambda *args: [first, later], now + 120)
+        self.assertEqual([row["event_type"] for row in events], ["AMBIGUOUS"])
+        self.assertIsNone(events[0]["r_multiple"])
+
     def test_long_markout_checkpoints(self):
         now = 1_700_000_000
         self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now))

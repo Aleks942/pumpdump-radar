@@ -80,6 +80,9 @@ def _conn():
             PRIMARY KEY(entry_id, event_type)
         )"""
     )
+    db.execute("""CREATE TABLE IF NOT EXISTS swing_candle_progress (
+        entry_id INTEGER PRIMARY KEY, next_bar_at INTEGER NOT NULL, last_attempt_at REAL NOT NULL DEFAULT 0
+    )""")
     db.commit()
     return db
 
@@ -92,7 +95,7 @@ def _num(v):
         return None
 
 
-def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None, strategy_version=VALIDATION_VERSION, setup_at=None):
+def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None, strategy_version=VALIDATION_VERSION, setup_at=None, track_candles=False):
     now = time.time() if now is None else float(now)
     price=_num(entry_price)
     try:
@@ -126,20 +129,23 @@ def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None, 
         existing=db.execute(
             "SELECT id FROM swing_entries WHERE symbol=? AND side=? AND entry_at>=? AND strategy_version=? "
             "AND NOT EXISTS (SELECT 1 FROM swing_events e "
-            "WHERE e.entry_id=swing_entries.id AND e.event_type IN ('STOP','TP2')) "
+            "WHERE e.entry_id=swing_entries.id AND e.event_type IN ('STOP','TP2','TIME','AMBIGUOUS','DATA_GAP')) "
             "ORDER BY entry_at DESC LIMIT 1",
             (symbol,side,active_since,strategy_version),
         ).fetchone()
         if existing:
             return False
 
-        inserted = db.execute(
+        cursor = db.execute(
             "INSERT INTO swing_entries(symbol,side,entry_price,entry_at,score,stop,tp1,tp2,strategy_version,setup_at) "
             "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
             (symbol,side,price,now,score,stop,tp1,tp2,strategy_version,setup_at),
-        ).rowcount
+        )
+        if cursor.rowcount == 1 and track_candles and plan:
+            first_full_minute = math.ceil(now / 60) * 60
+            db.execute("INSERT INTO swing_candle_progress(entry_id,next_bar_at) VALUES (?,?)", (cursor.lastrowid, first_full_minute))
         db.commit()
-        return inserted == 1
+        return cursor.rowcount == 1
     finally:
         db.close()
 
@@ -152,7 +158,7 @@ def current_setup_plan(symbol, side, setup_at):
             "SELECT entry_price, stop, tp1, tp2 FROM swing_entries "
             "WHERE symbol=? AND side=? AND strategy_version=? AND setup_at=? "
             "AND entry_at > ? AND NOT EXISTS (SELECT 1 FROM swing_events "
-            "WHERE entry_id=swing_entries.id AND event_type IN ('STOP','TP2','TIME'))",
+            "WHERE entry_id=swing_entries.id AND event_type IN ('STOP','TP2','TIME','AMBIGUOUS','DATA_GAP'))",
             (symbol, side, VALIDATION_VERSION, setup_at, time.time() - ACTIVE_TTL_SEC),
         ).fetchone()
     finally:
@@ -196,12 +202,13 @@ def update_results(current_prices, now=None, legacy_prices=None):
         rows=db.execute(
             "SELECT id,symbol,side,entry_price,entry_at,stop,tp1,tp2,strategy_version, "
             "EXISTS (SELECT 1 FROM swing_events WHERE entry_id=swing_entries.id "
-            "AND event_type IN ('STOP','TP2','TIME')) "
+            "AND event_type IN ('STOP','TP2','TIME','AMBIGUOUS','DATA_GAP')) "
+            ", EXISTS (SELECT 1 FROM swing_candle_progress WHERE entry_id=swing_entries.id) "
             "FROM swing_entries WHERE entry_at BETWEEN ? AND ?",
             (now - ACTIVE_TTL_SEC - MAX_MARKOUT_DELAY_SEC, now),
         ).fetchall()
 
-        for entry_id,symbol,side,entry,entry_at,stop,tp1,tp2,version,terminal in rows:
+        for entry_id,symbol,side,entry,entry_at,stop,tp1,tp2,version,terminal,candle_tracked in rows:
             prices = legacy_prices if legacy_prices is not None and version != VALIDATION_VERSION else current_prices
             price=_num(prices.get(symbol))
             if price is None or price<=0 or entry<=0:
@@ -212,7 +219,7 @@ def update_results(current_prices, now=None, legacy_prices=None):
 
             # Record observed plan touches from the same live price stream.
             stop=_num(stop); tp1=_num(tp1); tp2=_num(tp2)
-            if not terminal and stop is not None and tp1 is not None and tp2 is not None:
+            if not terminal and not candle_tracked and stop is not None and tp1 is not None and tp2 is not None:
                 risk = abs(entry - stop)
                 elapsed = now - entry_at
                 if risk <= 0:
@@ -258,3 +265,90 @@ def update_results(current_prices, now=None, legacy_prices=None):
         return completed
     finally:
         db.close()
+
+def update_candle_results(fetch_candles, now=None, max_symbols=4):
+    """Follow new Bybit samples in order, waiting for missing closed bars."""
+    now = time.time() if now is None else float(now)
+    db = _conn()
+    try:
+        rows = db.execute(
+            "SELECT e.id,e.symbol,e.side,e.entry_price,e.entry_at,e.stop,e.tp1,e.tp2,p.next_bar_at "
+            "FROM swing_candle_progress p JOIN swing_entries e ON e.id=p.entry_id "
+            "WHERE p.next_bar_at+60<=? AND NOT EXISTS (SELECT 1 FROM swing_events "
+            "WHERE entry_id=e.id AND event_type IN ('STOP','TP2','TIME','AMBIGUOUS','DATA_GAP')) "
+            "ORDER BY p.last_attempt_at, p.next_bar_at, e.id", (now,),
+        ).fetchall()
+    finally:
+        db.close()
+
+    batches = {}
+    completed = []
+    for row in rows:
+        entry_id, symbol, side, entry, entry_at, stop, tp1, tp2, start = row
+        deadline = int((entry_at + ACTIVE_TTL_SEC) // 60) * 60
+        end = min(int(now // 60) * 60, deadline, start + 120 * 60)
+        key = (symbol, start, end)
+        if key not in batches:
+            if len(batches) >= max_symbols:
+                continue
+            try:
+                batches[key] = {int(bar["ts"]): bar
+                                for bar in fetch_candles(symbol, "1", start*1000, end*1000-1)}
+            except Exception as exc:
+                print("[SWING_CANDLE_FETCH_ERROR]", symbol, type(exc).__name__, flush=True)
+                batches[key] = {}
+        bars = batches[key]
+        sign = 1 if side == "LONG" else -1
+        risk = abs(entry - stop)
+        db = _conn()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            progress = db.execute("SELECT next_bar_at FROM swing_candle_progress WHERE entry_id=?", (entry_id,)).fetchone()
+            if progress is None or progress[0] != start:
+                continue
+            cursor = start
+            terminal = False
+            tp1_seen = db.execute(
+                "SELECT 1 FROM swing_events WHERE entry_id=? AND event_type='TP1'", (entry_id,),
+            ).fetchone() is not None
+            while cursor < end:
+                bar = bars.get(cursor)
+                if bar is None:
+                    break
+                adverse, favorable = (bar["l"], bar["h"]) if sign == 1 else (bar["h"], bar["l"])
+                stop_hit = sign * (adverse - stop) <= 0
+                tp1_hit = sign * (favorable - tp1) >= 0
+                tp2_hit = sign * (favorable - tp2) >= 0
+                events = []
+                if stop_hit and (tp2_hit or (tp1_hit and not tp1_seen)):
+                    events.append(("AMBIGUOUS", bar["c"], None))
+                elif stop_hit:
+                    fill = min(stop, bar["o"]) if sign == 1 else max(stop, bar["o"])
+                    events.append(("STOP", fill, sign * (fill-entry) / risk))
+                else:
+                    if tp1_hit and not tp1_seen:
+                        events.append(("TP1", tp1, sign * (tp1-entry) / risk))
+                        tp1_seen = True
+                    if tp2_hit:
+                        events.append(("TP2", tp2, sign * (tp2-entry) / risk))
+                    elif cursor + 60 == deadline:
+                        events.append(("TIME", bar["c"], sign * (bar["c"]-entry) / risk))
+                cursor += 60
+                for kind, price, r in events:
+                    event = _event_if_new(db, entry_id, kind, cursor, price, r)
+                    if event:
+                        completed.append({"kind": "EVENT", "symbol": symbol, "side": side, **event})
+                    terminal = terminal or kind != "TP1"
+                if terminal:
+                    break
+            if cursor == start and now > deadline + MAX_MARKOUT_DELAY_SEC and start not in bars:
+                # Preserve missing history as an unknown outcome rather than a quote-based result.
+                event = _event_if_new(db, entry_id, "DATA_GAP", now, entry, None)
+                if event:
+                    completed.append({"kind": "EVENT", "symbol": symbol, "side": side, **event})
+            db.execute("UPDATE swing_candle_progress SET next_bar_at=?,last_attempt_at=? WHERE entry_id=?",
+                       (cursor, now, entry_id))
+            db.commit()
+        finally:
+            db.close()
+    return completed

@@ -1381,7 +1381,14 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
         try:
             with closing(sqlite3.connect(path,timeout=5)) as report_db:
                 report_db.row_factory=sqlite3.Row
+                counts = report_db.execute("""SELECT
+                    SUM(CASE WHEN a.phase='ENTRY_ZONE' THEN 1 ELSE 0 END) AS entry_zone,
+                    SUM(CASE WHEN a.phase='READY_RESEARCH' THEN 1 ELSE 0 END) AS legacy_ready
+                    FROM post_pump_paper_trades p
+                    JOIN post_pump_short_strategy_audit a ON a.id=p.audit_id""").fetchone()
                 print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
+                      "entry_zone=", counts["entry_zone"] or 0,
+                      "legacy_ready=", counts["legacy_ready"] or 0,
                       "first_touch_closed_1m=true no_live_orders=true",
                       flush=True)
                 stage_rows=stage_markout_report(report_db,now,days=30)
