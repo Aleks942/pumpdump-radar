@@ -20,7 +20,6 @@ from post_pump_short_evidence import take_cached_evidence
 from post_pump_short_flow import dispatch as dispatch_post_pump_flow
 from post_pump_short_paper import (
     setup as setup_paper_audit,
-    register as register_paper_plan,
     advance as advance_paper_audit,
     report as paper_audit_report,
     prune as prune_paper_audit,
@@ -269,6 +268,11 @@ def setup(db):
         status TEXT NOT NULL DEFAULT 'PENDING',
         quote_at REAL, price REAL, model_net_short_pct REAL,
         PRIMARY KEY(audit_id,horizon_min)
+    )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS post_pump_reversal_seller_evidence(
+        symbol TEXT NOT NULL, episode_at REAL NOT NULL, breakout_at REAL NOT NULL,
+        confirmed_at REAL NOT NULL, snapshot TEXT NOT NULL,
+        PRIMARY KEY(symbol, episode_at, breakout_at)
     )""")
     setup_paper_audit(db)
     # Backfill newly introduced horizons for existing real research audits.
@@ -643,9 +647,6 @@ def _record_phase(db,state,now,phase,reason,evidence=None,structure=None,plan=No
     db.executemany("""INSERT OR IGNORE INTO post_pump_short_strategy_outcomes
         (audit_id,horizon_min) VALUES (?,?)""",
         [(audit_id,h) for h in WINDOWS])
-    if phase in ("ENTRY_ZONE","READY_RESEARCH") and plan is not None:
-        register_paper_plan(db,audit_id,state["symbol"],now,
-                            plan["entry"],plan["stop"],plan["tp1"])
     print(f"[SHORT_STRATEGY_STAGE] symbol={state['symbol']} "
           f"{old}->{phase} reason={reason} rise={state['rise_max']:.1f}% "
           f"retrace={state['last_retrace_pct']:.1f}% "
@@ -852,6 +853,8 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
     if st["phase"] in ("ENTRY_ZONE","READY_RESEARCH"):
         if not struct["trend_shift"] or struct["h1"] == "UP":
             _record_phase(db,st,now,"CANCELLED","TREND_NOT_ALIGNED",ev,struct)
+        else:
+            _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
         return status,struct
     if (new_peak and st["phase"]!="WATCH"):
         st["break_level"]=None
@@ -891,7 +894,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
         if new_peak or (st.get("break_level") is not None and profile["last"] >= st["break_level"] * 1.012):
             st["break_level"] = None
             st["break_candle_ts"] = None
-        elif strict_short:
+        else:
             _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
         return status,struct
     base4=_pre_short_base4(ev,struct)
@@ -1005,8 +1008,7 @@ def _advance(db,st,profile,now,context,spot_reader,evidence_reader,equity,db_pat
                           f"retrace={st['last_retrace_pct']:.2f}% "
                           f"qty={plan['quantity']} risk={100*RISK_FRACTION:.2f}% "
                           "NO_LIVE_ORDER=true DECISION_SUPPORT=true",flush=True)
-    if strict_short:
-        _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
+    _observe_confirmed_reversal(db, st, now, struct, c.get("1H"), ev)
     return status,struct
 
 
@@ -1015,7 +1017,7 @@ def _observe_confirmed_reversal(db, state, now, structure, hourly, evidence):
     if (state["phase"] not in ("RETEST", "ENTRY_ZONE", "READY_RESEARCH")
             and not (state["phase"] == "CANCELLED" and state.get("watch_reason") == "PAPER_PLAN_EXPIRED")):
         return False
-    if not structure.get("trend_shift") or (evidence.get("final_short_confirmation") or {}).get("ready") is not True:
+    if not structure.get("trend_shift"):
         return False
     level = num(state.get("break_level"))
     breakout = num(state.get("break_candle_ts"))
@@ -1029,6 +1031,25 @@ def _observe_confirmed_reversal(db, state, now, structure, hourly, evidence):
     ).fetchone()
     if retest is None:
         return False
+    key = (state["symbol"], state["episode_at"], breakout)
+    confirmation = evidence.get("final_short_confirmation") or {}
+    if confirmation.get("ready") is True and now >= retest["at"]:
+        metrics = {
+            name: evidence.get(name) for name in (
+                "final_short_confirmation", "order_flow", "capital_state", "bounded_cvd_5m",
+            )
+        }
+        db.execute("""INSERT INTO post_pump_reversal_seller_evidence
+            (symbol, episode_at, breakout_at, confirmed_at, snapshot) VALUES (?,?,?,?,?)
+            ON CONFLICT(symbol, episode_at, breakout_at) DO UPDATE SET
+                confirmed_at=excluded.confirmed_at, snapshot=excluded.snapshot
+            WHERE confirmed_at<?""",
+            (*key, now, json.dumps(metrics, default=str), retest["at"]))
+    seller = db.execute("""SELECT confirmed_at, snapshot FROM post_pump_reversal_seller_evidence
+        WHERE symbol=? AND episode_at=? AND breakout_at=? AND confirmed_at BETWEEN ? AND ?""",
+        (*key, retest["at"], now)).fetchone()
+    if seller is None:
+        return False
     candles = parse_closed_candles(hourly, 3600, now)
     closed_after_retest = [row for row in candles if row["ts"] + 3600 > retest["at"]]
     if (len(closed_after_retest) < 2 or any(row["c"] >= level for row in closed_after_retest)
@@ -1038,6 +1059,8 @@ def _observe_confirmed_reversal(db, state, now, structure, hourly, evidence):
         "break_level": level, "retest_at": retest["at"],
         "last_hour_closed_at": candles[-1]["ts"] + 3600,
         "hourly_closes_below": len(closed_after_retest),
+        "seller_confirmed_at": seller["confirmed_at"],
+        "seller_snapshot": json.loads(seller["snapshot"]),
     })
     return _record_phase(
         db, state, now, "REVERSAL_CONFIRMED", "RETEST_AND_1H_DOWNTREND_WITH_SELLER_TAKEOVER",
@@ -1357,6 +1380,7 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                 db,now,paper_source)
             cutoff=now-30*86400
             prune_paper_audit(db,cutoff)
+            db.execute("DELETE FROM post_pump_reversal_seller_evidence WHERE confirmed_at<?", (cutoff,))
             db.execute("DELETE FROM post_pump_short_spot_trades WHERE ts<?",(now-3600,))
             db.execute("DELETE FROM post_pump_short_spot_coverage WHERE last_at<?",
                        (now-STALE_SYMBOL_SEC,))
@@ -1385,7 +1409,8 @@ def observe(tickers,now=None,db_path=None,fetch_context=None,
                     SUM(CASE WHEN a.phase='ENTRY_ZONE' THEN 1 ELSE 0 END) AS entry_zone,
                     SUM(CASE WHEN a.phase='READY_RESEARCH' THEN 1 ELSE 0 END) AS legacy_ready
                     FROM post_pump_paper_trades p
-                    JOIN post_pump_short_strategy_audit a ON a.id=p.audit_id""").fetchone()
+                    JOIN post_pump_short_strategy_audit a ON a.id=p.audit_id
+                    WHERE p.venue='BYBIT'""").fetchone()
                 print("[POST_PUMP_PAPER_REPORT]",paper_audit_report(report_db),
                       "entry_zone=", counts["entry_zone"] or 0,
                       "legacy_ready=", counts["legacy_ready"] or 0,

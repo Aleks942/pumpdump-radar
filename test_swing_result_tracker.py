@@ -41,6 +41,19 @@ class SwingResultTrackerTests(unittest.TestCase):
         self.assertEqual([row["event_type"] for row in events], ["AMBIGUOUS"])
         self.assertIsNone(events[0]["r_multiple"])
 
+    def test_partial_entry_minute_touch_prevents_later_win(self):
+        start = 1_700_000_040
+        plan = {"ready": True, "stop": 98, "tp1": 104, "tp2": 106}
+        self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, start + 15,
+                                         trade_plan=plan, track_candles=True))
+        candles = [
+            {"ts": start, "o": 100, "h": 101, "l": 97, "c": 100},
+            {"ts": start + 60, "o": 100, "h": 107, "l": 100, "c": 106},
+        ]
+        events = s.update_candle_results(lambda *args: candles, start + 120)
+        self.assertEqual([row["event_type"] for row in events], ["AMBIGUOUS"])
+        self.assertIsNone(events[0]["r_multiple"])
+
     def test_long_markout_checkpoints(self):
         now = 1_700_000_000
         self.assertTrue(s.register_entry("AAAUSDT", "LONG", 100, 82, now))

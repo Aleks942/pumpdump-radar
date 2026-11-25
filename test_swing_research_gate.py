@@ -50,7 +50,8 @@ class SwingResearchGateTests(unittest.TestCase):
             "POST_PUMP_SHORT_ENABLED": True, "RESEARCH_PIPELINE_ENABLED": False,
             "_post_pump_flow_thread": None, "_post_pump_scan_thread": None,
             "threading": SimpleNamespace(Thread=thread), "tickers": tickers,
-            "current_prices": {"AAAUSDT": "100"}, "bybit_quotes_at": 1000,
+            "bybit_rows": [{"symbol": "AAAUSDT", "lastPrice": "101", "bid1Price": "100"}],
+            "bybit_quotes_at": 1000,
             "run_stream_forever": Mock(), "observe_complete_post_pump_short": Mock(),
             "prepare_post_pump_notifications": Mock(), "deliver_post_pump_notifications": Mock(), "send_telegram": Mock(), "os": os,
         }

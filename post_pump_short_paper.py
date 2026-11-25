@@ -1,7 +1,7 @@
 """Strict first-touch PAPER audit for POST-PUMP SHORT READY_RESEARCH.
 
 A *model*, not proof of an executable fill. Enter on the NEXT minute open,
-not the previously observed quote. Use 60 consecutive confirmed OKX 1m OHLC
+not the previously observed quote. Use 60 consecutive confirmed 1m OHLC
 bars, account for worst-case same-bar stop/TP ambiguity, fees and slippage.
 One bounded REST candle request only when a completed research plan matures.
 Missing data is not a loss, a win, or an invented candle path.
@@ -35,11 +35,19 @@ def setup(db):
        next_try_at REAL NOT NULL DEFAULT 0,
        evaluated_at REAL, fill_open REAL, exit_price REAL,
        exit_bar_ts REAL, modeled_net_pct REAL, detail TEXT,
-       model_only INTEGER NOT NULL DEFAULT 1
+       model_only INTEGER NOT NULL DEFAULT 1,
+       venue TEXT NOT NULL DEFAULT 'OKX',
+       zone_low REAL, zone_high REAL
     )""")
+    columns = {row[1] for row in db.execute("PRAGMA table_info(post_pump_paper_trades)")}
+    for name, definition in (("venue", "TEXT NOT NULL DEFAULT 'OKX'"),
+                             ("zone_low", "REAL"), ("zone_high", "REAL")):
+        if name not in columns:
+            db.execute(f"ALTER TABLE post_pump_paper_trades ADD COLUMN {name} {definition}")
 
 
-def register(db, audit_id, symbol, signal_at, signal_price, stop, tp1):
+def register(db, audit_id, symbol, signal_at, signal_price, stop, tp1, *,
+             venue="OKX", zone_low=None, zone_high=None):
     """A confirmed research-stage plan is recorded exactly once."""
     setup(db)
     numbers=[finite(x) for x in (signal_at,signal_price,stop,tp1)]
@@ -49,8 +57,9 @@ def register(db, audit_id, symbol, signal_at, signal_price, stop, tp1):
     if not target<entry<loss:
         return False
     cursor=db.execute("""INSERT OR IGNORE INTO post_pump_paper_trades(
-        audit_id,symbol,signal_at,signal_price,stop,tp1)
-        VALUES (?,?,?,?,?,?)""",(audit_id,symbol,stamp,entry,loss,target))
+        audit_id,symbol,signal_at,signal_price,stop,tp1,venue,zone_low,zone_high)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
+        (audit_id,symbol,stamp,entry,loss,target,venue,zone_low,zone_high))
     return cursor.rowcount==1
 
 
@@ -87,7 +96,7 @@ def _closed_bars(rows,signal_at,now):
     return [(ts,)+seen[ts] for ts in expected],"OK"
 
 
-def first_touch(signal_at,signal_price,stop,tp1,rows,now):
+def first_touch(signal_at,signal_price,stop,tp1,rows,now,*,zone_low=None,zone_high=None):
     """Report STOP, TP1, TIME, AMBIGUOUS, ENTRY_GAP or MISSING.
 
     The first bar OPEN is an illustrative fill with a <=0.5% maximum gap.
@@ -105,7 +114,9 @@ def first_touch(signal_at,signal_price,stop,tp1,rows,now):
                 "detail":reason}
     filled=bars[0][1]
     if (abs(filled/entry-1)*100>ENTRY_MAX_DEVIATION_PCT
-            or filled<=target or filled>=sl):
+            or filled<=target or filled>=sl
+            or (zone_low is not None and filled < zone_low)
+            or (zone_high is not None and filled > zone_high)):
         return {"status":"ENTRY_GAP","fill_open":filled,
                 "detail":"NO_RELIABLE_NEXT_MINUTE_FILL"}
     for ts,o,h,l,c in bars:
@@ -132,12 +143,23 @@ def first_touch(signal_at,signal_price,stop,tp1,rows,now):
             "detail":"FULL_60_MINUTE_HOLD"}
 
 
-def advance(db,now,fetch_1m,max_calls=MAX_REQUESTS_PER_SCAN):
+def _fetch_bybit_1m(symbol, first, end):
+    from swing_backtest import fetch_klines
+
+    return [
+        {"ts": bar["ts"], "open": bar["o"], "high": bar["h"],
+         "low": bar["l"], "close": bar["c"], "confirmed": True}
+        for bar in fetch_klines(symbol, "1", first * 1000, end * 1000 - 1)
+    ]
+
+
+def advance(db,now,fetch_1m,max_calls=MAX_REQUESTS_PER_SCAN,*,fetch_bybit_1m=None):
     """Bounded final settlement. Calls fetch_1m only after the full 60m."""
     setup(db)
     due=db.execute("""SELECT * FROM post_pump_paper_trades
         WHERE status='PENDING' AND next_try_at<=?
         ORDER BY signal_at LIMIT ?""",(now,max_calls*3)).fetchall()
+    bybit_source = fetch_bybit_1m or _fetch_bybit_1m
     n=0
     for row in due:
         first=(int(row["signal_at"])//60+1)*60
@@ -148,9 +170,11 @@ def advance(db,now,fetch_1m,max_calls=MAX_REQUESTS_PER_SCAN):
             break
         n+=1
         try:
-            candles=fetch_1m(row["symbol"])
+            candles = (bybit_source(row["symbol"], first, end) if row["venue"] == "BYBIT"
+                       else fetch_1m(row["symbol"]))
             outcome=first_touch(row["signal_at"],row["signal_price"],
-                                row["stop"],row["tp1"],candles,now)
+                                row["stop"],row["tp1"],candles,now,
+                                zone_low=row["zone_low"],zone_high=row["zone_high"])
         except Exception as exc:
             outcome={"status":"MISSING","detail":"FETCH_"+type(exc).__name__}
         status=outcome["status"]
@@ -176,12 +200,12 @@ def advance(db,now,fetch_1m,max_calls=MAX_REQUESTS_PER_SCAN):
 
 def report(db):
     setup(db)
-    rows=db.execute("""SELECT status,COUNT(*) AS n,
+    rows=db.execute("""SELECT venue,status,COUNT(*) AS n,
         AVG(modeled_net_pct) AS mean_net FROM post_pump_paper_trades
-        GROUP BY status ORDER BY status""").fetchall()
-    return [{"status":status,"n":n,
+        GROUP BY venue,status ORDER BY venue,status""").fetchall()
+    return [{"venue":venue,"status":status,"n":n,
              "mean_net":round(mean,6) if mean is not None else None}
-            for status,n,mean in rows]
+            for venue,status,n,mean in rows]
 
 
 def prune(db,cutoff):

@@ -69,7 +69,8 @@ from swing_absorption import link_short_entry, record_observation
 from swing_backtest import fetch_klines as fetch_bybit_history
 from swing_result_tracker import (
     update_candle_results as update_swing_candle_results,
-    current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
+    current_setup_plan, mark_entry_delivered,
+    register_entry as register_swing_entry, update_results as update_swing_results,
 )
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
@@ -1796,8 +1797,10 @@ while True:
         if POST_PUMP_SHORT_ENABLED and (
             _post_pump_scan_thread is None or not _post_pump_scan_thread.is_alive()
         ):
+            bybit_bids = {row["symbol"]: row.get("bid1Price") for row in bybit_rows or ()
+                          if row.get("symbol")}
             _post_pump_scan_thread = threading.Thread(
-                target=run_post_pump_short_scan, args=(tickers, current_prices, bybit_quotes_at),
+                target=run_post_pump_short_scan, args=(tickers, bybit_bids, bybit_quotes_at),
                 name="post-pump-short-scan", daemon=True,
             )
             _post_pump_scan_thread.start()
@@ -2051,6 +2054,8 @@ while True:
                     continue
 
                 if setup_at is not None:
+                    if not 0 <= time.time() - bybit_quotes_at <= 60:
+                        continue
                     try:
                         registered = register_swing_entry(
                             symbol, entry["side"], result["price"], score,
@@ -2059,6 +2064,11 @@ while True:
                         if not registered:
                             plan = current_setup_plan(symbol, entry["side"], setup_at)
                             if plan is None:
+                                continue
+                            price = result["price"]
+                            in_plan = (plan["stop"] < price < plan["tp1"] if entry["side"] == "LONG"
+                                       else plan["tp1"] < price < plan["stop"])
+                            if not in_plan:
                                 continue
                             result = dict(result, trade_plan=plan)
                         print("[SWING_ENTRY_TRACK]", symbol, "registered=", registered, flush=True)
@@ -2074,6 +2084,10 @@ while True:
 
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
+                    *(
+                        ["🟢 Условия входа проверены повторно."]
+                        if setup_at is not None and not registered else []
+                    ),
                     *format_compact_report(
                         result,
                         short_verdict=state_label,
@@ -2086,6 +2100,11 @@ while True:
                 if sent is True:
                     swing_stats["sent"] += 1
                     _mark_swing_alert(symbol, bias, score, alert_state)
+                    if setup_at is not None:
+                        try:
+                            mark_entry_delivered(symbol, entry["side"], setup_at, time.time())
+                        except Exception as exc:
+                            print("[SWING_ENTRY_DELIVERY_ERROR]", symbol, type(exc).__name__, flush=True)
                     if setup_at is not None and result.get("_research_m15"):
                         trigger = result["_research_m15"][-1]
                         trigger_close_at = trigger["ts"] + 900

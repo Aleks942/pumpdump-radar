@@ -101,6 +101,25 @@ class FirstTouchTests(unittest.TestCase):
             self.db,self.at,reader,max_calls=2),1)
         self.assertEqual(len(seen),2)
 
+    def test_bybit_settlement_uses_its_own_candles_and_checks_zone_at_fill(self):
+        self.assertTrue(paper.register(
+            self.db, 1, "TESTUSDT", START, 100, 102, 98,
+            venue="BYBIT", zone_low=99.9, zone_high=100.1,
+        ))
+        self.assertTrue(paper.register(self.db, 2, "LEGACYUSDT", START, 100, 102, 98))
+
+        def bybit(symbol, first, end):
+            self.assertEqual((symbol, first, end), ("TESTUSDT", START + 60, START + 3660))
+            return bars(opens={0: 100.2}, lows={4: 97.5})
+
+        def okx(symbol):
+            self.assertEqual(symbol, "LEGACYUSDT")
+            return bars(lows={4: 97.5})
+
+        self.assertEqual(paper.advance(self.db, self.at, okx, fetch_bybit_1m=bybit), 2)
+        results = {row["venue"]: (row["status"], row["mean_net"]) for row in paper.report(self.db)}
+        self.assertEqual(results, {"BYBIT": ("ENTRY_GAP", None), "OKX": ("TP1", 1.68)})
+
     def test_partial_candle_retry_then_missing_without_fabrication(self):
         self.assertTrue(paper.register(
             self.db,1,"TESTUSDT",START,100,102,98))

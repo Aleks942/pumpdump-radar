@@ -145,7 +145,26 @@ class NotificationsTests(unittest.TestCase):
         self.assertIn("Bybit 102", message)
         with sqlite3.connect(self.path) as db:
             raw = db.execute("SELECT payload FROM post_pump_notify_outbox WHERE status='SENT'").fetchone()[0]
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM post_pump_paper_trades").fetchone()[0], 0)
         self.assertFalse(json.loads(raw)["bybit_in_zone"])
+
+    def test_bybit_paper_entry_requires_fresh_bid_and_telegram_acceptance(self):
+        self.event("ENTRY_ZONE")
+        self.sender.return_value = False
+        kwargs = dict(db_path=self.path, bybit_prices={"TESTUSDT": "100.25"})
+        tickers = [{"instId": "TEST-USDT-SWAP", "last": "100"}]
+        notify.deliver(self.sender, tickers, now=NOW + 2, bybit_observed_at=NOW + 1, **kwargs)
+        with sqlite3.connect(self.path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM post_pump_paper_trades").fetchone()[0], 0)
+
+        self.sender.return_value = True
+        notify.deliver(self.sender, tickers, now=NOW + 63, bybit_observed_at=NOW + 62, **kwargs)
+        with sqlite3.connect(self.path) as db:
+            row = db.execute("""SELECT venue, signal_price, signal_at, zone_low, zone_high
+                                FROM post_pump_paper_trades""").fetchone()
+            accepted_at = db.execute("SELECT sent_at FROM post_pump_notify_outbox").fetchone()[0]
+        self.assertEqual(row, ("BYBIT", 100.25, accepted_at, 99.5, 100.5))
+        self.assertGreaterEqual(accepted_at, NOW + 63)
 
     def test_full_lifecycle_and_restart_dedup(self):
         for i,phase in enumerate(('DISCOVERED','EARLY_WEAKENING','TREND_SHIFT',

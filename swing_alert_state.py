@@ -61,17 +61,18 @@ def alert_allowed(symbol, bias, score, cooldown_sec, now=None, entry_state="UNKN
     now = time.time() if now is None else float(now)
     with _LOCK:
         with _connect() as conn:
+            row = conn.execute(
+                "SELECT bias, score, sent_at, entry_state FROM swing_alert_state WHERE symbol=?",
+                (str(symbol),),
+            ).fetchone()
             if str(entry_state).startswith("READY_ENTRY:"):
                 delivered = conn.execute(
                     "SELECT 1 FROM swing_delivered_entries WHERE symbol=? AND bias=? AND entry_state=?",
                     (str(symbol), str(bias), str(entry_state)),
                 ).fetchone()
                 if delivered:
-                    return False
-            row = conn.execute(
-                "SELECT bias, score, sent_at, entry_state FROM swing_alert_state WHERE symbol=?",
-                (str(symbol),),
-            ).fetchone()
+                    return bool(row and row[0] == bias and row[3].startswith("SETUP:")
+                                and row[3].endswith((":BLOCKED", ":WARMING")))
     if row is None:
         return True
     old_bias, old_score, sent_at, old_entry_state = row

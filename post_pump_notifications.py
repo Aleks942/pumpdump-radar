@@ -13,6 +13,8 @@ from html import escape
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from post_pump_short_paper import register as register_paper_plan
+
 DB_PATH = os.getenv('PUMP_WATCH_DB', '/data/pump_watch.sqlite3')
 TITLES = {
     'DISCOVERED': '🛰 СИЛЬНЫЙ ПАМП — НАБЛЮДАЕМ',
@@ -387,6 +389,15 @@ def deliver(sender, tickers, now=None, db_path=None, *, bybit_prices=None, bybit
                 last_okx = prices.get(row["symbol"])
                 if peak and last_okx:
                     e["retrace_at_quote_pct"] = round(100 * (1 - last_okx / peak), 3)
+            if accepted_at is not None and e.get("bybit_in_zone") is True:
+                age_at_acceptance = accepted_at - bybit_observed_at
+                if 0 <= age_at_acceptance <= 60:
+                    register_paper_plan(
+                        db, row["audit_id"], row["symbol"], accepted_at, quote,
+                        e["stop"], e["tp1"], venue="BYBIT",
+                        zone_low=low if low is not None else e["entry"] * .997,
+                        zone_high=high if high is not None else e["entry"] * 1.003,
+                    )
             db.execute(
                 "UPDATE post_pump_notify_outbox SET status=?,retry_at=?,sent_at=?,payload=? WHERE audit_id=?",
                 (status, now+60, accepted_at, json.dumps(e), row["audit_id"]),

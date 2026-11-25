@@ -53,6 +53,9 @@ def _conn():
     if "strategy_version" not in cols:
         db.execute("ALTER TABLE swing_entries ADD COLUMN strategy_version TEXT")
 
+    if "telegram_accepted_at" not in cols:
+        db.execute("ALTER TABLE swing_entries ADD COLUMN telegram_accepted_at REAL")
+
     if "setup_at" not in cols:
         db.execute("ALTER TABLE swing_entries ADD COLUMN setup_at REAL")
     db.execute(
@@ -142,10 +145,23 @@ def register_entry(symbol, side, entry_price, score, now=None, trade_plan=None, 
             (symbol,side,price,now,score,stop,tp1,tp2,strategy_version,setup_at),
         )
         if cursor.rowcount == 1 and track_candles and plan:
-            first_full_minute = math.ceil(now / 60) * 60
-            db.execute("INSERT INTO swing_candle_progress(entry_id,next_bar_at) VALUES (?,?)", (cursor.lastrowid, first_full_minute))
+            entry_minute = math.floor(now / 60) * 60
+            db.execute("INSERT INTO swing_candle_progress(entry_id,next_bar_at) VALUES (?,?)", (cursor.lastrowid, entry_minute))
         db.commit()
         return cursor.rowcount == 1
+    finally:
+        db.close()
+
+
+def mark_entry_delivered(symbol, side, setup_at, accepted_at):
+    db = _conn()
+    try:
+        db.execute(
+            "UPDATE swing_entries SET telegram_accepted_at=? WHERE symbol=? AND side=? "
+            "AND strategy_version=? AND setup_at=? AND telegram_accepted_at IS NULL",
+            (accepted_at, symbol, side, VALIDATION_VERSION, setup_at),
+        )
+        db.commit()
     finally:
         db.close()
 
@@ -320,7 +336,10 @@ def update_candle_results(fetch_candles, now=None, max_symbols=4):
                 tp1_hit = sign * (favorable - tp1) >= 0
                 tp2_hit = sign * (favorable - tp2) >= 0
                 events = []
-                if stop_hit and (tp2_hit or (tp1_hit and not tp1_seen)):
+                if cursor < entry_at and (stop_hit or tp1_hit or tp2_hit):
+                    # OHLC cannot establish whether this touch preceded the signal.
+                    events.append(("AMBIGUOUS", bar["c"], None))
+                elif stop_hit and (tp2_hit or (tp1_hit and not tp1_seen)):
                     events.append(("AMBIGUOUS", bar["c"], None))
                 elif stop_hit:
                     fill = min(stop, bar["o"]) if sign == 1 else max(stop, bar["o"])

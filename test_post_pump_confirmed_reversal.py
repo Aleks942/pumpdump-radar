@@ -33,6 +33,6 @@ class ConfirmedReversalTests(unittest.TestCase):
             )
             self.assertFalse(_observe_confirmed_reversal(db, state, now, structure, hourly, {}))
             self.assertFalse(_observe_confirmed_reversal(db, state, now - 3600, structure, hourly, evidence))
-            self.assertTrue(_observe_confirmed_reversal(db, state, now, structure, hourly, evidence))
+            self.assertTrue(_observe_confirmed_reversal(db, state, now, structure, hourly, {}))
             self.assertEqual(state["phase"], "CANCELLED")
             self.assertFalse(_observe_confirmed_reversal(db, state, now + 60, structure, hourly, evidence))
