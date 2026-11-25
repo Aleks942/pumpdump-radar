@@ -17,6 +17,9 @@ def simulate(e,rows,threshold,end=END):
     out=dict(symbol=sym,trigger_at=trigger,threshold=threshold,entry=None,stop=None,target=None,
              outcome="NO_ENTRY",net_pct=None,net_r=None)
     pre=[r for r in rows if int(e["base_at"])<=r[0]<trigger]
+    base=int(e["base_at"])
+    if len(pre)!=(trigger-base)//M or any(r[0]!=base+i*M for i,r in enumerate(pre)):
+        out["outcome"]="DATA_GAP";return out
     peak=max([float(e["trigger_price"])]+[r[2] for r in pre])
     phase="DROP";trough=peak; rebound=None; broken=None; pending=None
     expected=trigger
@@ -82,7 +85,7 @@ def scan(sym,episodes):
         return [dict(symbol=sym,trigger_at=e["trigger_at"],threshold=t,outcome="FETCH_ERROR",error=str(ex)[:160],entry=None,net_pct=None,net_r=None) for e in episodes for t in THRESHOLDS]
 
 def self_test():
-    e=dict(symbol="TEST",trigger_at=0,base_at=-H,trigger_price=100)
+    e=dict(symbol="TEST",trigger_at=0,base_at=0,trigger_price=100)
     # decline 8%, bounce, break, retest, enter at next open, target hit
     rows=[(0,100,100,92,92),(M,92,95,92,95),(2*M,95,95,91,91),(3*M,91,92,90,91),(4*M,91,91,76,78)]
     a=simulate(e,rows,7,end=10*D)
