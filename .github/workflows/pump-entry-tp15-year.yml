@@ -1,0 +1,49 @@
+name: Annual pump TP15 from actual modeled entry
+on:
+  push:
+    branches: ["research/pump-first-pullback-1y"]
+    paths: [".github/workflows/pump-entry-tp15-year.yml", "research/pump_entry_tp15_year.py"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pump-full-cycle-year
+          run-id: 45644834467
+          github-token: ${{ github.token }}
+          path: full-cycle-input
+      - name: Simulate chronological entry, SL and TP15
+        run: python -u research/pump_entry_tp15_year.py --shard ${{ matrix.shard }} --shards 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: entry-shard-${{ matrix.shard }}
+          path: entry-shard-output/
+          if-no-files-found: error
+  aggregate:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: entry-shard-*
+          path: entry-shards
+      - name: Compare TP15 and SL across pullback thresholds
+        run: python -u research/pump_entry_tp15_year.py --aggregate --shards 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pump-entry-tp15-year
+          path: entry-output/
+          if-no-files-found: error
