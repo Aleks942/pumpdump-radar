@@ -45,7 +45,7 @@ from post_pump_short_research import (
 from post_pump_short_strategy import observe as observe_complete_post_pump_short
 from post_dump_long_strategy import observe as observe_post_dump_long, deliver as deliver_post_dump_long
 from post_dump_accumulation import observe as observe_post_dump_accumulation, deliver as deliver_post_dump_accumulation
-from telegram_manual_research import start as start_manual_research, visual_market_state
+from telegram_manual_research import start as start_manual_research, visual_market_state, warm_swing_market_state
 from pump_watch_forward import observe as observe_watch_forward, hourly_report as report_watch_forward
 from pump_retrace_stats import (register_event as register_retrace_event,
                                 observe_tickers as observe_retrace_tickers,
@@ -66,8 +66,11 @@ from aggregated_oi import watch_symbol, get_aggregated_oi
 from swing_market_scanner import scan as scan_swing_market, compression_watches as scan_swing_compressions
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
 from swing_absorption import link_short_entry, record_observation
+from swing_backtest import fetch_klines as fetch_bybit_history
 from swing_result_tracker import (
-    current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
+    update_candle_results as update_swing_candle_results,
+    current_setup_plan, mark_entry_delivered,
+    register_entry as register_swing_entry, update_results as update_swing_results,
 )
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
@@ -1446,16 +1449,26 @@ def should_send_signal(signal):
 
     return False
 
-def run_post_pump_short_scan(tickers):
+def run_post_pump_short_scan(tickers, bybit_prices, quotes_at):
     telegram_enabled = os.getenv("POST_PUMP_TELEGRAM", "1") == "1"
     try:
         if telegram_enabled:
             prepare_post_pump_notifications()
         observe_complete_post_pump_short(tickers)
         if telegram_enabled:
-            deliver_post_pump_notifications(send_telegram, tickers)
+            deliver_post_pump_notifications(
+                send_telegram, tickers, bybit_prices=bybit_prices, bybit_observed_at=quotes_at,
+            )
     except Exception as exc:
         print("[POST_PUMP_SHORT_SCAN_ERROR]", type(exc).__name__, str(exc)[:200], flush=True)
+
+
+def run_swing_candle_audit():
+    try:
+        for row in update_swing_candle_results(fetch_bybit_history):
+            print("[SWING_CANDLE_RESULT]", row, flush=True)
+    except Exception as exc:
+        print("[SWING_CANDLE_AUDIT_ERROR]", type(exc).__name__, flush=True)
 
 
 print("🚀 PumpDump Radar V2 started")
@@ -1497,6 +1510,7 @@ print(
 _last_edge_report_mono = 0.0
 _post_pump_flow_thread = None
 _post_pump_scan_thread = None
+_swing_candle_thread = None
 print("[POST_PUMP_SHORT]", "enabled=", POST_PUMP_SHORT_ENABLED, flush=True)
 
 while True:
@@ -1763,6 +1777,12 @@ while True:
             print("[PUMP_WATCH_FORWARD_LOOP_ERROR]",
                   type(forward_exc).__name__, flush=True)
 
+    # SWING candles, OI, entry prices and markouts all use Bybit contracts.
+    bybit_rows = fetch_bybit_movers() if PRIMARY_SCAN_MODE == "SWING" or POST_PUMP_SHORT_ENABLED else None
+    bybit_quotes_at = time.time()
+    current_prices = {row["symbol"]: row.get("lastPrice") for row in bybit_rows or ()
+                      if row.get("symbol")}
+
     if tickers and (POST_PUMP_SHORT_ENABLED or RESEARCH_PIPELINE_ENABLED):
         if _post_pump_flow_thread is None or not _post_pump_flow_thread.is_alive():
             swap_symbols = [
@@ -1777,20 +1797,21 @@ while True:
         if POST_PUMP_SHORT_ENABLED and (
             _post_pump_scan_thread is None or not _post_pump_scan_thread.is_alive()
         ):
+            bybit_bids = {row["symbol"]: row.get("bid1Price") for row in bybit_rows or ()
+                          if row.get("symbol")}
             _post_pump_scan_thread = threading.Thread(
-                target=run_post_pump_short_scan, args=(tickers,),
+                target=run_post_pump_short_scan, args=(tickers, bybit_bids, bybit_quotes_at),
                 name="post-pump-short-scan", daemon=True,
             )
             _post_pump_scan_thread.start()
 
+    if PRIMARY_SCAN_MODE == "SWING" and (_swing_candle_thread is None or not _swing_candle_thread.is_alive()):
+        _swing_candle_thread = threading.Thread(target=run_swing_candle_audit, daemon=True)
+        _swing_candle_thread.start()
+
     current_chunk = get_rotation_chunk(tickers)
     print(f"[CHUNK] {len(current_chunk)}")
     
-    # SWING candles, OI, entry prices and markouts all use Bybit contracts.
-    bybit_rows = fetch_bybit_movers() if PRIMARY_SCAN_MODE == "SWING" else None
-    current_prices = {row["symbol"]: row.get("lastPrice") for row in bybit_rows or ()
-                      if row.get("symbol")}
-
     okx_prices = {row["instId"].removesuffix("-USDT-SWAP") + "USDT": row.get("last")
                   for row in tickers if row.get("instId", "").endswith("-USDT-SWAP")}
     try:
@@ -1828,6 +1849,10 @@ while True:
         "eligible": 0,
         "live_blocked": 0,
         "live_warming": 0,
+        "warming_price": 0,
+        "warming_oi": 0,
+        "warming_futures": 0,
+        "warming_error": 0,
         "sent": 0,
         "send_failed": 0,
         "compression_found": 0,
@@ -1839,6 +1864,12 @@ while True:
         try:
             swing_candidates = scan_swing_market(tickers)
             swing_stats["prefilter"] = len(swing_candidates)
+            shortlist_at = bybit_quotes_at
+            for candidate in swing_candidates:
+                symbol = candidate["symbol"]
+                if symbol in current_prices:
+                    warm_swing_market_state(symbol, current_prices[symbol], shortlist_at)
+
 
             # Direction-neutral early warning. Uses the same already-refreshed
             # 1H cache as the directional prefilter, so it adds no exchange
@@ -1983,6 +2014,7 @@ while True:
                     visual_state = visual_market_state(
                         symbol,
                         current_price=result.get("price"),
+                        price_observed_at=bybit_quotes_at,
                     )
                 except Exception as exc:
                     print("[SWING_VISUAL_STATE_ERROR]", symbol, type(exc).__name__, flush=True)
@@ -2002,6 +2034,13 @@ while True:
                 entry_state = entry["state"]
                 swing_stats["live_blocked"] += entry["live_state"] == "BLOCKED"
                 swing_stats["live_warming"] += entry["live_state"] == "WARMING"
+                if entry["live_state"] == "WARMING":
+                    missing = visual_state.get("missing_5m") or ("error",)
+                    for source in missing:
+                        swing_stats[f"warming_{source}"] += 1
+                    print("[SWING_WARMING]", symbol, "stage=", entry["stage"],
+                          "missing=", ",".join(missing), flush=True)
+
 
                 setup_at = result["breakout"]["closed_at"] if entry_state == "READY_ENTRY" else None
                 alert_state = (
@@ -2015,14 +2054,21 @@ while True:
                     continue
 
                 if setup_at is not None:
+                    if not 0 <= time.time() - bybit_quotes_at <= 60:
+                        continue
                     try:
                         registered = register_swing_entry(
                             symbol, entry["side"], result["price"], score,
-                            trade_plan=result["trade_plan"], setup_at=setup_at,
+                            trade_plan=result["trade_plan"], setup_at=setup_at, track_candles=True,
                         )
                         if not registered:
                             plan = current_setup_plan(symbol, entry["side"], setup_at)
                             if plan is None:
+                                continue
+                            price = result["price"]
+                            in_plan = (plan["stop"] < price < plan["tp1"] if entry["side"] == "LONG"
+                                       else plan["tp1"] < price < plan["stop"])
+                            if not in_plan:
                                 continue
                             result = dict(result, trade_plan=plan)
                         print("[SWING_ENTRY_TRACK]", symbol, "registered=", registered, flush=True)
@@ -2038,6 +2084,10 @@ while True:
 
                 lines = [
                     f"🧭 <b>SWING RADAR — {symbol}</b>",
+                    *(
+                        ["🟢 Условия входа проверены повторно."]
+                        if setup_at is not None and not registered else []
+                    ),
                     *format_compact_report(
                         result,
                         short_verdict=state_label,
@@ -2050,6 +2100,11 @@ while True:
                 if sent is True:
                     swing_stats["sent"] += 1
                     _mark_swing_alert(symbol, bias, score, alert_state)
+                    if setup_at is not None:
+                        try:
+                            mark_entry_delivered(symbol, entry["side"], setup_at, time.time())
+                        except Exception as exc:
+                            print("[SWING_ENTRY_DELIVERY_ERROR]", symbol, type(exc).__name__, flush=True)
                     if setup_at is not None and result.get("_research_m15"):
                         trigger = result["_research_m15"][-1]
                         trigger_close_at = trigger["ts"] + 900
@@ -2092,6 +2147,10 @@ while True:
                 "eligible=", swing_stats["eligible"],
                 "live_blocked=", swing_stats["live_blocked"],
                 "live_warming=", swing_stats["live_warming"],
+                "warming_price=", swing_stats["warming_price"],
+                "warming_oi=", swing_stats["warming_oi"],
+                "warming_futures=", swing_stats["warming_futures"],
+                "warming_error=", swing_stats["warming_error"],
                 "sent=", swing_stats["sent"],
                 "duplicate=", swing_stats["duplicate"],
                 "not_ready=", swing_stats["not_ready"],

@@ -65,6 +65,15 @@ class SwingAlertStateTests(unittest.TestCase):
             symbol, bias, 90, 7200, now + 120, entry_state="READY_ENTRY:1700002800"
         ))
 
+    def test_same_entry_can_recover_once_after_live_veto(self):
+        symbol, bias, setup = "AAAUSDT", "BULLISH", "READY_ENTRY:1699999200"
+        now = 1_700_000_000
+        s.mark_alert(symbol, bias, 80, now, entry_state=setup)
+        s.mark_alert(symbol, bias, 80, now + 60, entry_state="SETUP:RETEST:BLOCKED")
+        self.assertTrue(s.alert_allowed(symbol, bias, 80, 7200, now + 120, entry_state=setup))
+        s.mark_alert(symbol, bias, 80, now + 120, entry_state=setup)
+        self.assertFalse(s.alert_allowed(symbol, bias, 80, 7200, now + 180, entry_state=setup))
+
     def test_entry_state_change_can_alert_even_when_score_is_same(self):
         now=1_700_000_000
         s.mark_alert(

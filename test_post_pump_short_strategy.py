@@ -516,7 +516,7 @@ class PostPumpFullStrategyTests(unittest.TestCase):
         self.assertNotIn("SHORT_CONFIRMED",[e["phase"] for e in events])
         self.assertNotIn("ENTRY_ZONE",[e["phase"] for e in events])
 
-    def test_paper_plan_registered_only_after_final_research_confirmation(self):
+    def test_strategy_records_entry_zone_without_bookkeeping_a_fill(self):
         with patch.object(strat,"analyze_structure",
                           side_effect=lambda a,b,c,now:
                               structure(now,broken=now>=NOW+130)):
@@ -529,13 +529,12 @@ class PostPumpFullStrategyTests(unittest.TestCase):
             self.drive(NOW+390,last=110,equity_usdt=50)
             self.drive(NOW+520,last=110,equity_usdt=50)
         with sqlite3.connect(self.path) as db:
-            rows=db.execute("""SELECT status,signal_price,stop,tp1,model_only
-                FROM post_pump_paper_trades""").fetchall()
-        self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0][0],"PENDING")
-        self.assertLess(rows[0][1],rows[0][2])
-        self.assertGreater(rows[0][1],rows[0][3])
-        self.assertEqual(rows[0][4],1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM post_pump_paper_trades").fetchone()[0], 0)
+            plan = db.execute("""SELECT entry,stop,tp1 FROM post_pump_short_strategy_audit
+                WHERE phase='ENTRY_ZONE'""").fetchone()
+        self.assertIsNotNone(plan)
+        self.assertLess(plan[2], plan[0])
+        self.assertLess(plan[0], plan[1])
 
     def test_new_price_high_invalidates_prior_short_thesis(self):
         with patch.object(strat,"analyze_structure",
