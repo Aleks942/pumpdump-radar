@@ -49,15 +49,18 @@ def candidate_windows(daily):
             else: ranges.append((lo,hi))
     return ranges
 def episodes(sym,rows):
-    out=[]; state=None; prev=None; by_ts={}
+    out=[]; state=None; prev=None; by_ts={}; was_eligible=False
     for ts,o,h,l,c in rows:
         if prev is not None and ts-prev!=BAR:
-            state=None; by_ts={}
+            state=None; by_ts={}; was_eligible=False
         prev=ts; by_ts[ts]=o
         base=by_ts.get(ts-DAY)
         by_ts.pop(ts-DAY-BAR,None)
+        eligible=bool(base and c/base>=1.30)
+        crossed=eligible and not was_eligible
+        was_eligible=eligible
         if state is None:
-            if base and START<=ts<END and c/base>=1.30:
+            if crossed and START<=ts<END:
                 state={"symbol":sym,"trigger":ts,"base":base,"peak":c,"peak_at":ts,"trough":c,"trough_at":ts,"rebound_at":None,"bounce":0.0}
             continue
         s=state
@@ -70,6 +73,7 @@ def episodes(sym,rows):
             elif s["trough"]<s["peak"] and c/s["trough"]>=1.02:
                 s.update(rebound_at=ts,bounce=100*(c/s["trough"]-1),rebound_high=c,min_after=c)
             if ts-s["trigger"]>=3*DAY:
+                out.append(dict(symbol=sym,trigger=s["trigger"],peak_at=s["peak_at"],peak_gain_pct=100*(s["peak"]/s["base"]-1),first_pullback_pct=None,bounce_pct=None,further_drop_pct=None,outcome="NO_REBOUND_72H"))
                 state=None
             continue
         s["rebound_high"]=max(s["rebound_high"],c)
@@ -105,7 +109,7 @@ def main():
     report={"start":"2025-11-25 UTC","end_exclusive":"2026-11-25 UTC","universe_current":len(universe),"sample":len(syms),"successful_symbols":sum("error" not in r for r in results),"events":len(events),"outcomes":dict(Counter(e["outcome"] for e in events)),"groups":{}}
     for name,lo,hi in [("all",30,math.inf),("30-50",30,50),("50-100",50,100),("100+",100,math.inf)]:
         es=[e for e in events if lo<=e["peak_gain_pct"]<hi]
-        group={"n":len(es)}
+        group={"n":len(es),"no_rebound_72h":sum(e["outcome"]=="NO_REBOUND_72H" for e in es)}
         for outcome in ["LOWER_LOW_5","NEW_HIGH","NO_RESOLUTION_24H"]:
             values=[e["first_pullback_pct"] for e in es if e["outcome"]==outcome]
             group[outcome]={"n":len(values),"median_first_pullback":round(statistics.median(values),3) if values else None,"threshold_counts":{str(t):sum(v>=t for v in values) for t in [2.5,5,7,10,15]}}
