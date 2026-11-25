@@ -1,0 +1,22 @@
+name: One-year pump first pullback research
+on:
+  push:
+    branches: ["research/pump-first-pullback-1y"]
+    paths: [".github/workflows/pump-first-pullback-year.yml", "research/pump_first_pullback_year.py"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  price-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download public OKX history and measure first pullbacks
+        run: python -u research/pump_first_pullback_year.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pump-first-pullback-year
+          path: research-output/
+          if-no-files-found: warn
