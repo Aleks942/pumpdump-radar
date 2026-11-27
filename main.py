@@ -4,6 +4,7 @@ import time
 import random
 import threading
 import math
+import json
 import requests
 from ticker_metrics import approx_quote_volume_usdt, spread_bps
 from mover_discovery import (observe as observe_movers, inspect_price_quotes,
@@ -67,7 +68,8 @@ from swing_market_scanner import scan as scan_swing_market, compression_watches 
 from swing_strength_engine import analyze as analyze_swing_strength, format_compact_report, entry_decision
 from swing_absorption import link_short_entry, record_observation
 from swing_result_tracker import (
-    current_setup_plan, register_entry as register_swing_entry, update_results as update_swing_results,
+    current_setup_plan, register_entry as register_swing_entry,
+    result_summary as swing_result_summary, update_results as update_swing_results,
 )
 from swing_alert_state import (
     alert_allowed as persistent_swing_alert_allowed,
@@ -1495,6 +1497,7 @@ print(
     flush=True,
 )
 _last_edge_report_mono = 0.0
+_next_swing_report_mono = 0.0
 _post_pump_flow_thread = None
 _post_pump_scan_thread = None
 print("[POST_PUMP_SHORT]", "enabled=", POST_PUMP_SHORT_ENABLED, flush=True)
@@ -1817,6 +1820,14 @@ while True:
     except Exception as swing_result_exc:
         print("[SWING_RESULT_ERROR]", type(swing_result_exc).__name__, flush=True)
     
+    if time.monotonic() >= _next_swing_report_mono:
+        try:
+            print("[SWING_DB_SUMMARY]", json.dumps(swing_result_summary()), flush=True)
+            _next_swing_report_mono = time.monotonic() + 3600
+        except Exception as report_error:
+            print("[SWING_DB_SUMMARY_ERROR]", type(report_error).__name__, flush=True)
+            _next_swing_report_mono = time.monotonic() + 60
+
     swing_candidates = []
     swing_stats = {
         "prefilter": 0,

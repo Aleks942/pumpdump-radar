@@ -258,3 +258,46 @@ def update_results(current_prices, now=None, legacy_prices=None):
         return completed
     finally:
         db.close()
+
+
+def result_summary(now=None):
+    """Summarize persisted paper entries by strategy version."""
+    now = time.time() if now is None else now
+    db = _conn()
+    db.row_factory = sqlite3.Row
+    try:
+        rows = db.execute(
+            """
+            WITH entries AS (
+                SELECT s.*, e.event_type AS outcome, e.r_multiple
+                FROM swing_entries AS s
+                LEFT JOIN swing_events AS e ON e.rowid = (
+                    SELECT rowid FROM swing_events
+                    WHERE entry_id = s.id AND event_type IN ('STOP', 'TP2', 'TIME')
+                    ORDER BY observed_at, rowid LIMIT 1
+                )
+            )
+            SELECT strategy_version, COUNT(*) AS entries,
+                   COUNT(CASE WHEN outcome = 'STOP' THEN 1 END) AS stop,
+                   COUNT(CASE WHEN outcome = 'TP2' THEN 1 END) AS tp2,
+                   COUNT(CASE WHEN outcome = 'TIME' THEN 1 END) AS timeout,
+                   COUNT(CASE WHEN outcome IS NULL AND entry_at > :cutoff
+                       AND stop IS NOT NULL AND tp1 IS NOT NULL AND tp2 IS NOT NULL
+                       AND stop != entry_price THEN 1 END) AS open,
+                   COUNT(CASE WHEN outcome IS NULL THEN 1 END) AS unresolved,
+                   COUNT(r_multiple) AS measured_closures,
+                   ROUND(100.0 * COUNT(CASE WHEN r_multiple > 0 THEN 1 END)
+                       / NULLIF(COUNT(r_multiple), 0), 2) AS positive_closures_pct,
+                   ROUND(SUM(r_multiple), 3) AS terminal_r_sum
+            FROM entries
+            GROUP BY strategy_version
+            ORDER BY strategy_version
+            """,
+            {"cutoff": now - ACTIVE_TTL_SEC},
+        )
+        summary = [dict(row) for row in rows]
+        for version in summary:
+            version["unresolved"] -= version["open"]
+        return summary
+    finally:
+        db.close()
